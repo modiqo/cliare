@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tokio::fs;
@@ -102,29 +102,60 @@ pub struct ScoreModel {
     source: &'static str,
 }
 
+#[derive(Debug, Clone)]
+pub struct ScoreArtifactSummary {
+    pub scorecard_path: PathBuf,
+    pub report_path: PathBuf,
+    pub total: f64,
+    pub measured_weight: f64,
+    pub max_weight: f64,
+    pub model: &'static str,
+    pub status: &'static str,
+    pub findings: usize,
+}
+
 pub async fn write_score_artifacts(
     out_dir: &Path,
     target: TargetFingerprint,
     observations: &[ShapeObservation],
-) -> Result<()> {
+) -> Result<ScoreArtifactSummary> {
     let scorecard = scorecard(target, observations);
-    write_scorecard(out_dir, &scorecard).await?;
-    write_report(out_dir, &scorecard).await
+    let scorecard_path = write_scorecard(out_dir, &scorecard).await?;
+    let report_path = write_report(out_dir, &scorecard).await?;
+
+    Ok(ScoreArtifactSummary {
+        scorecard_path,
+        report_path,
+        total: scorecard.score.total,
+        measured_weight: scorecard.score.measured_weight,
+        max_weight: scorecard.score.max_weight,
+        model: scorecard.score.model,
+        status: score_status_label(&scorecard.score.status),
+        findings: scorecard.findings.len(),
+    })
 }
 
-async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<()> {
+async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join("scorecard.json");
     let bytes = serde_json::to_vec_pretty(&scorecard).map_err(CliareError::SerializeScorecard)?;
     fs::write(&path, bytes)
         .await
-        .map_err(|source| CliareError::WriteScorecard { path, source })
+        .map_err(|source| CliareError::WriteScorecard {
+            path: path.clone(),
+            source,
+        })?;
+    Ok(path)
 }
 
-async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<()> {
+async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join("report.md");
     fs::write(&path, render_report(scorecard))
         .await
-        .map_err(|source| CliareError::WriteReport { path, source })
+        .map_err(|source| CliareError::WriteReport {
+            path: path.clone(),
+            source,
+        })?;
+    Ok(path)
 }
 
 pub fn scorecard(target: TargetFingerprint, observations: &[ShapeObservation]) -> Scorecard {

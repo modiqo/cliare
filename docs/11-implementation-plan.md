@@ -239,6 +239,7 @@ The current implementation emits experimental partial `scorecard.json` and `repo
 - Output and safety are present as `not_measured` dimensions until dedicated probes exist.
 - Fixture tests verify that a clearer CLI scores higher than a poor CLI.
 - The Markdown report explains the partial score, measured coverage, and findings.
+- The CLI prints a terminal summary with score, probe count, finding count, and artifact paths.
 
 ---
 

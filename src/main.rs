@@ -8,6 +8,10 @@ async fn main() -> miette::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Measure(args) => cliare::measure::measure(args).await.into_diagnostic(),
+        Command::Measure(args) => {
+            let summary = cliare::measure::measure(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
     }
 }

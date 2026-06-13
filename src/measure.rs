@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
 use crate::error::Result;
@@ -15,7 +17,50 @@ use crate::process::{ProbeSpec, TargetProcess};
 use crate::score;
 use crate::shape;
 
-pub async fn measure(args: MeasureArgs) -> Result<()> {
+#[derive(Debug, Clone)]
+pub struct MeasurementSummary {
+    pub target: TargetFingerprint,
+    pub probes_completed: usize,
+    pub evidence_path: PathBuf,
+    pub shape_path: PathBuf,
+    pub scorecard_path: PathBuf,
+    pub report_path: PathBuf,
+    pub score_total: f64,
+    pub score_measured_weight: f64,
+    pub score_max_weight: f64,
+    pub score_model: &'static str,
+    pub score_status: &'static str,
+    pub findings: usize,
+}
+
+impl MeasurementSummary {
+    pub fn terminal_summary(&self) -> String {
+        let lines = [
+            "CLIARE measure complete".to_owned(),
+            format!("target: {}", self.target.requested.display()),
+            format!("resolved: {}", self.target.resolved.display()),
+            format!(
+                "score: {:.1}/100 ({}, measured {:.1}/{:.1}, model {})",
+                self.score_total,
+                self.score_status,
+                self.score_measured_weight,
+                self.score_max_weight,
+                self.score_model
+            ),
+            format!("probes: {}", self.probes_completed),
+            format!("findings: {}", self.findings),
+            "artifacts:".to_owned(),
+            format!("  evidence: {}", self.evidence_path.display()),
+            format!("  shape: {}", self.shape_path.display()),
+            format!("  scorecard: {}", self.scorecard_path.display()),
+            format!("  report: {}", self.report_path.display()),
+        ];
+
+        format!("{}\n", lines.join("\n"))
+    }
+}
+
+pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let target = fingerprint_target(&args.target).await?;
     let mut evidence = EvidenceWriter::create(&args.out).await?;
 
@@ -77,7 +122,23 @@ pub async fn measure(args: MeasureArgs) -> Result<()> {
         .await?;
 
     shape::write_shape(&args.out, target.clone(), &observations).await?;
-    score::write_score_artifacts(&args.out, target, &observations).await
+    let score_artifacts =
+        score::write_score_artifacts(&args.out, target.clone(), &observations).await?;
+
+    Ok(MeasurementSummary {
+        target,
+        probes_completed,
+        evidence_path: args.out.join("evidence.jsonl"),
+        shape_path: args.out.join("shape.json"),
+        scorecard_path: score_artifacts.scorecard_path,
+        report_path: score_artifacts.report_path,
+        score_total: score_artifacts.total,
+        score_measured_weight: score_artifacts.measured_weight,
+        score_max_weight: score_artifacts.max_weight,
+        score_model: score_artifacts.model,
+        score_status: score_artifacts.status,
+        findings: score_artifacts.findings,
+    })
 }
 
 fn bootstrap_probes(target: &TargetFingerprint) -> Vec<ProbeSpec> {
@@ -115,7 +176,10 @@ fn invalid_token_seed(binary_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::evidence::ProbeIntent;
+    use crate::fingerprint::TargetFingerprint;
 
     #[test]
     fn bootstrap_contains_only_generic_safe_probes() {
@@ -138,5 +202,35 @@ mod tests {
     #[test]
     fn invalid_token_seed_is_shell_token_friendly() {
         assert_eq!(super::invalid_token_seed("my-tool"), "my_tool");
+    }
+
+    #[test]
+    fn terminal_summary_lists_score_and_artifacts() {
+        let summary = super::MeasurementSummary {
+            target: TargetFingerprint {
+                requested: "tool".into(),
+                resolved: "/tmp/tool".into(),
+                binary_sha256: "abc".to_owned(),
+                size_bytes: 1,
+            },
+            probes_completed: 7,
+            evidence_path: PathBuf::from(".cliare/evidence.jsonl"),
+            shape_path: PathBuf::from(".cliare/shape.json"),
+            scorecard_path: PathBuf::from(".cliare/scorecard.json"),
+            report_path: PathBuf::from(".cliare/report.md"),
+            score_total: 82.4,
+            score_measured_weight: 0.9,
+            score_max_weight: 1.0,
+            score_model: "cliare-score-v0",
+            score_status: "experimental partial",
+            findings: 2,
+        };
+
+        let text = summary.terminal_summary();
+
+        assert!(text.contains("CLIARE measure complete"));
+        assert!(text.contains("score: 82.4/100"));
+        assert!(text.contains("  scorecard: .cliare/scorecard.json"));
+        assert!(text.contains("  report: .cliare/report.md"));
     }
 }
