@@ -24,7 +24,7 @@ inputs:
     required: false
     default: .cliare
   profile:
-    description: Traversal profile: quick, standard, or deep.
+    description: "Traversal profile: quick, standard, or deep."
     required: false
     default: standard
   concurrency:
