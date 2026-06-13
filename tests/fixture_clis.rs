@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cliare::cli::{GuardArgs, MeasureArgs, TraversalProfile};
-use serde_json::Value;
+use cliare::cli::{BenchmarkArgs, GuardArgs, MeasureArgs, TraversalProfile};
+use serde_json::{Value, json};
 
 #[tokio::test]
 async fn custom_help_tree_confirms_nested_commands_and_aliases() {
@@ -776,6 +776,139 @@ async fn guard_policy_fails_total_score_threshold() {
     );
 }
 
+#[tokio::test]
+async fn benchmark_corpus_writes_reports_and_skips_missing_optional_targets() {
+    let workspace =
+        TempWorkspace::new("benchmark_corpus_writes_reports_and_skips_missing_optional_targets");
+    let target = workspace.write_executable("fixture-cli", noisy_help_script());
+    let manifest = workspace.write_json_file(
+        "corpus.json",
+        json!({
+            "schema_version": "cliare.benchmark-corpus.v1",
+            "name": "fixture-corpus",
+            "defaults": {
+                "target_concurrency": 2,
+                "profile": "quick",
+                "max_depth": 2,
+                "max_probes": 32,
+                "concurrency": 2,
+                "timeout_ms": 5000,
+                "output_limit_bytes": 65536
+            },
+            "targets": [
+                {
+                    "id": "fixture-clear",
+                    "target": target,
+                    "required": true,
+                    "tags": ["fixture", "clear"],
+                    "expected_score": {
+                        "min": 0.0,
+                        "max": 100.0
+                    },
+                    "max_duration_ms": 30000
+                },
+                {
+                    "id": "missing-optional",
+                    "target": workspace.path().join("missing-cli"),
+                    "required": false,
+                    "tags": ["missing"]
+                }
+            ]
+        }),
+    );
+    let out = workspace.path().join("bench");
+
+    let summary = cliare::benchmark::benchmark(BenchmarkArgs {
+        manifest,
+        out: out.clone(),
+        target_concurrency: None,
+        refresh: true,
+    })
+    .await
+    .expect("benchmark succeeds");
+
+    assert!(summary.passed);
+    assert_eq!(summary.targets_total, 2);
+    assert_eq!(summary.measured, 1);
+    assert_eq!(summary.skipped, 1);
+    assert_eq!(summary.failed, 0);
+    assert_eq!(summary.target_concurrency, 2);
+    let report = read_json(&out.join("benchmark.json"));
+    assert_eq!(
+        report["schema_version"].as_str(),
+        Some("cliare.benchmark-report.v1")
+    );
+    assert_eq!(report["totals"]["measured"].as_u64(), Some(1));
+    assert_eq!(report["totals"]["skipped"].as_u64(), Some(1));
+    assert_eq!(report["totals"]["pending"].as_u64(), Some(0));
+    assert_eq!(report["totals"]["complete"].as_bool(), Some(true));
+    assert_eq!(report["target_concurrency"].as_u64(), Some(2));
+    assert_eq!(
+        report["calibration"]["expected_band_pass_rate"].as_f64(),
+        Some(1.0)
+    );
+    let markdown =
+        fs::read_to_string(out.join("benchmark.md")).expect("benchmark markdown is readable");
+    assert!(markdown.contains("# CLIARE Benchmark Report"));
+    assert!(markdown.contains("## Corpus Metrics"));
+    assert!(markdown.contains("fixture-clear"));
+    assert!(markdown.contains("missing-optional"));
+}
+
+#[tokio::test]
+async fn benchmark_corpus_flags_score_band_failures() {
+    let workspace = TempWorkspace::new("benchmark_corpus_flags_score_band_failures");
+    let target = workspace.write_executable("fixture-cli", poor_help_script());
+    let manifest = workspace.write_json_file(
+        "corpus.json",
+        json!({
+            "schema_version": "cliare.benchmark-corpus.v1",
+            "name": "failing-fixture-corpus",
+            "defaults": {
+                "profile": "quick",
+                "max_depth": 2,
+                "max_probes": 16,
+                "concurrency": 2,
+                "timeout_ms": 5000,
+                "output_limit_bytes": 65536
+            },
+            "targets": [
+                {
+                    "id": "fixture-poor",
+                    "target": target,
+                    "required": true,
+                    "expected_score": {
+                        "min": 95.0,
+                        "max": 100.0
+                    },
+                    "max_duration_ms": 30000
+                }
+            ]
+        }),
+    );
+    let out = workspace.path().join("bench");
+
+    let summary = cliare::benchmark::benchmark(BenchmarkArgs {
+        manifest,
+        out: out.clone(),
+        target_concurrency: Some(1),
+        refresh: true,
+    })
+    .await
+    .expect("benchmark succeeds");
+
+    assert!(!summary.passed);
+    assert_eq!(summary.failed, 1);
+    let report = read_json(&out.join("benchmark.json"));
+    assert_eq!(report["totals"]["passed"].as_bool(), Some(false));
+    assert!(
+        report["targets"][0]["issues"][0]
+            .as_str()
+            .expect("issue is present")
+            .contains("outside expected band")
+    );
+}
+
 async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> MeasuredFixture {
     let workspace = TempWorkspace::new(name);
     let target = workspace.write_executable("fixture-cli", script);
@@ -866,6 +999,13 @@ impl TempWorkspace {
     fn write_file(&self, name: &str, contents: &str) -> PathBuf {
         let path = self.path.join(name);
         fs::write(&path, contents).expect("fixture file is written");
+        path
+    }
+
+    fn write_json_file(&self, name: &str, value: Value) -> PathBuf {
+        let path = self.path.join(name);
+        let text = serde_json::to_string_pretty(&value).expect("json fixture serializes");
+        fs::write(&path, text).expect("json fixture file is written");
         path
     }
 }

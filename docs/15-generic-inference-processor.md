@@ -37,15 +37,21 @@ Help text is one weak evidence source. Runtime confirmation is stronger evidence
    - Regex may be used only for small lexical primitives if needed, not as the architecture.
    - The core processor should use tokenization, indentation, aligned columns, repeated row shapes, and runtime validation.
 
-3. **Help output generates hypotheses**
+3. **No semantic section-title allowlist**
+   - Do not decide that a row is a command because the nearest heading says `Commands`, `Subcommands`, `Available Commands`, or any localized variant.
+   - Section titles are weak layout features at most; they are not gates.
+   - The command extractor must prefer structural evidence: contiguous row blocks, repeated alignment, compact invocation cells, command-token morphology, non-prose summaries, and later runtime confirmation.
+   - Manpage-style output must be handled as its own format signal. In particular, formatted manpages often contain wrapped prose that looks columnar, so child-command discovery from non-root manpage help should be suppressed unless another strong runtime signal exists.
+
+4. **Help output generates hypotheses**
    - A row in help output can produce `candidate_command` or `candidate_flag`.
    - It does not prove the command or flag exists.
 
-4. **Runtime confirmation updates beliefs**
+5. **Runtime confirmation updates beliefs**
    - Candidate commands should be probed with safe forms such as `<candidate> --help`, `help <candidate>`, and invalid child probes.
    - Acceptance, rejection, help-like output, and diagnostic suggestions update confidence.
 
-5. **Every emitted shape field carries confidence**
+6. **Every emitted shape field carries confidence**
    - The shape catalog must say what is known, how strongly it is known, and which evidence supports it.
 
 ---
@@ -105,6 +111,9 @@ Features:
 - bracket/angle argument hints
 - prose-like trailing cell
 - continuation-line likelihood
+- backspace/control-character patterns that indicate formatted manpage output
+
+The production command-row extractor should not maintain a list of accepted command-section labels. Fixture tests may include words such as `Commands:` and `Options:` because real CLIs print them, but those words must not be the production gate for command discovery.
 
 ### Phase 3: Candidate Claims
 

@@ -12,6 +12,8 @@ use crate::error::{CliareError, Result};
 use crate::evidence::ProbeIntent;
 use crate::sandbox::{ProcessSandbox, SideEffectSummary};
 
+const STREAM_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[derive(Debug, Clone)]
 pub struct ProbeSpec {
     pub args: Vec<String>,
@@ -153,8 +155,8 @@ impl TargetProcess {
             }
         };
 
-        let stdout = stdout_task.await.map_err(CliareError::Join)??;
-        let stderr = stderr_task.await.map_err(CliareError::Join)??;
+        let stdout = collect_output(stdout_task).await?;
+        let stderr = collect_output(stderr_task).await?;
         let after_side_effects = sandbox.snapshot().await?;
         let side_effects = before_side_effects.diff(&after_side_effects);
 
@@ -171,6 +173,18 @@ impl TargetProcess {
 
     fn argv(&self, probe: &ProbeSpec) -> Vec<String> {
         probe.argv(&self.target)
+    }
+}
+
+async fn collect_output(
+    mut task: tokio::task::JoinHandle<Result<OutputCapture>>,
+) -> Result<OutputCapture> {
+    tokio::select! {
+        result = &mut task => result.map_err(CliareError::Join)?,
+        _ = time::sleep(STREAM_DRAIN_TIMEOUT) => {
+            task.abort();
+            Ok(OutputCapture::abandoned())
+        }
     }
 }
 
@@ -192,6 +206,18 @@ pub struct OutputCapture {
     pub retained_bytes: usize,
     pub truncated: bool,
     pub text: Option<String>,
+}
+
+impl OutputCapture {
+    fn abandoned() -> Self {
+        Self {
+            sha256: format!("{:x}", Sha256::digest([])),
+            bytes: 0,
+            retained_bytes: 0,
+            truncated: true,
+            text: None,
+        }
+    }
 }
 
 async fn read_bounded<R>(mut reader: R, limit: usize) -> Result<OutputCapture>

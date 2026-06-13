@@ -13,6 +13,15 @@ async fn main() -> miette::Result<()> {
             print!("{}", summary.terminal_summary());
             Ok(())
         }
+        Command::Benchmark(args) => {
+            let summary = cliare::benchmark::benchmark(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            if summary.passed {
+                Ok(())
+            } else {
+                Err(miette::miette!("benchmark failed calibration checks"))
+            }
+        }
         Command::Guard(args) => {
             let summary = cliare::guard::guard(args).await.into_diagnostic()?;
             print!("{}", summary.terminal_summary());

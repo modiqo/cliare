@@ -103,25 +103,27 @@ impl ClaimSet {
                 .apply_usage_arguments(arguments, &observation.evidence_id);
         }
 
-        for candidate in layout::command_candidates(text, binary_name) {
-            let path = CommandPath::new(absolutize_candidate_path(
-                current_path.as_slice(),
-                candidate.path,
-            ));
-            if path == current_path {
-                continue;
-            }
-            if is_child_path(current_path.as_slice(), path.as_slice()) {
-                self.command_mut(current_path.clone())
-                    .apply_child_candidate(&observation.evidence_id);
-            }
+        if current_path.is_empty() || !layout::is_manpage_like(text) {
+            for candidate in layout::command_candidates(text, binary_name) {
+                let path = CommandPath::new(absolutize_candidate_path(
+                    current_path.as_slice(),
+                    candidate.path,
+                ));
+                if path == current_path {
+                    continue;
+                }
+                if is_child_path(current_path.as_slice(), path.as_slice()) {
+                    self.command_mut(current_path.clone())
+                        .apply_child_candidate(&observation.evidence_id);
+                }
 
-            self.command_mut(path).apply_layout_candidate(
-                candidate.summary,
-                candidate.aliases,
-                &observation.evidence_id,
-                &candidate.evidence_detail,
-            );
+                self.command_mut(path).apply_layout_candidate(
+                    candidate.summary,
+                    candidate.aliases,
+                    &observation.evidence_id,
+                    &candidate.evidence_detail,
+                );
+            }
         }
 
         for candidate in layout::flag_candidates(text) {

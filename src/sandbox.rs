@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -395,36 +396,47 @@ async fn scan_region(
     let mut pending = vec![region_root.path.clone()];
 
     while let Some(dir) = pending.pop() {
-        let mut entries =
-            fs::read_dir(&dir)
-                .await
-                .map_err(|source| CliareError::ReadSandboxDir {
+        let mut entries = match fs::read_dir(&dir).await {
+            Ok(entries) => entries,
+            Err(source) if source.kind() == ErrorKind::NotFound => continue,
+            Err(source) => {
+                return Err(CliareError::ReadSandboxDir {
                     path: dir.clone(),
                     source,
-                })?;
+                });
+            }
+        };
 
-        while let Some(entry) =
-            entries
-                .next_entry()
-                .await
-                .map_err(|source| CliareError::ReadSandboxDir {
-                    path: dir.clone(),
-                    source,
-                })?
-        {
+        loop {
+            let entry = match entries.next_entry().await {
+                Ok(Some(entry)) => entry,
+                Ok(None) => break,
+                Err(source) if source.kind() == ErrorKind::NotFound => continue,
+                Err(source) => {
+                    return Err(CliareError::ReadSandboxDir {
+                        path: dir.clone(),
+                        source,
+                    });
+                }
+            };
             let path = entry.path();
-            let metadata =
-                entry
-                    .metadata()
-                    .await
-                    .map_err(|source| CliareError::ReadSandboxMetadata {
+            let metadata = match entry.metadata().await {
+                Ok(metadata) => metadata,
+                Err(source) if source.kind() == ErrorKind::NotFound => continue,
+                Err(source) => {
+                    return Err(CliareError::ReadSandboxMetadata {
                         path: path.clone(),
                         source,
-                    })?;
+                    });
+                }
+            };
 
             if metadata.is_dir() {
                 pending.push(path);
             } else if metadata.is_file() {
+                let Some(sha256) = sha256_file(&path).await? else {
+                    continue;
+                };
                 let relative_path = path
                     .strip_prefix(sandbox_root)
                     .map(Path::to_path_buf)
@@ -434,7 +446,7 @@ async fn scan_region(
                     FileSnapshot {
                         region: region_root.region,
                         size_bytes: metadata.len(),
-                        sha256: sha256_file(&path).await?,
+                        sha256,
                     },
                 );
             }
@@ -444,13 +456,17 @@ async fn scan_region(
     Ok(())
 }
 
-async fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = File::open(path)
-        .await
-        .map_err(|source| CliareError::ReadSandboxFile {
-            path: path.to_path_buf(),
-            source,
-        })?;
+async fn sha256_file(path: &Path) -> Result<Option<String>> {
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(CliareError::ReadSandboxFile {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
 
@@ -468,7 +484,7 @@ async fn sha256_file(path: &Path) -> Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(Some(format!("{:x}", hasher.finalize())))
 }
 
 #[cfg(test)]

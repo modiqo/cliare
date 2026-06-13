@@ -36,6 +36,37 @@ pub enum Command {
     Measure(MeasureArgs),
     /// Measure a target and fail when score regresses against a baseline.
     Guard(GuardArgs),
+    /// Run a benchmark corpus and produce calibration reports.
+    Benchmark(BenchmarkArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BenchmarkArgs {
+    /// Benchmark corpus manifest.
+    #[arg(
+        long,
+        value_name = "FILE",
+        default_value = "benchmarks/local-corpus.json",
+        value_hint = ValueHint::FilePath
+    )]
+    pub manifest: PathBuf,
+
+    /// Output directory for benchmark artifacts.
+    #[arg(
+        long,
+        value_name = "DIR",
+        default_value = ".cliare-bench",
+        value_hint = ValueHint::DirPath
+    )]
+    pub out: PathBuf,
+
+    /// Maximum benchmark targets to measure concurrently.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub target_concurrency: Option<usize>,
+
+    /// Ignore reusable measurement artifacts and run probes again.
+    #[arg(long)]
+    pub refresh: bool,
 }
 
 #[derive(Debug, Args)]
@@ -265,6 +296,7 @@ mod tests {
         assert!(help.contains("Usage: cliare"));
         assert!(help.contains("measure"));
         assert!(help.contains("guard"));
+        assert!(help.contains("benchmark"));
         assert!(help.contains("--version"));
     }
 
@@ -287,6 +319,7 @@ mod tests {
                 assert_eq!(args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
             Command::Guard(_) => panic!("expected measure command"),
+            Command::Benchmark(_) => panic!("expected measure command"),
         }
 
         match guard.command {
@@ -302,6 +335,25 @@ mod tests {
                 assert_eq!(measure_args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
             Command::Measure(_) => panic!("expected guard command"),
+            Command::Benchmark(_) => panic!("expected guard command"),
+        }
+    }
+
+    #[test]
+    fn benchmark_uses_local_corpus_defaults() {
+        let cli = Cli::try_parse_from(["cliare", "benchmark"]).expect("valid benchmark");
+
+        match cli.command {
+            Command::Benchmark(args) => {
+                assert_eq!(
+                    args.manifest,
+                    std::path::PathBuf::from("benchmarks/local-corpus.json")
+                );
+                assert_eq!(args.out, std::path::PathBuf::from(".cliare-bench"));
+                assert_eq!(args.target_concurrency, None);
+                assert!(!args.refresh);
+            }
+            Command::Measure(_) | Command::Guard(_) => panic!("expected benchmark command"),
         }
     }
 
@@ -364,6 +416,7 @@ mod tests {
                 assert_eq!(args.resolved_concurrency(), concurrency);
             }
             Command::Guard(_) => panic!("expected measure command"),
+            Command::Benchmark(_) => panic!("expected measure command"),
         }
     }
 }

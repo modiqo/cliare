@@ -368,6 +368,32 @@ Make the math credible.
 - Score model version is documented.
 - Public score remains labeled experimental until calibrated.
 
+### Current Checkpoint
+
+The current implementation has the first real CLI benchmark layer in place:
+
+- `cliare benchmark --manifest benchmarks/local-corpus.json --out <DIR>` runs a manifest-defined corpus.
+- The manifest schema is `cliare.benchmark-corpus.v1`.
+- The report schema is `cliare.benchmark-report.v1`.
+- Corpus defaults and per-target overrides cover traversal profile, depth, probe budget, expected-value threshold, per-probe concurrency, timeout, output limit, expected score band, runtime cap, and required/optional status.
+- Target-level parallelism uses bounded `JoinSet` execution, and each target still uses the normal bounded async `measure` scheduler internally.
+- Worker tasks write only their per-target measurement artifacts. The benchmark coordinator is the only writer for aggregate `benchmark.json` and `benchmark.md`.
+- Aggregate reports are streamed after startup and after every completed target, then atomically replaced through temporary files and rename.
+- A `.benchmark.lock` prevents two benchmark processes from writing the same output directory concurrently.
+- Optional targets are skipped only for missing binaries; measurement errors in required targets fail the benchmark.
+- Calibration aggregates include expected-band pass rate, traversal completion rate, budget exhaustion rate, score mean/range, total probes, findings, output-contract counts, parse successes, side-effect counts, and credential-like side effects.
+- The local corpus currently covers `cliare`, `rote`, `git`, `supabase`, `gh`, `cargo`, `npm`, `docker`, and `deno`.
+
+The latest deep local corpus run measured all nine targets, completed 2706 probes, produced a 100% expected-band pass rate, and finished without failed targets.
+
+The remaining Phase 5 work is deeper calibration, not basic benchmark execution:
+
+- human-verified truth subsets for selected command families
+- Brier score, log loss, expected calibration error, and false-safe rate
+- likelihood-weight tuning from benchmark results
+- published model-version calibration reports
+- score stability runs over repeated measurements
+
 ---
 
 ## Phase 6: Public Scorecard Publishing
@@ -458,13 +484,13 @@ Minimum useful launch:
 - baseline guard
 - GitHub Action
 - synthetic fixtures
+- real CLI benchmark corpus with expected score bands
 
 Do not block MVP on:
 
 - hosted leaderboard
 - network tracing
 - Docker sandbox
-- real-world benchmark corpus
 - full completion support
 - perfect calibration
 

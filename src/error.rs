@@ -180,6 +180,67 @@ pub enum CliareError {
         source: serde_json::Error,
     },
 
+    #[error("failed to create benchmark directory {path}")]
+    CreateBenchmarkDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read benchmark manifest {path}")]
+    ReadBenchmarkManifest {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse benchmark manifest {path}")]
+    ParseBenchmarkManifest {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("unsupported benchmark corpus schema {schema_version}")]
+    UnsupportedBenchmarkSchema { schema_version: String },
+
+    #[error("benchmark target {target_id} has invalid expected score band: min {min}, max {max}")]
+    InvalidBenchmarkScoreBand {
+        target_id: String,
+        min: f64,
+        max: f64,
+    },
+
+    #[error("benchmark field {field} must be greater than zero: {value}")]
+    InvalidBenchmarkPositiveInteger { field: &'static str, value: usize },
+
+    #[error("benchmark output directory is already locked by {path}")]
+    BenchmarkOutputLocked { path: PathBuf },
+
+    #[error("failed to acquire benchmark output lock {path}")]
+    AcquireBenchmarkLock {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to serialize benchmark report")]
+    SerializeBenchmarkReport(#[source] serde_json::Error),
+
+    #[error("failed to write benchmark report {path}")]
+    WriteBenchmarkReport {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write benchmark markdown {path}")]
+    WriteBenchmarkMarkdown {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read policy file {path}")]
     ReadPolicy {
         path: PathBuf,

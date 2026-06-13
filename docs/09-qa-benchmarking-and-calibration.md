@@ -87,6 +87,47 @@ Candidates:
 
 Real-world truth sets do not need full coverage at first. They can focus on representative command families.
 
+Current local corpus implementation:
+
+- `benchmarks/local-corpus.json` uses schema `cliare.benchmark-corpus.v1`.
+- The corpus exercises `cliare`, `rote`, `git`, `supabase`, `gh`, `cargo`, `npm`, `docker`, and `deno` when available locally.
+- Targets carry tags such as `dogfood`, `deep-subcommands`, `sparse-help`, `json-friendly`, and `side-effect-prone`.
+- Required targets must run successfully; optional targets are skipped only when the binary is not found.
+- Each target can override profile, depth, probe budget, expected-value threshold, per-probe concurrency, timeout, output limit, expected score band, and runtime cap.
+- Expected score bands are deliberately ranges, not exact score snapshots. They catch scoring regressions and runtime blowups without overfitting to harmless model movement.
+- The benchmark command runs multiple targets concurrently while each target still uses the bounded async probe scheduler inside `measure`.
+- Aggregate `benchmark.json` and `benchmark.md` are written by one coordinator task only. Worker tasks return per-target reports; they do not write the shared aggregate file.
+- Aggregate writes use temporary files plus atomic rename so CI never reads a partially written report.
+- The output directory has a `.benchmark.lock` so two benchmark processes cannot write to the same destination at the same time.
+- Progress reports are streamed after startup and after each target finishes. Long corpus runs therefore have useful partial state even before the final target completes.
+
+Latest local deep run:
+
+```text
+targets: 9
+measured: 9
+skipped: 0
+failed: 0
+expected band pass rate: 100.0%
+traversal completion rate: 66.7%
+budget exhaustion rate: 33.3%
+probes completed: 2706
+```
+
+Target scores from that run:
+
+| Target | Score | Duration ms | Probes | Notes |
+|---|---:|---:|---:|---|
+| cliare | 94.4 | 843 | 20 | Dogfood target through generic inference |
+| rote | 62.9 | 106110 | 768 | Deep local test case with side-effect observation |
+| git | 92.2 | 45266 | 73 | Manpage-heavy CLI after structural extractor hardening |
+| supabase | 93.6 | 120855 | 409 | Large command surface |
+| gh | 89.6 | 223860 | 512 | Large command surface with budget pressure |
+| cargo | 92.0 | 6447 | 152 | Structured Rust CLI |
+| npm | 36.0 | 416 | 7 | Sparse usable surface under safe probing |
+| docker | 86.3 | 41571 | 253 | Large command surface |
+| deno | 72.0 | 399806 | 512 | Large command surface with long-tail traversal |
+
 ### Fixture CLIs
 
 Generated CLIs across frameworks:
@@ -373,6 +414,20 @@ Side-effect class:
 
 False-safe rate should be a headline safety metric.
 
+The current benchmark runner implements step 1 and the first operational calibration gate:
+
+```sh
+cliare benchmark --manifest benchmarks/local-corpus.json --out .cliare-bench
+```
+
+It produces:
+
+- `benchmark.json`: machine-readable corpus report with totals, calibration aggregates, target scores, expected bands, runtime caps, probe counts, traversal state, output-contract counts, side-effect counts, and issues.
+- `benchmark.md`: release-note-friendly Markdown report with the same pass/fail context.
+- per-target artifact directories containing the normal `measure` outputs.
+
+This is not yet full probabilistic calibration. Brier score, log loss, expected calibration error, and human-verified truth-set comparisons remain part of the next calibration layer. The current runner is still valuable because it makes score movement and runtime blowups visible on real CLIs before the standard publishes public leaderboard claims.
+
 ---
 
 ## QA Matrix
@@ -387,6 +442,9 @@ False-safe rate should be a headline safety metric.
 | Output classification | fixture | yes |
 | Safety classification | fixture | yes |
 | Bayesian calibration | benchmark | partial |
+| Real CLI score bands | benchmark | yes |
+| Benchmark streaming report | integration | yes |
+| Benchmark parallel target execution | integration | yes |
 | CI guard | integration | yes |
 | Publish/leaderboard | service | later |
 

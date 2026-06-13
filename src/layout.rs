@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::output::OutputMode;
 
+const MAX_COMMAND_PATH_SEGMENTS: usize = 3;
+
 #[derive(Debug, Clone)]
 pub struct HelpDocument {
     lines: Vec<LayoutLine>,
@@ -21,6 +23,25 @@ impl HelpDocument {
         self.lines
             .iter()
             .filter(|line| line.is_row_like() && !line.is_continuation_like())
+    }
+
+    pub fn row_blocks(&self) -> Vec<Vec<&LayoutLine>> {
+        let mut blocks = Vec::new();
+        let mut current = Vec::new();
+
+        for line in &self.lines {
+            if line.is_row_like() && !line.is_continuation_like() {
+                current.push(line);
+            } else if !current.is_empty() {
+                blocks.push(current);
+                current = Vec::new();
+            }
+        }
+        if !current.is_empty() {
+            blocks.push(current);
+        }
+
+        blocks
     }
 
     pub fn usage_lines(&self) -> impl Iterator<Item = &LayoutLine> {
@@ -99,28 +120,34 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
     let document = HelpDocument::parse(text);
     let mut candidates = BTreeMap::<Vec<String>, CandidateCommand>::new();
 
-    for row in document.rows() {
-        let Some(first_column) = row.columns.first() else {
+    for block in document.row_blocks() {
+        let rows = block
+            .iter()
+            .filter_map(|row| command_row_candidate(row, binary_name))
+            .collect::<Vec<_>>();
+        if !is_command_table_block(block.len(), &rows) {
             continue;
-        };
-        let paths = command_paths_from_cell(first_column, binary_name);
-        for path in &paths {
-            let aliases = paths
-                .iter()
-                .filter_map(|other| {
-                    if other == path || other.len() != 1 {
-                        None
-                    } else {
-                        other.first().cloned()
-                    }
-                })
-                .collect::<Vec<_>>();
-            candidates.entry(path.clone()).or_insert(CandidateCommand {
-                path: path.clone(),
-                aliases,
-                summary: row.columns.get(1).cloned(),
-                evidence_detail: format!("layout row {}", row.index),
-            });
+        }
+        for row in rows {
+            for path in &row.paths {
+                let aliases = row
+                    .paths
+                    .iter()
+                    .filter_map(|other| {
+                        if other == path || other.len() != 1 {
+                            None
+                        } else {
+                            other.first().cloned()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                candidates.entry(path.clone()).or_insert(CandidateCommand {
+                    path: path.clone(),
+                    aliases,
+                    summary: row.summary.clone(),
+                    evidence_detail: format!("layout row {}", row.index),
+                });
+            }
         }
     }
 
@@ -226,6 +253,10 @@ pub fn is_help_like(text: &str) -> bool {
     HelpDocument::parse(text).is_help_like()
 }
 
+pub fn is_manpage_like(text: &str) -> bool {
+    text.as_bytes().windows(2).any(|window| window[1] == 0x08)
+}
+
 #[derive(Debug, Clone)]
 pub struct CandidateCommand {
     pub path: Vec<String>,
@@ -269,6 +300,73 @@ pub struct CandidateArgument {
     pub evidence_detail: String,
 }
 
+#[derive(Debug)]
+struct CommandRowCandidate {
+    index: usize,
+    paths: Vec<Vec<String>>,
+    summary: Option<String>,
+    invocation_width: usize,
+    invocation_tokens: usize,
+    title_like_summary: bool,
+    distinctive_invocation: bool,
+}
+
+fn command_row_candidate(row: &LayoutLine, binary_name: &str) -> Option<CommandRowCandidate> {
+    let first_column = row.columns.first()?;
+    let paths = command_paths_from_cell(first_column, binary_name);
+    if paths.is_empty() {
+        return None;
+    }
+    let distinctive_invocation = paths.iter().flatten().any(|segment| {
+        segment
+            .chars()
+            .any(|ch| !ch.is_ascii_lowercase() || matches!(ch, '-' | '_' | ':' | '@'))
+    });
+    Some(CommandRowCandidate {
+        index: row.index,
+        paths,
+        summary: row.columns.get(1).cloned(),
+        invocation_width: first_column.chars().count(),
+        invocation_tokens: command_prefix_token_count(first_column, binary_name),
+        title_like_summary: row
+            .columns
+            .get(1)
+            .is_some_and(|summary| starts_title_like(summary)),
+        distinctive_invocation,
+    })
+}
+
+fn is_command_table_block(row_count: usize, candidates: &[CommandRowCandidate]) -> bool {
+    if candidates.len() == 1 {
+        let row = &candidates[0];
+        return row.invocation_width <= 48
+            && row.invocation_tokens <= 3
+            && (row.paths.len() > 1 || row.title_like_summary || row.distinctive_invocation);
+    }
+    if candidates.len() < 2 {
+        return false;
+    }
+
+    let density = candidates.len() as f64 / row_count.max(1) as f64;
+    let compact = candidates
+        .iter()
+        .filter(|row| row.invocation_width <= 48 && row.invocation_tokens <= 3)
+        .count();
+    let compact_ratio = compact as f64 / candidates.len() as f64;
+    let strong = candidates
+        .iter()
+        .filter(|row| row.title_like_summary || row.distinctive_invocation)
+        .count();
+    let strong_ratio = strong as f64 / candidates.len() as f64;
+    density >= 0.6 && compact_ratio >= 0.8 && strong_ratio >= 0.5
+}
+
+fn starts_title_like(text: &str) -> bool {
+    text.chars()
+        .find(|ch| !ch.is_whitespace())
+        .is_some_and(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
+}
+
 fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
     let mut path = Vec::new();
     let mut saw_alias_separator = false;
@@ -281,11 +379,17 @@ fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
         if cleaned == binary_name && path.is_empty() {
             continue;
         }
+        if cleaned.chars().all(|ch| ch.is_ascii_digit()) {
+            return Vec::new();
+        }
         if is_argument_like(cleaned) || cleaned.starts_with('-') {
             break;
         }
         if !is_command_token(cleaned) {
             break;
+        }
+        if path.len() >= MAX_COMMAND_PATH_SEGMENTS {
+            return Vec::new();
         }
         saw_alias_separator |= token.ends_with(',');
         path.push(cleaned.to_owned());
@@ -301,6 +405,14 @@ fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
     vec![path]
 }
 
+fn command_prefix_token_count(cell: &str, binary_name: &str) -> usize {
+    command_paths_from_cell(cell, binary_name)
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or(0)
+}
+
 fn is_argument_like(token: &str) -> bool {
     token.starts_with('<')
         || token.starts_with('[')
@@ -314,6 +426,14 @@ fn is_command_token(token: &str) -> bool {
     token
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | ':' | '@'))
+        && !is_title_case_word(token)
+}
+
+fn is_title_case_word(token: &str) -> bool {
+    let mut chars = token.chars();
+    chars.next().is_some_and(|ch| ch.is_ascii_uppercase())
+        && chars.any(|ch| ch.is_ascii_lowercase())
+        && token.chars().all(|ch| ch.is_ascii_alphabetic())
 }
 
 fn short_flag_in(text: &str) -> Option<String> {
@@ -536,7 +656,7 @@ fn split_columns(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like,
+        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like, is_manpage_like,
         output_mode_candidates, usage_arguments,
     };
     use crate::output::OutputMode;
@@ -573,6 +693,46 @@ mod tests {
                 .iter()
                 .any(|item| item.name == "--help")
         );
+    }
+
+    #[test]
+    fn ignores_wrapped_prose_that_happens_to_align_like_columns() {
+        let text = "DESCRIPTION\n       current branch  with the same name on the remote\n       be given        from the command line or configuration\n       default mode    is selected for ordinary users\n";
+        let candidates = command_candidates(text, "git");
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn rejects_overlong_invocation_prefixes_from_prose() {
+        let text = "DETAILS\n       updates remote refs using local refs  while sending objects\n       pushes all matching branches at once  when configured\n";
+        let candidates = command_candidates(text, "git");
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn rejects_title_case_prose_as_command_tokens() {
+        let text = "OPTIONS\n       Show colored output  depending on configuration\n       Use mailmap file     to map author names\n";
+        let candidates = command_candidates(text, "git");
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn detects_backspace_formatted_manpage_output() {
+        assert!(is_manpage_like(
+            "N\x08NA\x08AM\x08ME\x08E\n       tool - docs\n"
+        ));
+        assert!(!is_manpage_like("Commands:\n  run  Run a command\n"));
+    }
+
+    #[test]
+    fn rejects_numeric_menu_entries_as_command_paths() {
+        let text = "INTERACTIVE\n       1  status\n       2  update\n";
+        let candidates = command_candidates(text, "git");
+
+        assert!(candidates.is_empty());
     }
 
     #[test]

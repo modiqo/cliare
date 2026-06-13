@@ -180,6 +180,17 @@ Use `JoinSet` when CLIARE owns the tasks and wants clear cancellation. On shutdo
 
 Use `FuturesUnordered` for short-lived internal classifier jobs when task spawning is unnecessary.
 
+Benchmark corpus execution has a second concurrency layer above probe execution:
+
+- A benchmark coordinator runs multiple targets concurrently through bounded `JoinSet` target tasks.
+- Each target task invokes the normal `measure` scheduler, so target-level concurrency and per-probe concurrency are separate budgets.
+- Target tasks own only their per-target artifact directories.
+- The benchmark coordinator is the sole writer for shared `benchmark.json` and `benchmark.md`.
+- Shared reports are streamed by rebuilding the aggregate state after each target completes, writing to a process-scoped temporary file, then atomically renaming it into place.
+- A lock file in the benchmark output directory prevents two benchmark processes from using the same destination concurrently.
+
+This gives large-corpus throughput without parallel writes corrupting the aggregate scorecard.
+
 ---
 
 ## Divergence and Convergence
