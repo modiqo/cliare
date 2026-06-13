@@ -1,0 +1,44 @@
+# CLIARE
+
+CLIARE is an open-source standard and Rust reference implementation for measuring how ready a command-line interface is for agents and automation.
+
+It treats a CLI as a black-box runtime system, exercises it in a controlled sandbox, records evidence, infers command shape, and produces a reproducible agent-readiness scorecard for CI, badges, and long-term improvement tracking.
+
+CLIARE stands for **CLI for Agent Readiness**.
+
+## Status
+
+This repository is private while the project is being shaped. The initial commit contains the Rust project scaffold and the full design packet under [`docs/`](docs/00-index.md).
+
+## Goals
+
+- Infer command trees, flags, arguments, output contracts, and safety properties from runtime evidence.
+- Score CLI readiness across discovery, grammar, execution, output, safety, and recovery.
+- Run locally in CI without uploading binaries to a hosted service.
+- Emit portable artifacts: evidence logs, command-shape catalogs, scorecards, and reports.
+- Provide a public standard that CLI maintainers can use to improve agent operability.
+
+## Planned CLI
+
+```sh
+cliare measure ./mycli
+cliare guard ./mycli --baseline .cliare/baseline.scorecard.json
+cliare certify ./mycli
+cliare rescore .cliare/evidence.jsonl
+```
+
+The current binary is only a placeholder while the implementation begins.
+
+## Design Packet
+
+Start here:
+
+- [Design index](docs/00-index.md)
+- [Mathematical model](docs/06-mathematical-model.md)
+- [Rust runtime engineering](docs/13-rust-runtime-engineering.md)
+- [Operational contracts](docs/14-operational-contracts.md)
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
