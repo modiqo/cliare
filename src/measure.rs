@@ -12,6 +12,7 @@ use crate::planner::{
     bootstrap_invalid_flag_token,
 };
 use crate::process::{ProbeSpec, TargetProcess};
+use crate::score;
 use crate::shape;
 
 pub async fn measure(args: MeasureArgs) -> Result<()> {
@@ -75,7 +76,8 @@ pub async fn measure(args: MeasureArgs) -> Result<()> {
         .append(EvidenceKind::RunFinished(RunFinished { probes_completed }))
         .await?;
 
-    shape::write_shape(&args.out, target, &observations).await
+    shape::write_shape(&args.out, target.clone(), &observations).await?;
+    score::write_scorecard(&args.out, target, &observations).await
 }
 
 fn bootstrap_probes(target: &TargetFingerprint) -> Vec<ProbeSpec> {

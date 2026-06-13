@@ -74,6 +74,22 @@ Example:
 
 ## Subscores
 
+The first implementation emits an experimental partial scorecard. It computes a deterministic total over dimensions that currently have direct evidence and marks unsupported dimensions as `not_measured`.
+
+Score v0 measures:
+
+- discovery from command confidence and runtime confirmation rate
+- grammar from flag confidence and unresolved grammar gaps
+- execution from completed probes, timeouts, and spawn failures
+- recovery from invalid command, invalid child, and invalid flag rejection behavior
+
+Score v0 does not yet measure:
+
+- output parseability
+- safety, side effects, dry-run, or confirmation behavior
+
+Those unmeasured dimensions remain in the scorecard with rationales, but they are not included in the partial total.
+
 ### Discovery
 
 Measures whether agents can find the CLI surface.
@@ -535,4 +551,3 @@ MVP can skip:
 - workload learning
 
 But the scorecard schema should leave room for them.
-

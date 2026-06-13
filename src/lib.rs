@@ -9,4 +9,5 @@ pub mod measure;
 pub mod observation;
 pub mod planner;
 pub mod process;
+pub mod score;
 pub mod shape;

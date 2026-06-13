@@ -45,6 +45,16 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to serialize scorecard")]
+    SerializeScorecard(#[source] serde_json::Error),
+
+    #[error("failed to write scorecard {path}")]
+    WriteScorecard {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to spawn target process")]
     Spawn(#[source] std::io::Error),
 

@@ -51,6 +51,23 @@ async fn noisy_help_still_infers_from_stdout_layout() {
     let run = command(&artifacts.shape, &["run"]);
     assert!(run["runtime_confirmed"].as_bool().unwrap_or(false));
     assert!(artifacts.evidence.contains("startup warning"));
+    assert!(
+        artifacts.scorecard["score"]["total"]
+            .as_f64()
+            .unwrap_or(0.0)
+            > 0.0
+    );
+}
+
+#[tokio::test]
+async fn clearer_cli_scores_higher_than_poor_cli() {
+    let poor = measure_fixture(poor_help_script(), 16).await;
+    let clear = measure_fixture(noisy_help_script(), 32).await;
+
+    assert!(
+        clear.scorecard["score"]["total"].as_f64().unwrap_or(0.0)
+            > poor.scorecard["score"]["total"].as_f64().unwrap_or(100.0)
+    );
 }
 
 async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
@@ -70,12 +87,14 @@ async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
     .expect("measurement succeeds");
 
     let shape = read_json(&out.join("shape.json"));
+    let scorecard = read_json(&out.join("scorecard.json"));
     let evidence =
         fs::read_to_string(out.join("evidence.jsonl")).expect("evidence log is readable");
 
     MeasuredFixture {
         _workspace: workspace,
         shape,
+        scorecard,
         evidence,
     }
 }
@@ -83,6 +102,7 @@ async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
 struct MeasuredFixture {
     _workspace: TempWorkspace,
     shape: Value,
+    scorecard: Value,
     evidence: String,
 }
 
@@ -362,6 +382,26 @@ EOF
   *)
     echo "unknown command: $1" >&2
     exit 2
+    ;;
+esac
+"#
+}
+
+fn poor_help_script() -> &'static str {
+    r#"#!/bin/sh
+
+case "$1" in
+  "--version"|"version")
+    echo "fixture-cli 1.0.0"
+    exit 0
+    ;;
+  --__cliare_unknown_*|__cliare_unknown_*)
+    echo "bad input"
+    exit 0
+    ;;
+  *)
+    echo "try docs"
+    exit 0
     ;;
 esac
 "#
