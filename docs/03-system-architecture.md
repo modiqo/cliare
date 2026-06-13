@@ -1,7 +1,7 @@
 # 03 - System Architecture
 
 > **Scope:** Component model, data flow, storage layout, CLI surface, extension points, and execution lifecycle.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -544,7 +544,7 @@ Therefore:
 
 ---
 
-## Minimal MVP Architecture
+## Initial Reference Architecture
 
 The first implementation can be smaller:
 
@@ -557,7 +557,7 @@ cliare measure
   -> markdown report
 ```
 
-MVP does not need:
+The initial reference implementation does not require:
 
 - remote publishing
 - full network tracing

@@ -1,7 +1,7 @@
 # 12 - Reference CLI Behavior Guide
 
 > **Scope:** Practical guidance for CLI maintainers who want to improve their CLIARE score and make their tools agent-ready.
-> **Status:** Draft
+> **Status:** Reference Guide
 
 ---
 

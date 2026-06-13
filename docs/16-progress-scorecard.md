@@ -2,7 +2,7 @@
 
 > Last updated: after checkpoint `ci: CLIARE on CLIARE score and documentation hardening`
 
-This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
+This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it records implementation progress toward the first stable release.
 
 ---
 
@@ -10,7 +10,7 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 
 | Area | Status | Notes |
 |---|---:|---|
-| Repository and package foundation | 100% | Rust project, license, README, design docs, private GitHub repo |
+| Repository and package foundation | 100% | Rust project, license, README, design docs, GitHub repository |
 | CLI surface | 76% | `measure`, `guard`, `benchmark`, `metadata`, traversal profiles, cache bypass, CI artifacts, and policy files; baseline/publish/certify still planned |
 | Runtime probing | 82% | Safe bootstrap, bounded output, timeouts, recursive probes, per-probe isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env, per-probe filesystem diffs, transient-file-safe snapshots, and inherited pipe drain protection |
 | Generic inference | 69% | Layout claims, runtime confirmation, precondition-blocked runtime state, Bayesian confidence, usage positionals, aliases, flag grammar, output-mode claims, format-context output filtering, structural command-row extraction, and manpage false-positive suppression exist; value domains still planned |
@@ -22,13 +22,13 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | QA and calibration | 77% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally; public authority plan now defines truth sets, calibration metrics, certified profiles, and false-safe-rate requirements |
 | Public publishing | 5% | Designed but not implemented |
 
-## MVP Completion
+## Implementation Completion
 
-Estimated MVP completion: **97%**
+Estimated initial-release completion: **97%**
 
-Estimated MVP work remaining: **3%**
+Estimated initial-release work remaining: **3%**
 
-The current implementation is useful for local measurement, CI regression checks, and real CLI corpus calibration. The remaining MVP work is mostly hardening public command surfaces and replay/resume support for long deep-profile runs.
+The current implementation is useful for local measurement, CI regression checks, and real CLI corpus calibration. The remaining initial-release work is mostly hardening public command surfaces and replay/resume support for long deep-profile runs.
 
 ---
 
@@ -64,7 +64,7 @@ The current implementation is useful for local measurement, CI regression checks
 
 ### Checkpoint 24: Baseline Accept, Rescore, Certify, and Replay
 
-Goal: turn the current measurement and benchmark core into a complete user-facing MVP flow for maintainers and CI.
+Goal: turn the current measurement and benchmark core into a complete user-facing release flow for maintainers and CI.
 
 Acceptance criteria:
 

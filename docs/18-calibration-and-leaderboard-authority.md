@@ -795,9 +795,9 @@ cliare certify ./mycli --profile certified --policy cliare.policy.json
 
 ---
 
-## Standard-Worthy Definition
+## Certification Definition
 
-CLIARE becomes standard-worthy when:
+CLIARE is ready for certified public scoring when:
 
 1. A maintainer can run it locally and get the same score as CI for the same binary/profile.
 2. The scorecard explains every score contribution.
@@ -807,4 +807,4 @@ CLIARE becomes standard-worthy when:
 6. Public leaderboard entries are separated by profile, model, and verification level.
 7. Model changes are governed, versioned, and reproducible.
 
-At that point, CLIARE becomes infrastructure for the CLI-agent ecosystem rather than only a local measurement tool.
+At that point, CLIARE becomes shared infrastructure for the CLI-agent ecosystem rather than only a local measurement tool.

@@ -1,7 +1,7 @@
 # 11 - Implementation Plan
 
-> **Scope:** Phased implementation, repository layout, milestones, acceptance criteria, and public launch path.
-> **Status:** Draft
+> **Scope:** Phased implementation, repository layout, milestones, acceptance criteria, and certified release path.
+> **Status:** Implementation Roadmap
 
 ---
 
@@ -471,9 +471,9 @@ Stabilize CLIARE as a standard.
 
 ---
 
-## MVP Cut
+## Initial Release Scope
 
-Minimum useful launch:
+Minimum useful release:
 
 - local binary
 - safe profile
@@ -486,7 +486,7 @@ Minimum useful launch:
 - synthetic fixtures
 - real CLI benchmark corpus with expected score bands
 
-Do not block MVP on:
+The initial release should not block on:
 
 - hosted leaderboard
 - network tracing

@@ -1,7 +1,7 @@
 # 02 - Use Cases and Personas
 
 > **Scope:** The user groups, jobs-to-be-done, workflows, and concrete scenarios CLIARE must support.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -301,7 +301,7 @@ A company ships a developer platform and wants its CLI to be visible as agent-re
 
 ### What Success Looks Like
 
-CLIARE becomes part of launch messaging:
+CLIARE becomes part of release communication:
 
 ```text
 Our CLI is CLIARE-certified with a 91 agent-readiness score.

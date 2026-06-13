@@ -1,7 +1,7 @@
 # 07 - Scoring and Improvement Tracking
 
 > **Scope:** Scorecard structure, report findings, baselines, regressions, improvement tracking, score deltas, and policy gates.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -529,9 +529,9 @@ Agent-ready CLI, CI-attested
 
 ---
 
-## MVP Scoring Implementation
+## Initial Scoring Scope
 
-MVP should include:
+The initial scoring implementation should include:
 
 - total score
 - six subscores
@@ -542,7 +542,7 @@ MVP should include:
 - JSON scorecard
 - guard thresholds
 
-MVP can skip:
+The initial scoring implementation can defer:
 
 - Shapley attribution
 - advanced trend dashboards

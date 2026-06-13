@@ -1,7 +1,7 @@
 # 13 - Rust Runtime Engineering
 
 > **Scope:** Rust implementation strategy for async recursive probing, bounded parallelism, divergence/convergence, memory discipline, deterministic scoring, and robust error handling.
-> **Status:** Draft
+> **Status:** Engineering Reference
 
 ---
 
@@ -872,7 +872,7 @@ For any sequence of observations and discoveries:
 
 ---
 
-## MVP Runtime Cut
+## Initial Runtime Scope
 
 Build the runtime in this order:
 

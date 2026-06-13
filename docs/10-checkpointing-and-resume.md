@@ -1,7 +1,7 @@
 # 10 - Checkpointing and Resume
 
 > **Scope:** Long-running analysis, crash recovery, resumable probing, cache invalidation, replayability, and artifact lifecycle.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -401,9 +401,9 @@ Recommended lifecycle:
 
 ---
 
-## MVP Checkpointing
+## Initial Checkpointing Scope
 
-MVP should implement:
+The initial checkpointing implementation should provide:
 
 - run manifest
 - append-only evidence
@@ -412,7 +412,7 @@ MVP should implement:
 - rescore from evidence
 - artifact hashes
 
-MVP can skip:
+The initial checkpointing implementation can defer:
 
 - distributed probe execution
 - advanced cache eviction

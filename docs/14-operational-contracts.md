@@ -1,8 +1,8 @@
 # 14 - Operational Contracts
 
 > **Scope:** Cache reuse contract, adversarial target assumptions, dependency admission policy, score-model governance, dynamic CLI invalidation, and reproducibility levels.
-> **Status:** Follow-up Hardening Draft
-> **Priority:** Post-core. This document is important before public certification and leaderboard launch, but it is not required to begin MVP implementation.
+> **Status:** Hardening Plan
+> **Priority:** Post-core. This document is important before public certification and leaderboard operation, but it is not required to begin reference implementation work.
 
 ---
 
@@ -24,13 +24,13 @@ This is intentionally ranked after the main architecture, math, runtime, and CI 
 
 ## Rank and Criticality
 
-| Item | Critical For MVP | Critical Before Public Leaderboard | Notes |
+| Item | Critical For Initial Release | Critical Before Public Leaderboard | Notes |
 |------|------------------|------------------------------------|-------|
 | Basic binary fingerprint | yes | yes | Already in core design |
 | Evidence replay | yes | yes | Already in core design |
 | Cache explain UX | no | yes | Useful for trust and debugging |
 | Dynamic CLI invalidation policy | partial | yes | Needed for plugins/auth/remote state |
-| Adversarial binary threat model | partial | yes | MVP can start with conservative sandbox |
+| Adversarial binary threat model | partial | yes | The initial release can start with a conservative sandbox |
 | Dependency admission policy | no | yes | Needed before public trust |
 | Score-model governance | no | yes | Required for standard credibility |
 | Reproducibility levels | no | yes | Required for leaderboard interpretation |
@@ -308,7 +308,7 @@ Avoid by default:
 - generic graph libraries in scheduler core
 - actor frameworks
 - distributed execution frameworks
-- embedded databases for MVP
+- embedded databases for the initial release
 - ML runtimes
 - crates that force async runtime mixing
 
@@ -324,7 +324,7 @@ Can we remove it later without artifact incompatibility?
 
 ## Score-Model Governance
 
-CLIARE score versions need governance before public leaderboard launch.
+CLIARE score versions need governance before public leaderboard operation.
 
 Rules:
 
@@ -440,4 +440,3 @@ Implement before:
 2. certified badge
 3. enterprise/private scoreboards
 4. v1 standard freeze
-

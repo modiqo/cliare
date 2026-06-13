@@ -1,7 +1,7 @@
 # 04 - Probe Sandbox Runtime
 
 > **Scope:** How CLIARE executes arbitrary CLIs safely and reproducibly while collecting meaningful side-effect evidence.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -560,9 +560,9 @@ status attempted outbound network during safe profile with no user-provided cred
 
 ---
 
-## MVP Sandbox
+## Initial Sandbox Scope
 
-The implemented MVP sandbox currently provides:
+The implemented sandbox currently provides:
 
 - temp HOME/cwd/XDG config-cache-data
 - env deny-by-default

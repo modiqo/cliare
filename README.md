@@ -51,7 +51,7 @@ The goal is not only to score CLIs. It is to raise the quality bar for CLI desig
 
 ## Status
 
-This repository is private while the project is being shaped. The initial commit contains the Rust project scaffold and the full design packet under [`docs/`](docs/00-index.md).
+This repository contains the CLIARE reference implementation and the design packet under [`docs/`](docs/00-index.md).
 
 CLIARE measures itself in GitHub Actions. Pull requests measure the freshly built `cliare` binary with the `quick` profile, pushes to `main` use `standard`, scheduled weekly runs use `deep`, and each run publishes a job-summary score plus uploaded evidence, shape, scorecard, and report artifacts.
 
@@ -107,6 +107,7 @@ Start here:
 - [Mathematical model](docs/06-mathematical-model.md)
 - [Scoring model and Bayesian confidence](docs/17-scoring-model-and-bayesian-confidence.md)
 - [Calibration and leaderboard authority](docs/18-calibration-and-leaderboard-authority.md)
+- [Technical paper](docs/19-runtime-evidence-for-agent-ready-clis.md) ([PDF](docs/19-runtime-evidence-for-agent-ready-clis.pdf))
 - [Rust runtime engineering](docs/13-rust-runtime-engineering.md)
 - [Operational contracts](docs/14-operational-contracts.md)
 

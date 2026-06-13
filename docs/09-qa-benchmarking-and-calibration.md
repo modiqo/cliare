@@ -1,7 +1,7 @@
 # 09 - QA, Benchmarking, and Calibration
 
 > **Scope:** How CLIARE itself is tested, how the inference model is calibrated, and how benchmark results become suitable for publication.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -434,7 +434,7 @@ For the full public-authority bar, including truth corpus design, calibration me
 
 ## QA Matrix
 
-| Area | Test Type | Required For MVP |
+| Area | Test Type | Required For Initial Release |
 |------|-----------|------------------|
 | Evidence schema | unit/schema | yes |
 | Shape schema | unit/schema | yes |

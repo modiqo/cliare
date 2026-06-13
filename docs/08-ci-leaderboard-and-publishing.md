@@ -1,7 +1,7 @@
 # 08 - CI, Leaderboard, and Publishing
 
 > **Scope:** How CLIARE runs in CI, how scorecards are published, and how verified leaderboard entries are produced.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -443,9 +443,9 @@ Default public publishing should be scorecard plus artifact hashes.
 
 ---
 
-## MVP CI Scope
+## Initial CI Scope
 
-MVP should ship:
+The initial CI integration should ship:
 
 - GitHub Action
 - `measure`, `guard`, `certify`

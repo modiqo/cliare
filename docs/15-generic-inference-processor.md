@@ -1,12 +1,12 @@
 # 15 - Generic Inference Processor
 
-> **Scope:** Corrected implementation direction for framework-agnostic CLI shape inference.
-> **Status:** Design Correction
-> **Priority:** Immediate. This overrides any interpretation that CLIARE should parse one framework's help format as the core protocol.
+> **Scope:** Framework-agnostic CLI shape inference from runtime evidence.
+> **Status:** Inference Reference
+> **Priority:** Core design constraint. CLIARE must not treat any single CLI framework's help format as the protocol.
 
 ---
 
-## Correction
+## Framework Boundary
 
 CLIARE must not assume that a target CLI uses Clap, Cobra, Click, argparse, oclif, or any other specific framework.
 
@@ -27,7 +27,7 @@ Help text is one weak evidence source. Runtime confirmation is stronger evidence
 
 ---
 
-## Non-Negotiable Rules
+## Design Constraints
 
 1. **No framework-specific truth path**
    - Clap-style `Commands:` and `Options:` sections are just one layout pattern.

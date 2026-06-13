@@ -1,7 +1,7 @@
 # 06 - Mathematical Model
 
 > **Scope:** Formal model for black-box CLI inference, Bayesian evidence updates, agent-readiness scoring, calibration, and monotonic improvement.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -624,7 +624,7 @@ For individual findings, use approximate Shapley values or simpler one-at-a-time
 impact(f) = Score(E with f) - Score(E without f)
 ```
 
-MVP can use one-at-a-time recomputation.
+The initial implementation can use one-at-a-time recomputation.
 
 ---
 
@@ -723,7 +723,7 @@ Leaderboards should group or normalize by score model.
 
 ---
 
-## MVP Math
+## Initial Mathematical Scope
 
 The first release should implement:
 

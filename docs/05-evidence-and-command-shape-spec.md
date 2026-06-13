@@ -1,7 +1,7 @@
 # 05 - Evidence and Command Shape Spec
 
 > **Scope:** Durable artifacts, evidence schema, normalized command-shape IR, confidence model, and export surfaces.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 
@@ -349,7 +349,7 @@ Top-level:
 }
 ```
 
-The MVP shape emitted by the current reference implementation uses compact flag grammar fields:
+The current reference implementation emits compact flag grammar fields:
 
 | Field | Meaning |
 |---|---|
@@ -358,7 +358,7 @@ The MVP shape emitted by the current reference implementation uses compact flag 
 | `required` | true when help text marks the flag as required |
 | `repeatable` | true when help text marks repeated values with `...`, "repeatable", or similar wording |
 
-The richer probabilistic `arity`, `value_schema`, `required`, `repeatable`, and placement objects remain the target standard form. The compact fields are the MVP bridge from black-box help text to useful agent call contracts.
+The richer probabilistic `arity`, `value_schema`, `required`, `repeatable`, and placement objects remain the target standard form. The compact fields bridge black-box help text to useful agent call contracts while the full schema matures.
 
 ---
 
@@ -690,9 +690,9 @@ cliare.infer-model.v1
 
 ---
 
-## MVP Spec
+## Initial Shape Scope
 
-The MVP command shape can support:
+The current command shape supports:
 
 - target metadata
 - binary fingerprint
@@ -706,4 +706,4 @@ The MVP command shape can support:
 - contradictions
 - score references
 
-Do not delay MVP for perfect schema coverage. But do require evidence references and confidence from day one.
+The schema should expand without weakening the core requirement: every inferred field must carry evidence references and confidence metadata.

@@ -1,7 +1,7 @@
 # 01 - Vision and Positioning
 
 > **Scope:** Why CLIARE should exist, how it should be positioned, and how stewardship can support ecosystem adoption without compromising independence.
-> **Status:** Draft
+> **Status:** Reference Design
 
 ---
 

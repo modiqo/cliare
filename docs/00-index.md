@@ -1,9 +1,9 @@
 # CLIARE: CLI Agent Readiness Evaluation
 
-> **Status:** Technical Design Draft
+> **Status:** Technical Reference
 > **Owner:** modiqo
 > **Scope:** Independent OSS standard, reference implementation, CI runner, scorecard, and leaderboard for agent-ready CLIs
-> **Working Name:** CLIARE, pronounced "clear"
+> **Name:** CLIARE, pronounced "clear"
 > **Expansion:** CLI Agent Readiness Evaluation
 
 ---
@@ -70,14 +70,15 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **08** | [CI, Leaderboard, and Publishing](08-ci-leaderboard-and-publishing.md) | Local CI execution, scorecard publishing, badge strategy | modiqo hosts scorecards, not untrusted binary execution |
 | **09** | [QA, Benchmarking, and Calibration](09-qa-benchmarking-and-calibration.md) | Test strategy, benchmark corpus, fixtures, ground truth | Synthetic CLIs plus real CLIs with human-verified truth sets |
 | **10** | [Checkpointing and Resume](10-checkpointing-and-resume.md) | Long-running probes, resumability, cache keys, artifact lifecycle | Evidence is append-only; inference and scoring are replayable |
-| **11** | [Implementation Plan](11-implementation-plan.md) | Phased roadmap, acceptance criteria, repo layout | MVP through public standard launch |
+| **11** | [Implementation Plan](11-implementation-plan.md) | Phased roadmap, acceptance criteria, repo layout | Reference implementation through certified release |
 | **12** | [Reference CLI Behavior Guide](12-reference-cli-behavior-guide.md) | Practical guidance for CLI maintainers | How to improve score and agent usability |
 | **13** | [Rust Runtime Engineering](13-rust-runtime-engineering.md) | Async recursive probing, bounded parallelism, Rust traits, memory discipline, error handling | Domain scheduler over Tokio, typed errors, deterministic convergence |
 | **14** | [Operational Contracts](14-operational-contracts.md) | Post-core hardening for cache reuse, adversarial targets, dependency policy, score governance, and reproducibility | Non-critical follow-up before public certification |
-| **15** | [Generic Inference Processor](15-generic-inference-processor.md) | Corrected framework-agnostic inference design: layout observations, candidate claims, Bayesian updates, confirmation probes | CLIARE on CLIARE uses the generic processor; Clap is not an inference assumption |
-| **16** | [Progress Scorecard](16-progress-scorecard.md) | Project delivery scorecard, MVP progress, next checkpoint | Current MVP estimate: 96% complete, 4% remaining |
+| **15** | [Generic Inference Processor](15-generic-inference-processor.md) | Framework-agnostic inference design: layout observations, candidate claims, Bayesian updates, confirmation probes | CLIARE on CLIARE uses the generic processor; Clap is not an inference assumption |
+| **16** | [Progress Scorecard](16-progress-scorecard.md) | Reference implementation progress and next checkpoint | Current implementation estimate: 97% complete, 3% remaining |
 | **17** | [Scoring Model and Bayesian Confidence](17-scoring-model-and-bayesian-confidence.md) | Current score v0 formulas, Bayesian claim confidence, calibration boundary, and model-governance path | v0 supports CI and improvement tracking; v1 requires public calibration before leaderboard certification |
 | **18** | [Calibration and Leaderboard Authority](18-calibration-and-leaderboard-authority.md) | Truth corpus, calibration metrics, certified profiles, provenance, anti-gaming, and leaderboard authority requirements | Public ranking requires calibrated models, stability reports, verification levels, and reproducible certified profiles |
+| **19** | [Runtime Evidence for Agent-Ready Command-Line Interfaces](19-runtime-evidence-for-agent-ready-clis.md) ([PDF](19-runtime-evidence-for-agent-ready-clis.pdf)) | Technical paper covering the motivation, architecture, inference model, score semantics, evaluation strategy, calibration boundary, and research agenda | CLI-agent-readiness should be measured from runtime evidence produced by the released executable |
 
 ---
 
@@ -190,7 +191,7 @@ CLIARE can use docs as weak evidence, but the reference implementation should wo
 
 ## Definition of Done for the Standard
 
-CLIARE becomes standard-worthy when:
+CLIARE is ready for certified public scoring when:
 
 1. Two independent implementations can consume and produce compatible `shape.json` and `scorecard.json`.
 2. A CLI maintainer can run CLIARE in CI without modiqo cloud access.
