@@ -52,6 +52,10 @@ pub struct MeasureArgs {
     /// Maximum probes to execute for this run.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PROBES)]
     pub max_probes: usize,
+
+    /// Ignore reusable artifacts and run probes again.
+    #[arg(long)]
+    pub refresh: bool,
 }
 
 impl MeasureArgs {
@@ -93,6 +97,10 @@ pub struct GuardArgs {
     /// Maximum probes to execute for this run.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PROBES)]
     pub max_probes: usize,
+
+    /// Ignore reusable artifacts and run probes again.
+    #[arg(long)]
+    pub refresh: bool,
 }
 
 impl From<&GuardArgs> for MeasureArgs {
@@ -104,6 +112,7 @@ impl From<&GuardArgs> for MeasureArgs {
             output_limit_bytes: args.output_limit_bytes,
             max_depth: args.max_depth,
             max_probes: args.max_probes,
+            refresh: args.refresh,
         }
     }
 }

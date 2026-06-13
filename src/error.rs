@@ -62,6 +62,30 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read measurement cache manifest {path}")]
+    ReadMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse measurement cache manifest {path}")]
+    ParseMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize measurement cache manifest")]
+    SerializeMeasurementCache(#[source] serde_json::Error),
+
+    #[error("failed to write measurement cache manifest {path}")]
+    WriteMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read baseline scorecard {path}")]
     ReadBaselineScorecard {
         path: PathBuf,

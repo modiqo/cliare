@@ -118,6 +118,53 @@ async fn clearer_cli_scores_higher_than_poor_cli() {
 }
 
 #[tokio::test]
+async fn measure_reuses_matching_cache_until_refresh_is_requested() {
+    let workspace = TempWorkspace::new("measure_reuses_matching_cache_until_refresh_is_requested");
+    let target = workspace.write_executable("fixture-cli", noisy_help_script());
+    let out = workspace.path().join("artifacts");
+
+    let first = cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: out.clone(),
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 32,
+        refresh: false,
+    })
+    .await
+    .expect("first measurement succeeds");
+    let second = cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: out.clone(),
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 32,
+        refresh: false,
+    })
+    .await
+    .expect("second measurement succeeds");
+    let refreshed = cliare::measure::measure(MeasureArgs {
+        target,
+        out,
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 32,
+        refresh: true,
+    })
+    .await
+    .expect("refreshed measurement succeeds");
+
+    assert!(!first.cache_hit);
+    assert!(second.cache_hit);
+    assert!(!refreshed.cache_hit);
+    assert_eq!(first.score_total, second.score_total);
+    assert!(second.terminal_summary().contains("cache: hit"));
+}
+
+#[tokio::test]
 async fn guard_passes_against_same_score_baseline() {
     let workspace = TempWorkspace::new("guard_passes_against_same_score_baseline");
     let target = workspace.write_executable("fixture-cli", noisy_help_script());
@@ -131,6 +178,7 @@ async fn guard_passes_against_same_score_baseline() {
         output_limit_bytes: 64 * 1024,
         max_depth: 2,
         max_probes: 32,
+        refresh: false,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -144,6 +192,7 @@ async fn guard_passes_against_same_score_baseline() {
         output_limit_bytes: 64 * 1024,
         max_depth: 2,
         max_probes: 32,
+        refresh: false,
     })
     .await
     .expect("guard measurement succeeds");
@@ -172,6 +221,7 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
         output_limit_bytes: 64 * 1024,
         max_depth: 2,
         max_probes: 16,
+        refresh: false,
     })
     .await
     .expect("guard measurement succeeds");
@@ -193,6 +243,7 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
         output_limit_bytes: 64 * 1024,
         max_depth: 2,
         max_probes,
+        refresh: false,
     })
     .await
     .expect("measurement succeeds");

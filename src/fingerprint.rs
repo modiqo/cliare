@@ -1,14 +1,14 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::fs::{self, File};
 use tokio::io::AsyncReadExt;
 
 use crate::error::{CliareError, Result};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct TargetFingerprint {
     pub requested: PathBuf,
     pub resolved: PathBuf,

@@ -296,6 +296,14 @@ Coverage pressure is now explicit rather than hidden inside the score:
 - `report.md` renders the budget pressure fields for CI artifacts and human review
 - score v0 does not directly penalize a CLI for being deep; it exposes budget pressure so callers can decide whether to rerun with a larger profile
 
+Measurement cache reuse is now implemented:
+
+- successful measurement writes `measure-cache.json`
+- cache matching requires the same target fingerprint, probe profile, CLIARE package version, and measurement engine
+- reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, and `report.md` to still exist
+- terminal summaries print `cache: hit` or `cache: miss`
+- `--refresh` bypasses cache reuse for both `measure` and `guard`
+
 ---
 
 ## Phase 5: Benchmark and Calibration

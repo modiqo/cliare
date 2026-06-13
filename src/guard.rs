@@ -171,8 +171,8 @@ mod tests {
             score_total,
             score_measured_weight: 0.9,
             score_max_weight: 1.0,
-            score_model: "cliare-score-v0",
-            score_status: "experimental partial",
+            score_model: "cliare-score-v0".to_owned(),
+            score_status: "experimental partial".to_owned(),
             findings: 0,
             observed_max_depth: 1,
             max_depth: 5,
@@ -181,6 +181,7 @@ mod tests {
             candidates_skipped_by_depth: 0,
             probes_skipped_by_budget: 0,
             budget_exhausted: false,
+            cache_hit: false,
         }
     }
 }

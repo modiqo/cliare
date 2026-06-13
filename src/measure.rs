@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+use tokio::fs;
+
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
-use crate::error::Result;
+use crate::error::{CliareError, Result};
 use crate::evidence::{
     EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled, ProcessCompleted, RunFinished,
     RunStarted,
@@ -17,6 +20,9 @@ use crate::process::{ProbeSpec, TargetProcess};
 use crate::score::{self, ScoreRunContext};
 use crate::shape;
 
+const MEASUREMENT_CACHE_SCHEMA_VERSION: &str = "cliare.measure-cache.v1";
+const MEASUREMENT_ENGINE: &str = "cliare-measure-v0";
+
 #[derive(Debug, Clone)]
 pub struct MeasurementSummary {
     pub target: TargetFingerprint,
@@ -28,8 +34,8 @@ pub struct MeasurementSummary {
     pub score_total: f64,
     pub score_measured_weight: f64,
     pub score_max_weight: f64,
-    pub score_model: &'static str,
-    pub score_status: &'static str,
+    pub score_model: String,
+    pub score_status: String,
     pub findings: usize,
     pub observed_max_depth: usize,
     pub max_depth: usize,
@@ -38,6 +44,7 @@ pub struct MeasurementSummary {
     pub candidates_skipped_by_depth: usize,
     pub probes_skipped_by_budget: usize,
     pub budget_exhausted: bool,
+    pub cache_hit: bool,
 }
 
 impl MeasurementSummary {
@@ -54,6 +61,7 @@ impl MeasurementSummary {
                 self.score_max_weight,
                 self.score_model
             ),
+            format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
             "coverage pressure:".to_owned(),
@@ -85,6 +93,14 @@ impl MeasurementSummary {
 
 pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let target = fingerprint_target(&args.target).await?;
+    let profile = ProbeProfile::from(&args);
+
+    if !args.refresh
+        && let Some(summary) = cached_summary(&args.out, &target, &profile).await?
+    {
+        return Ok(summary);
+    }
+
     let mut evidence = EvidenceWriter::create(&args.out).await?;
 
     evidence
@@ -155,7 +171,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let score_artifacts =
         score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
 
-    Ok(MeasurementSummary {
+    let summary = MeasurementSummary {
         target,
         probes_completed,
         evidence_path: args.out.join("evidence.jsonl"),
@@ -165,8 +181,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         score_total: score_artifacts.total,
         score_measured_weight: score_artifacts.measured_weight,
         score_max_weight: score_artifacts.max_weight,
-        score_model: score_artifacts.model,
-        score_status: score_artifacts.status,
+        score_model: score_artifacts.model.to_owned(),
+        score_status: score_artifacts.status.to_owned(),
         findings: score_artifacts.findings,
         observed_max_depth: score_artifacts.observed_max_depth,
         max_depth: score_artifacts.max_depth,
@@ -175,7 +191,175 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
         probes_skipped_by_budget: score_artifacts.probes_skipped_by_budget,
         budget_exhausted: score_artifacts.budget_exhausted,
-    })
+        cache_hit: false,
+    };
+    write_cache_manifest(&args.out, &summary, profile).await?;
+
+    Ok(summary)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+struct ProbeProfile {
+    timeout_ms: u64,
+    output_limit_bytes: usize,
+    max_depth: usize,
+    max_probes: usize,
+}
+
+impl From<&MeasureArgs> for ProbeProfile {
+    fn from(args: &MeasureArgs) -> Self {
+        Self {
+            timeout_ms: args.timeout_ms,
+            output_limit_bytes: args.output_limit_bytes,
+            max_depth: args.max_depth,
+            max_probes: args.max_probes,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct MeasurementCacheManifest {
+    schema_version: String,
+    cliare_version: String,
+    engine: String,
+    target: TargetFingerprint,
+    profile: ProbeProfile,
+    summary: CachedMeasurementSummary,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CachedMeasurementSummary {
+    probes_completed: usize,
+    score_total: f64,
+    score_measured_weight: f64,
+    score_max_weight: f64,
+    score_model: String,
+    score_status: String,
+    findings: usize,
+    observed_max_depth: usize,
+    max_depth: usize,
+    max_probes: usize,
+    frontier_remaining: usize,
+    candidates_skipped_by_depth: usize,
+    probes_skipped_by_budget: usize,
+    budget_exhausted: bool,
+}
+
+async fn cached_summary(
+    out_dir: &std::path::Path,
+    target: &TargetFingerprint,
+    profile: &ProbeProfile,
+) -> Result<Option<MeasurementSummary>> {
+    let path = out_dir.join("measure-cache.json");
+    let bytes = match fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(CliareError::ReadMeasurementCache { path, source });
+        }
+    };
+    let manifest: MeasurementCacheManifest =
+        serde_json::from_slice(&bytes).map_err(|source| CliareError::ParseMeasurementCache {
+            path: path.clone(),
+            source,
+        })?;
+
+    if !manifest.matches(target, profile) || !artifacts_exist(out_dir).await? {
+        return Ok(None);
+    }
+
+    Ok(Some(manifest.into_summary(out_dir)))
+}
+
+impl MeasurementCacheManifest {
+    fn matches(&self, target: &TargetFingerprint, profile: &ProbeProfile) -> bool {
+        self.schema_version == MEASUREMENT_CACHE_SCHEMA_VERSION
+            && self.cliare_version == env!("CARGO_PKG_VERSION")
+            && self.engine == MEASUREMENT_ENGINE
+            && &self.target == target
+            && &self.profile == profile
+    }
+
+    fn into_summary(self, out_dir: &std::path::Path) -> MeasurementSummary {
+        MeasurementSummary {
+            target: self.target,
+            probes_completed: self.summary.probes_completed,
+            evidence_path: out_dir.join("evidence.jsonl"),
+            shape_path: out_dir.join("shape.json"),
+            scorecard_path: out_dir.join("scorecard.json"),
+            report_path: out_dir.join("report.md"),
+            score_total: self.summary.score_total,
+            score_measured_weight: self.summary.score_measured_weight,
+            score_max_weight: self.summary.score_max_weight,
+            score_model: self.summary.score_model,
+            score_status: self.summary.score_status,
+            findings: self.summary.findings,
+            observed_max_depth: self.summary.observed_max_depth,
+            max_depth: self.summary.max_depth,
+            max_probes: self.summary.max_probes,
+            frontier_remaining: self.summary.frontier_remaining,
+            candidates_skipped_by_depth: self.summary.candidates_skipped_by_depth,
+            probes_skipped_by_budget: self.summary.probes_skipped_by_budget,
+            budget_exhausted: self.summary.budget_exhausted,
+            cache_hit: true,
+        }
+    }
+}
+
+async fn artifacts_exist(out_dir: &std::path::Path) -> Result<bool> {
+    for name in [
+        "evidence.jsonl",
+        "shape.json",
+        "scorecard.json",
+        "report.md",
+    ] {
+        let path = out_dir.join(name);
+        match fs::metadata(&path).await {
+            Ok(metadata) if metadata.is_file() => {}
+            Ok(_) => return Ok(false),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(source) => {
+                return Err(CliareError::ReadMeasurementCache { path, source });
+            }
+        }
+    }
+    Ok(true)
+}
+
+async fn write_cache_manifest(
+    out_dir: &std::path::Path,
+    summary: &MeasurementSummary,
+    profile: ProbeProfile,
+) -> Result<()> {
+    let path = out_dir.join("measure-cache.json");
+    let manifest = MeasurementCacheManifest {
+        schema_version: MEASUREMENT_CACHE_SCHEMA_VERSION.to_owned(),
+        cliare_version: env!("CARGO_PKG_VERSION").to_owned(),
+        engine: MEASUREMENT_ENGINE.to_owned(),
+        target: summary.target.clone(),
+        profile,
+        summary: CachedMeasurementSummary {
+            probes_completed: summary.probes_completed,
+            score_total: summary.score_total,
+            score_measured_weight: summary.score_measured_weight,
+            score_max_weight: summary.score_max_weight,
+            score_model: summary.score_model.to_owned(),
+            score_status: summary.score_status.to_owned(),
+            findings: summary.findings,
+            observed_max_depth: summary.observed_max_depth,
+            max_depth: summary.max_depth,
+            max_probes: summary.max_probes,
+            frontier_remaining: summary.frontier_remaining,
+            candidates_skipped_by_depth: summary.candidates_skipped_by_depth,
+            probes_skipped_by_budget: summary.probes_skipped_by_budget,
+            budget_exhausted: summary.budget_exhausted,
+        },
+    };
+    let bytes =
+        serde_json::to_vec_pretty(&manifest).map_err(CliareError::SerializeMeasurementCache)?;
+    fs::write(&path, bytes)
+        .await
+        .map_err(|source| CliareError::WriteMeasurementCache { path, source })
 }
 
 fn bootstrap_probes(target: &TargetFingerprint) -> Vec<ProbeSpec> {
@@ -258,8 +442,8 @@ mod tests {
             score_total: 82.4,
             score_measured_weight: 0.9,
             score_max_weight: 1.0,
-            score_model: "cliare-score-v0",
-            score_status: "experimental partial",
+            score_model: "cliare-score-v0".to_owned(),
+            score_status: "experimental partial".to_owned(),
             findings: 2,
             observed_max_depth: 1,
             max_depth: 5,
@@ -268,12 +452,14 @@ mod tests {
             candidates_skipped_by_depth: 0,
             probes_skipped_by_budget: 0,
             budget_exhausted: false,
+            cache_hit: false,
         };
 
         let text = summary.terminal_summary();
 
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
+        assert!(text.contains("cache: miss"));
         assert!(text.contains("depth: observed 1 / budget 5"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
