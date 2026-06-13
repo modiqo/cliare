@@ -66,7 +66,7 @@ async fn write_ci_summary(
     writeln!(&mut text).expect("writing to string cannot fail");
     writeln!(
         &mut text,
-        "| Field | Value |\n|---|---:|\n| Target | `{}` |\n| Resolved | `{}` |\n| Score | {:.1}/100 |\n| Status | `{}` |\n| Findings | {} |\n| Commands discovered | {} |\n| Runtime-confirmed commands | {} |\n| Machine-readable outputs | {} |\n| Output parse successes | {} |\n| Side-effect file changes | {} |\n| Credential-like side effects | {} |\n| Traversal complete | {} |",
+        "| Field | Value |\n|---|---:|\n| Target | `{}` |\n| Resolved | `{}` |\n| Score | {:.1}/100 |\n| Status | `{}` |\n| Findings | {} |\n| Commands discovered | {} |\n| Runtime-confirmed commands | {} |\n| Concurrency limit | {} |\n| Scheduler rounds | {} |\n| Probes scheduled | {} |\n| Machine-readable outputs | {} |\n| Output parse successes | {} |\n| Side-effect file changes | {} |\n| Credential-like side effects | {} |\n| Traversal complete | {} |",
         markdown_escape(&scorecard.target.requested),
         markdown_escape(&scorecard.target.resolved),
         scorecard.score.total,
@@ -74,6 +74,9 @@ async fn write_ci_summary(
         scorecard.findings.len(),
         scorecard.coverage.commands_discovered,
         scorecard.coverage.commands_runtime_confirmed,
+        scorecard.coverage.concurrency_limit,
+        scorecard.coverage.traversal_rounds,
+        scorecard.coverage.probes_scheduled,
         scorecard.coverage.machine_readable_output_contracts,
         scorecard.coverage.output_mode_parse_successes,
         scorecard.coverage.side_effect_files_total,
@@ -451,6 +454,9 @@ struct CiDimensionScore {
 struct CiCoverage {
     commands_discovered: usize,
     commands_runtime_confirmed: usize,
+    concurrency_limit: usize,
+    traversal_rounds: usize,
+    probes_scheduled: usize,
     machine_readable_output_contracts: usize,
     output_mode_parse_successes: usize,
     side_effect_files_total: usize,

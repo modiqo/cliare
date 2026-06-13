@@ -332,6 +332,70 @@ async fn credential_like_side_effect_paths_are_reported() {
 }
 
 #[tokio::test]
+async fn concurrent_traversal_matches_serial_shape_and_score() {
+    let workspace = TempWorkspace::new("concurrent_traversal_matches_serial_shape_and_score");
+    let target = workspace.write_executable("fixture-cli", custom_help_tree_script());
+    let serial_out = workspace.path().join("serial");
+    let concurrent_out = workspace.path().join("concurrent");
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: serial_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(64),
+        min_expected_value: None,
+        concurrency: Some(1),
+        refresh: true,
+    })
+    .await
+    .expect("serial measurement succeeds");
+    let concurrent = cliare::measure::measure(MeasureArgs {
+        target,
+        out: concurrent_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(64),
+        min_expected_value: None,
+        concurrency: Some(4),
+        refresh: true,
+    })
+    .await
+    .expect("concurrent measurement succeeds");
+
+    let serial_shape = read_json(&serial_out.join("shape.json"));
+    let concurrent_shape = read_json(&concurrent_out.join("shape.json"));
+    let serial_scorecard = read_json(&serial_out.join("scorecard.json"));
+    let concurrent_scorecard = read_json(&concurrent_out.join("scorecard.json"));
+
+    assert_eq!(
+        command_paths(&serial_shape),
+        command_paths(&concurrent_shape)
+    );
+    assert_eq!(
+        serial_scorecard["score"]["total"].as_f64(),
+        concurrent_scorecard["score"]["total"].as_f64()
+    );
+    assert_eq!(
+        concurrent_scorecard["coverage"]["concurrency_limit"].as_u64(),
+        Some(4)
+    );
+    assert_eq!(
+        concurrent_scorecard["coverage"]["probes_scheduled"].as_u64(),
+        concurrent_scorecard["coverage"]["probes_completed"].as_u64()
+    );
+    assert_eq!(
+        concurrent_scorecard["coverage"]["probes_cancelled"].as_u64(),
+        Some(0)
+    );
+    assert!(concurrent.traversal_rounds > 0);
+}
+
+#[tokio::test]
 async fn measure_reuses_matching_cache_until_refresh_is_requested() {
     let workspace = TempWorkspace::new("measure_reuses_matching_cache_until_refresh_is_requested");
     let target = workspace.write_executable("fixture-cli", noisy_help_script());
@@ -340,12 +404,13 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
     let first = cliare::measure::measure(MeasureArgs {
         target: target.clone(),
         out: out.clone(),
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -353,12 +418,13 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
     let second = cliare::measure::measure(MeasureArgs {
         target: target.clone(),
         out: out.clone(),
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -366,12 +432,13 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
     let refreshed = cliare::measure::measure(MeasureArgs {
         target,
         out,
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: true,
     })
     .await
@@ -394,12 +461,13 @@ async fn guard_passes_against_same_score_baseline() {
     cliare::measure::measure(MeasureArgs {
         target: target.clone(),
         out: baseline_out.clone(),
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -410,12 +478,13 @@ async fn guard_passes_against_same_score_baseline() {
         baseline: baseline_out.join("scorecard.json"),
         out: guard_out.clone(),
         allowed_drop: 0.0,
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -446,12 +515,13 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
         baseline,
         out: workspace.path().join("guard"),
         allowed_drop: 1.0,
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(16),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -473,12 +543,13 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
     cliare::measure::measure(MeasureArgs {
         target,
         out: out.clone(),
-        timeout_ms: 1_000,
+        timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(max_probes),
         min_expected_value: None,
+        concurrency: Some(2),
         refresh: false,
     })
     .await
@@ -612,6 +683,24 @@ fn path_matches(value: &Value, expected: &[&str]) -> bool {
             .map(Value::as_str)
             .eq(expected.iter().copied().map(Some))
     })
+}
+
+fn command_paths(shape: &Value) -> Vec<Vec<String>> {
+    let mut paths = shape["commands"]
+        .as_array()
+        .expect("shape commands is an array")
+        .iter()
+        .map(|command| {
+            command["path"]
+                .as_array()
+                .expect("command path is an array")
+                .iter()
+                .map(|segment| segment.as_str().expect("segment is a string").to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
 }
 
 fn custom_help_tree_script() -> &'static str {

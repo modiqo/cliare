@@ -67,84 +67,29 @@ pub struct Sandbox {
 impl Sandbox {
     pub async fn create(out_dir: &Path) -> Result<Self> {
         let root = out_dir.join("sandbox");
-        let home = root.join("home");
-        let workdir = root.join("cwd");
-        let xdg_config_home = root.join("xdg-config");
-        let xdg_cache_home = root.join("xdg-cache");
-        let xdg_data_home = root.join("xdg-data");
-        let tmp = root.join("tmp");
-
-        for path in [
-            &home,
-            &workdir,
-            &xdg_config_home,
-            &xdg_cache_home,
-            &xdg_data_home,
-            &tmp,
-        ] {
-            fs::create_dir_all(path)
+        if fs::metadata(&root).await.is_ok() {
+            fs::remove_dir_all(&root)
                 .await
-                .map_err(|source| CliareError::CreateSandboxDir {
-                    path: path.to_path_buf(),
+                .map_err(|source| CliareError::ClearSandboxDir {
+                    path: root.clone(),
                     source,
                 })?;
         }
+        let paths = SandboxPaths::new(root.clone());
+        create_execution_dirs(&paths).await?;
 
-        let mut env = BTreeMap::new();
-        env.insert("CI".to_owned(), "1".to_owned());
-        env.insert("CLIARE".to_owned(), "1".to_owned());
-        env.insert("HOME".to_owned(), home.display().to_string());
-        env.insert("NO_COLOR".to_owned(), "1".to_owned());
-        env.insert("PWD".to_owned(), workdir.display().to_string());
-        env.insert("TEMP".to_owned(), tmp.display().to_string());
-        env.insert("TERM".to_owned(), "dumb".to_owned());
-        env.insert("TMP".to_owned(), tmp.display().to_string());
-        env.insert("TMPDIR".to_owned(), tmp.display().to_string());
-        env.insert(
-            "XDG_CACHE_HOME".to_owned(),
-            xdg_cache_home.display().to_string(),
-        );
-        env.insert(
-            "XDG_CONFIG_HOME".to_owned(),
-            xdg_config_home.display().to_string(),
-        );
-        env.insert(
-            "XDG_DATA_HOME".to_owned(),
-            xdg_data_home.display().to_string(),
-        );
-
-        match std::env::var("PATH") {
-            Ok(path) if !path.is_empty() => {
-                env.insert("PATH".to_owned(), path);
-            }
-            _ => {
-                env.insert(
-                    "PATH".to_owned(),
-                    "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_owned(),
-                );
-            }
-        }
-        if let Ok(lang) = std::env::var("LANG")
-            && !lang.is_empty()
-        {
-            env.insert("LANG".to_owned(), lang);
-        }
-        if let Ok(locale) = std::env::var("LC_ALL")
-            && !locale.is_empty()
-        {
-            env.insert("LC_ALL".to_owned(), locale);
-        }
+        let env = sandbox_env(&paths);
 
         let env_keys = env.keys().cloned().collect();
         let metadata = SandboxMetadata {
             profile: SandboxProfile::Isolated,
             root,
-            home,
-            workdir,
-            xdg_config_home,
-            xdg_cache_home,
-            xdg_data_home,
-            tmp,
+            home: paths.home,
+            workdir: paths.workdir,
+            xdg_config_home: paths.xdg_config_home,
+            xdg_cache_home: paths.xdg_cache_home,
+            xdg_data_home: paths.xdg_data_home,
+            tmp: paths.tmp,
             env_policy: EnvPolicy::ClearedWithAllowlist,
             env_keys,
         };
@@ -157,25 +102,16 @@ impl Sandbox {
     }
 
     pub fn execution(&self) -> ProcessSandbox {
-        ProcessSandbox {
-            root: self.metadata.root.clone(),
-            cwd: self.metadata.workdir.clone(),
-            env: self.env.clone(),
-            regions: vec![
-                SandboxRegionRoot::new(SandboxRegion::Home, self.metadata.home.clone()),
-                SandboxRegionRoot::new(SandboxRegion::Workdir, self.metadata.workdir.clone()),
-                SandboxRegionRoot::new(
-                    SandboxRegion::XdgConfig,
-                    self.metadata.xdg_config_home.clone(),
-                ),
-                SandboxRegionRoot::new(
-                    SandboxRegion::XdgCache,
-                    self.metadata.xdg_cache_home.clone(),
-                ),
-                SandboxRegionRoot::new(SandboxRegion::XdgData, self.metadata.xdg_data_home.clone()),
-                SandboxRegionRoot::new(SandboxRegion::Tmp, self.metadata.tmp.clone()),
-            ],
-        }
+        process_sandbox(
+            SandboxPaths::from_metadata(&self.metadata),
+            self.env.clone(),
+        )
+    }
+
+    pub async fn execution_for_probe(&self, probe_id: &str) -> Result<ProcessSandbox> {
+        let paths = SandboxPaths::new(self.metadata.root.join("probes").join(probe_id));
+        create_execution_dirs(&paths).await?;
+        Ok(process_sandbox(paths.clone(), sandbox_env(&paths)))
     }
 
     pub fn probe_evidence(&self) -> ProbeSandboxEvidence {
@@ -186,6 +122,136 @@ impl Sandbox {
             env_keys: self.metadata.env_keys.clone(),
         }
     }
+
+    pub fn probe_evidence_for(&self, execution: &ProcessSandbox) -> ProbeSandboxEvidence {
+        ProbeSandboxEvidence {
+            profile: self.metadata.profile,
+            cwd: execution.cwd.clone(),
+            env_policy: self.metadata.env_policy,
+            env_keys: self.metadata.env_keys.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SandboxPaths {
+    root: PathBuf,
+    home: PathBuf,
+    workdir: PathBuf,
+    xdg_config_home: PathBuf,
+    xdg_cache_home: PathBuf,
+    xdg_data_home: PathBuf,
+    tmp: PathBuf,
+}
+
+impl SandboxPaths {
+    fn new(root: PathBuf) -> Self {
+        Self {
+            home: root.join("home"),
+            workdir: root.join("cwd"),
+            xdg_config_home: root.join("xdg-config"),
+            xdg_cache_home: root.join("xdg-cache"),
+            xdg_data_home: root.join("xdg-data"),
+            tmp: root.join("tmp"),
+            root,
+        }
+    }
+
+    fn from_metadata(metadata: &SandboxMetadata) -> Self {
+        Self {
+            root: metadata.root.clone(),
+            home: metadata.home.clone(),
+            workdir: metadata.workdir.clone(),
+            xdg_config_home: metadata.xdg_config_home.clone(),
+            xdg_cache_home: metadata.xdg_cache_home.clone(),
+            xdg_data_home: metadata.xdg_data_home.clone(),
+            tmp: metadata.tmp.clone(),
+        }
+    }
+}
+
+async fn create_execution_dirs(paths: &SandboxPaths) -> Result<()> {
+    for path in [
+        &paths.home,
+        &paths.workdir,
+        &paths.xdg_config_home,
+        &paths.xdg_cache_home,
+        &paths.xdg_data_home,
+        &paths.tmp,
+    ] {
+        fs::create_dir_all(path)
+            .await
+            .map_err(|source| CliareError::CreateSandboxDir {
+                path: path.to_path_buf(),
+                source,
+            })?;
+    }
+    Ok(())
+}
+
+fn process_sandbox(paths: SandboxPaths, env: BTreeMap<String, String>) -> ProcessSandbox {
+    ProcessSandbox {
+        root: paths.root,
+        cwd: paths.workdir.clone(),
+        env,
+        regions: vec![
+            SandboxRegionRoot::new(SandboxRegion::Home, paths.home),
+            SandboxRegionRoot::new(SandboxRegion::Workdir, paths.workdir),
+            SandboxRegionRoot::new(SandboxRegion::XdgConfig, paths.xdg_config_home),
+            SandboxRegionRoot::new(SandboxRegion::XdgCache, paths.xdg_cache_home),
+            SandboxRegionRoot::new(SandboxRegion::XdgData, paths.xdg_data_home),
+            SandboxRegionRoot::new(SandboxRegion::Tmp, paths.tmp),
+        ],
+    }
+}
+
+fn sandbox_env(paths: &SandboxPaths) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
+    env.insert("CI".to_owned(), "1".to_owned());
+    env.insert("CLIARE".to_owned(), "1".to_owned());
+    env.insert("HOME".to_owned(), paths.home.display().to_string());
+    env.insert("NO_COLOR".to_owned(), "1".to_owned());
+    env.insert("PWD".to_owned(), paths.workdir.display().to_string());
+    env.insert("TEMP".to_owned(), paths.tmp.display().to_string());
+    env.insert("TERM".to_owned(), "dumb".to_owned());
+    env.insert("TMP".to_owned(), paths.tmp.display().to_string());
+    env.insert("TMPDIR".to_owned(), paths.tmp.display().to_string());
+    env.insert(
+        "XDG_CACHE_HOME".to_owned(),
+        paths.xdg_cache_home.display().to_string(),
+    );
+    env.insert(
+        "XDG_CONFIG_HOME".to_owned(),
+        paths.xdg_config_home.display().to_string(),
+    );
+    env.insert(
+        "XDG_DATA_HOME".to_owned(),
+        paths.xdg_data_home.display().to_string(),
+    );
+
+    match std::env::var("PATH") {
+        Ok(path) if !path.is_empty() => {
+            env.insert("PATH".to_owned(), path);
+        }
+        _ => {
+            env.insert(
+                "PATH".to_owned(),
+                "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_owned(),
+            );
+        }
+    }
+    if let Ok(lang) = std::env::var("LANG")
+        && !lang.is_empty()
+    {
+        env.insert("LANG".to_owned(), lang);
+    }
+    if let Ok(locale) = std::env::var("LC_ALL")
+        && !locale.is_empty()
+    {
+        env.insert("LC_ALL".to_owned(), locale);
+    }
+
+    env
 }
 
 #[derive(Debug, Clone)]

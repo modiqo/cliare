@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use tokio::fs;
+use tokio::task::JoinHandle;
 
 use crate::ci::{self, CiArtifactSummary};
 use crate::claims::ClaimSet;
@@ -62,6 +63,10 @@ pub struct MeasurementSummary {
     pub max_depth: usize,
     pub max_probes: usize,
     pub min_expected_value: u16,
+    pub concurrency_limit: usize,
+    pub traversal_rounds: usize,
+    pub probes_scheduled: usize,
+    pub probes_cancelled: usize,
     pub frontier_remaining: usize,
     pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
@@ -131,6 +136,10 @@ impl MeasurementSummary {
                 self.probes_completed, self.max_probes
             ),
             format!("  min expected value: {}", self.min_expected_value),
+            format!("  concurrency limit: {}", self.concurrency_limit),
+            format!("  scheduler rounds: {}", self.traversal_rounds),
+            format!("  probes scheduled: {}", self.probes_scheduled),
+            format!("  probes cancelled: {}", self.probes_cancelled),
             format!("  frontier remaining: {}", self.frontier_remaining),
             format!(
                 "  highest pending expected value: {}",
@@ -168,11 +177,13 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let max_depth = args.resolved_max_depth();
     let max_probes = args.resolved_max_probes();
     let min_expected_value = args.resolved_min_expected_value();
+    let concurrency_limit = args.resolved_concurrency();
     let profile = ProbeProfile::from_args(
         &args,
         max_depth,
         max_probes,
         min_expected_value,
+        concurrency_limit,
         crate::sandbox::SandboxProfile::Isolated.label(),
     );
 
@@ -204,57 +215,37 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         target.resolved.clone(),
         args.timeout(),
         args.output_limit_bytes,
-        sandbox.execution(),
     );
-    let mut observations = Vec::new();
-    let mut probes_completed = 0_usize;
-
-    while probes_completed < max_probes {
-        let Some(probe) = planner.next() else {
-            break;
-        };
-        probes_completed += 1;
-
-        let probe_id = format!("p_{:06}", probes_completed);
-        evidence
-            .append(EvidenceKind::ProbeScheduled(ProbeScheduled {
-                probe_id: probe_id.clone(),
-                argv: probe.argv(&target.resolved),
-                path: probe.path.clone(),
-                intent: probe.intent,
-                sandbox: sandbox.probe_evidence(),
-            }))
-            .await?;
-
-        let intent = probe.intent;
-        let path = probe.path.clone();
-        let outcome = process.run(&probe).await?;
-        let completed = ProcessCompleted::from_outcome(probe_id, outcome);
-        let event_id = evidence
-            .append(EvidenceKind::ProcessCompleted(completed.clone()))
-            .await?;
-
-        observations.push(ShapeObservation {
-            evidence_id: event_id,
-            intent,
-            path,
-            process: completed,
-        });
-
-        let claims = ClaimSet::from_observations(&binary_name, &observations);
-        planner.extend_from_claims(&claims);
-    }
+    let traversal = run_traversal(TraversalContext {
+        target: &target,
+        sandbox: &sandbox,
+        process: &process,
+        evidence: &mut evidence,
+        planner: &mut planner,
+        binary_name: &binary_name,
+        limits: TraversalLimits {
+            max_probes,
+            concurrency_limit,
+        },
+    })
+    .await?;
 
     evidence
-        .append(EvidenceKind::RunFinished(RunFinished { probes_completed }))
+        .append(EvidenceKind::RunFinished(RunFinished {
+            probes_completed: traversal.probes_completed,
+        }))
         .await?;
 
-    shape::write_shape(&args.out, target.clone(), &observations).await?;
+    shape::write_shape(&args.out, target.clone(), &traversal.observations).await?;
     let planner_stats = planner.stats();
     let run_context = ScoreRunContext {
         max_depth: planner_stats.max_depth,
         max_probes,
         min_expected_value: planner_stats.min_expected_value,
+        concurrency_limit,
+        traversal_rounds: traversal.rounds,
+        probes_scheduled: traversal.probes_scheduled,
+        probes_cancelled: traversal.probes_cancelled,
         traversal_profile: args.profile.label(),
         frontier_remaining: planner_stats.frontier_remaining,
         highest_pending_expected_value: planner_stats.highest_pending_expected_value,
@@ -262,13 +253,18 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         candidates_skipped_by_convergence: planner_stats.candidates_skipped_by_convergence,
         sandbox: score::SandboxScoreContext::from(sandbox.metadata()),
     };
-    let score_artifacts =
-        score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
+    let score_artifacts = score::write_score_artifacts(
+        &args.out,
+        target.clone(),
+        &traversal.observations,
+        run_context,
+    )
+    .await?;
     let ci_artifacts = ci::write_ci_artifacts(&args.out, None).await?;
 
     let summary = MeasurementSummary {
         target,
-        probes_completed,
+        probes_completed: traversal.probes_completed,
         evidence_path: args.out.join("evidence.jsonl"),
         shape_path: args.out.join("shape.json"),
         scorecard_path: score_artifacts.scorecard_path,
@@ -302,6 +298,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         max_depth: score_artifacts.max_depth,
         max_probes: score_artifacts.max_probes,
         min_expected_value: score_artifacts.min_expected_value,
+        concurrency_limit: score_artifacts.concurrency_limit,
+        traversal_rounds: score_artifacts.traversal_rounds,
+        probes_scheduled: score_artifacts.probes_scheduled,
+        probes_cancelled: score_artifacts.probes_cancelled,
         frontier_remaining: score_artifacts.frontier_remaining,
         highest_pending_expected_value: score_artifacts.highest_pending_expected_value,
         candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
@@ -317,6 +317,127 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     Ok(summary)
 }
 
+#[derive(Debug)]
+struct TraversalRun {
+    observations: Vec<ShapeObservation>,
+    probes_scheduled: usize,
+    probes_completed: usize,
+    probes_cancelled: usize,
+    rounds: usize,
+}
+
+#[derive(Debug)]
+struct ScheduledProbe {
+    probe_id: String,
+    probe: ProbeSpec,
+    handle: JoinHandle<Result<crate::process::ProbeOutcome>>,
+}
+
+struct TraversalContext<'a> {
+    target: &'a TargetFingerprint,
+    sandbox: &'a Sandbox,
+    process: &'a TargetProcess,
+    evidence: &'a mut EvidenceWriter,
+    planner: &'a mut DeterministicPlanner,
+    binary_name: &'a str,
+    limits: TraversalLimits,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TraversalLimits {
+    max_probes: usize,
+    concurrency_limit: usize,
+}
+
+async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
+    let mut observations = Vec::new();
+    let mut probes_scheduled = 0_usize;
+    let mut probes_completed = 0_usize;
+    let mut rounds = 0_usize;
+
+    loop {
+        let mut round = Vec::new();
+        while round.len() < context.limits.concurrency_limit
+            && probes_scheduled < context.limits.max_probes
+        {
+            let Some(probe) = context.planner.next() else {
+                break;
+            };
+            probes_scheduled += 1;
+            let probe_id = format!("p_{:06}", probes_scheduled);
+            let execution = context.sandbox.execution_for_probe(&probe_id).await?;
+
+            context
+                .evidence
+                .append(EvidenceKind::ProbeScheduled(ProbeScheduled {
+                    probe_id: probe_id.clone(),
+                    argv: probe.argv(&context.target.resolved),
+                    path: probe.path.clone(),
+                    intent: probe.intent,
+                    sandbox: context.sandbox.probe_evidence_for(&execution),
+                }))
+                .await?;
+
+            let process = context.process.clone();
+            let task_probe = probe.clone();
+            let handle = tokio::spawn(async move { process.run(&task_probe, execution).await });
+            round.push(ScheduledProbe {
+                probe_id,
+                probe,
+                handle,
+            });
+        }
+
+        if round.is_empty() {
+            break;
+        }
+        rounds += 1;
+
+        let mut round_error = None;
+        for scheduled in round {
+            let outcome = match scheduled.handle.await {
+                Ok(Ok(outcome)) => outcome,
+                Ok(Err(error)) => {
+                    round_error.get_or_insert(error);
+                    continue;
+                }
+                Err(error) => {
+                    round_error.get_or_insert(CliareError::Join(error));
+                    continue;
+                }
+            };
+            probes_completed += 1;
+            let completed = ProcessCompleted::from_outcome(scheduled.probe_id, outcome);
+            let event_id = context
+                .evidence
+                .append(EvidenceKind::ProcessCompleted(completed.clone()))
+                .await?;
+
+            observations.push(ShapeObservation {
+                evidence_id: event_id,
+                intent: scheduled.probe.intent,
+                path: scheduled.probe.path,
+                process: completed,
+            });
+
+            let claims = ClaimSet::from_observations(context.binary_name, &observations);
+            context.planner.extend_from_claims(&claims);
+        }
+
+        if let Some(error) = round_error {
+            return Err(error);
+        }
+    }
+
+    Ok(TraversalRun {
+        observations,
+        probes_scheduled,
+        probes_completed,
+        probes_cancelled: probes_scheduled.saturating_sub(probes_completed),
+        rounds,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct ProbeProfile {
     traversal_profile: crate::cli::TraversalProfile,
@@ -326,6 +447,8 @@ struct ProbeProfile {
     max_depth: usize,
     max_probes: usize,
     min_expected_value: u16,
+    #[serde(default)]
+    concurrency_limit: usize,
 }
 
 impl ProbeProfile {
@@ -334,6 +457,7 @@ impl ProbeProfile {
         max_depth: usize,
         max_probes: usize,
         min_expected_value: u16,
+        concurrency_limit: usize,
         sandbox_profile: &str,
     ) -> Self {
         Self {
@@ -344,6 +468,7 @@ impl ProbeProfile {
             max_depth,
             max_probes,
             min_expected_value,
+            concurrency_limit,
         }
     }
 }
@@ -387,6 +512,14 @@ struct CachedMeasurementSummary {
     max_depth: usize,
     max_probes: usize,
     min_expected_value: u16,
+    #[serde(default)]
+    concurrency_limit: usize,
+    #[serde(default)]
+    traversal_rounds: usize,
+    #[serde(default)]
+    probes_scheduled: usize,
+    #[serde(default)]
+    probes_cancelled: usize,
     frontier_remaining: usize,
     highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
@@ -469,6 +602,10 @@ impl MeasurementCacheManifest {
             max_depth: self.summary.max_depth,
             max_probes: self.summary.max_probes,
             min_expected_value: self.summary.min_expected_value,
+            concurrency_limit: self.summary.concurrency_limit,
+            traversal_rounds: self.summary.traversal_rounds,
+            probes_scheduled: self.summary.probes_scheduled,
+            probes_cancelled: self.summary.probes_cancelled,
             frontier_remaining: self.summary.frontier_remaining,
             highest_pending_expected_value: self.summary.highest_pending_expected_value,
             candidates_skipped_by_depth: self.summary.candidates_skipped_by_depth,
@@ -545,6 +682,10 @@ async fn write_cache_manifest(
             max_depth: summary.max_depth,
             max_probes: summary.max_probes,
             min_expected_value: summary.min_expected_value,
+            concurrency_limit: summary.concurrency_limit,
+            traversal_rounds: summary.traversal_rounds,
+            probes_scheduled: summary.probes_scheduled,
+            probes_cancelled: summary.probes_cancelled,
             frontier_remaining: summary.frontier_remaining,
             highest_pending_expected_value: summary.highest_pending_expected_value,
             candidates_skipped_by_depth: summary.candidates_skipped_by_depth,
@@ -671,6 +812,10 @@ mod tests {
             max_depth: 5,
             max_probes: 256,
             min_expected_value: 150,
+            concurrency_limit: 4,
+            traversal_rounds: 2,
+            probes_scheduled: 7,
+            probes_cancelled: 0,
             frontier_remaining: 0,
             highest_pending_expected_value: None,
             candidates_skipped_by_depth: 0,
@@ -695,6 +840,10 @@ mod tests {
         assert!(text.contains("env policy: cleared_with_allowlist"));
         assert!(text.contains("depth: observed 1 / budget 5"));
         assert!(text.contains("min expected value: 150"));
+        assert!(text.contains("concurrency limit: 4"));
+        assert!(text.contains("scheduler rounds: 2"));
+        assert!(text.contains("probes scheduled: 7"));
+        assert!(text.contains("probes cancelled: 0"));
         assert!(text.contains("stop reason: converged"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
@@ -718,11 +867,11 @@ mod tests {
             &target,
             r#"#!/bin/sh
 case "$HOME" in
-  */sandbox/home) ;;
+  */sandbox/probes/*/home) ;;
   *) echo "unexpected HOME: $HOME" >&2; exit 99 ;;
 esac
 case "$PWD" in
-  */sandbox/cwd) ;;
+  */sandbox/probes/*/cwd) ;;
   *) echo "unexpected PWD: $PWD" >&2; exit 98 ;;
 esac
 printf ok > "$HOME/home-marker"
@@ -748,12 +897,13 @@ EOF
         let summary = super::measure(MeasureArgs {
             target,
             out: out_dir.clone(),
-            timeout_ms: 1_000,
+            timeout_ms: 5_000,
             output_limit_bytes: 16 * 1024,
             profile: TraversalProfile::Quick,
             max_depth: Some(1),
             max_probes: Some(1),
             min_expected_value: Some(1),
+            concurrency: None,
             refresh: true,
         })
         .await
@@ -761,8 +911,16 @@ EOF
 
         assert_eq!(summary.sandbox_profile, "isolated");
         assert_eq!(summary.sandbox_env_policy, "cleared_with_allowlist");
-        assert!(out_dir.join("sandbox/home/home-marker").is_file());
-        assert!(out_dir.join("sandbox/cwd/cwd-marker").is_file());
+        assert!(
+            out_dir
+                .join("sandbox/probes/p_000001/home/home-marker")
+                .is_file()
+        );
+        assert!(
+            out_dir
+                .join("sandbox/probes/p_000001/cwd/cwd-marker")
+                .is_file()
+        );
         assert!(!root.join("home-marker").exists());
 
         let _ = fs::remove_dir_all(root);

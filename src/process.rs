@@ -101,34 +101,27 @@ pub struct TargetProcess {
     target: PathBuf,
     timeout: Duration,
     output_limit_bytes: usize,
-    sandbox: ProcessSandbox,
 }
 
 impl TargetProcess {
-    pub fn new(
-        target: PathBuf,
-        timeout: Duration,
-        output_limit_bytes: usize,
-        sandbox: ProcessSandbox,
-    ) -> Self {
+    pub fn new(target: PathBuf, timeout: Duration, output_limit_bytes: usize) -> Self {
         Self {
             target,
             timeout,
             output_limit_bytes,
-            sandbox,
         }
     }
 
-    pub async fn run(&self, probe: &ProbeSpec) -> Result<ProbeOutcome> {
+    pub async fn run(&self, probe: &ProbeSpec, sandbox: ProcessSandbox) -> Result<ProbeOutcome> {
         let started = Instant::now();
         let argv = self.argv(probe);
-        let before_side_effects = self.sandbox.snapshot().await?;
+        let before_side_effects = sandbox.snapshot().await?;
         let mut command = Command::new(&self.target);
         command
             .args(&probe.args)
-            .current_dir(&self.sandbox.cwd)
+            .current_dir(&sandbox.cwd)
             .env_clear()
-            .envs(&self.sandbox.env)
+            .envs(&sandbox.env)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -162,7 +155,7 @@ impl TargetProcess {
 
         let stdout = stdout_task.await.map_err(CliareError::Join)??;
         let stderr = stderr_task.await.map_err(CliareError::Join)??;
-        let after_side_effects = self.sandbox.snapshot().await?;
+        let after_side_effects = sandbox.snapshot().await?;
         let side_effects = before_side_effects.diff(&after_side_effects);
 
         Ok(ProbeOutcome {

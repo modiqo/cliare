@@ -298,20 +298,23 @@ The current implementation includes guard mode and CI artifacts:
 - The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads the artifact directory, appends `summary.md` to `$GITHUB_STEP_SUMMARY`, and exposes score/output paths.
 - Fixture tests cover pass and fail behavior for total-score regressions, generated SARIF, generated JUnit XML, and generated CI summaries.
 
-The default recursion budget has also been raised for real-world CLIs with deep subcommand hierarchies:
+The default recursion budget and scheduler width have also been raised for real-world CLIs with deep subcommand hierarchies:
 
-- `--profile quick` resolves to 3 command path segments and 64 probes.
-- `--profile standard` resolves to 5 command path segments and 256 probes.
-- `--profile deep` resolves to 8 command path segments and 1000 probes.
+- `--profile quick` resolves to 3 command path segments, 64 probes, and concurrency 2.
+- `--profile standard` resolves to 5 command path segments, 256 probes, and concurrency 4.
+- `--profile deep` resolves to 8 command path segments, 1000 probes, and concurrency 8.
 - `standard` is the default for `measure` and `guard`.
 - `--max-depth` and `--max-probes` override the selected profile.
 - Each profile also supplies a minimum expected-value threshold for dynamically scheduled probes.
 - `--min-expected-value` overrides the selected profile's convergence threshold.
+- `--concurrency` overrides the selected profile's concurrent probe limit.
 - The planner still enforces both limits deterministically so CI runs stay bounded.
+- The executor runs bounded async rounds and commits probe evidence in stable probe-id order.
+- Each probe receives an isolated sandbox root under `sandbox/probes/<probe_id>` so concurrent side-effect snapshots cannot contaminate each other.
 
 Coverage pressure is now explicit rather than hidden inside the score:
 
-- terminal summaries show traversal profile, observed depth, depth budget, completed probes, probe budget, remaining frontier, depth-skipped candidates, budget-skipped probes, and whether the run exhausted its budget
+- terminal summaries show traversal profile, observed depth, depth budget, completed probes, probe budget, concurrency limit, scheduler rounds, scheduled probes, cancelled probes, remaining frontier, depth-skipped candidates, budget-skipped probes, and whether the run exhausted its budget
 - terminal summaries also show the convergence threshold, highest pending expected value, convergence skips, stop reason, and traversal completion status
 - `scorecard.json` records the same fields under `coverage`
 - `report.md` renders the budget pressure fields for CI artifacts and human review
@@ -322,7 +325,7 @@ Coverage pressure is now explicit rather than hidden inside the score:
 Measurement cache reuse is now implemented:
 
 - successful measurement writes `measure-cache.json`
-- cache matching requires the same target fingerprint, traversal profile, resolved probe budget, expected-value threshold, CLIARE package version, and measurement engine
+- cache matching requires the same target fingerprint, traversal profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE package version, and measurement engine
 - reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` to still exist
 - terminal summaries print `cache: hit` or `cache: miss`
 - `--refresh` bypasses cache reuse for both `measure` and `guard`

@@ -36,6 +36,13 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to clear sandbox directory {path}")]
+    ClearSandboxDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read sandbox directory {path}")]
     ReadSandboxDir {
         path: PathBuf,

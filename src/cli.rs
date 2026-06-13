@@ -7,12 +7,15 @@ use serde::{Deserialize, Serialize};
 pub const QUICK_MAX_DEPTH: usize = 3;
 pub const QUICK_MAX_PROBES: usize = 64;
 pub const QUICK_MIN_EXPECTED_VALUE: u16 = 300;
+pub const QUICK_CONCURRENCY: usize = 2;
 pub const STANDARD_MAX_DEPTH: usize = 5;
 pub const STANDARD_MAX_PROBES: usize = 256;
 pub const STANDARD_MIN_EXPECTED_VALUE: u16 = 150;
+pub const STANDARD_CONCURRENCY: usize = 4;
 pub const DEEP_MAX_DEPTH: usize = 8;
 pub const DEEP_MAX_PROBES: usize = 1_000;
 pub const DEEP_MIN_EXPECTED_VALUE: u16 = 50;
+pub const DEEP_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Parser)]
 #[command(name = "cliare")]
@@ -69,6 +72,10 @@ pub struct MeasureArgs {
     #[arg(long, value_name = "N")]
     pub min_expected_value: Option<u16>,
 
+    /// Maximum probes to run concurrently.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub concurrency: Option<usize>,
+
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
@@ -92,6 +99,11 @@ impl MeasureArgs {
     pub fn resolved_min_expected_value(&self) -> u16 {
         self.min_expected_value
             .unwrap_or_else(|| self.profile.default_min_expected_value())
+    }
+
+    pub fn resolved_concurrency(&self) -> usize {
+        self.concurrency
+            .unwrap_or_else(|| self.profile.default_concurrency())
     }
 }
 
@@ -137,6 +149,10 @@ pub struct GuardArgs {
     #[arg(long, value_name = "N")]
     pub min_expected_value: Option<u16>,
 
+    /// Maximum probes to run concurrently.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub concurrency: Option<usize>,
+
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
@@ -153,6 +169,7 @@ impl From<&GuardArgs> for MeasureArgs {
             max_depth: args.max_depth,
             max_probes: args.max_probes,
             min_expected_value: args.min_expected_value,
+            concurrency: args.concurrency,
             refresh: args.refresh,
         }
     }
@@ -191,6 +208,14 @@ impl TraversalProfile {
         }
     }
 
+    pub fn default_concurrency(self) -> usize {
+        match self {
+            Self::Quick => QUICK_CONCURRENCY,
+            Self::Standard => STANDARD_CONCURRENCY,
+            Self::Deep => DEEP_CONCURRENCY,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Quick => "quick",
@@ -206,14 +231,26 @@ impl std::fmt::Display for TraversalProfile {
     }
 }
 
+fn parse_positive_usize(raw: &str) -> std::result::Result<usize, String> {
+    let value = raw
+        .parse::<usize>()
+        .map_err(|source| format!("expected positive integer: {source}"))?;
+    if value == 0 {
+        Err("expected positive integer greater than zero".to_owned())
+    } else {
+        Ok(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::{CommandFactory, Parser};
 
     use super::{
-        Cli, Command, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, DEEP_MIN_EXPECTED_VALUE, QUICK_MAX_DEPTH,
-        QUICK_MAX_PROBES, QUICK_MIN_EXPECTED_VALUE, STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES,
-        STANDARD_MIN_EXPECTED_VALUE, TraversalProfile,
+        Cli, Command, DEEP_CONCURRENCY, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, DEEP_MIN_EXPECTED_VALUE,
+        QUICK_CONCURRENCY, QUICK_MAX_DEPTH, QUICK_MAX_PROBES, QUICK_MIN_EXPECTED_VALUE,
+        STANDARD_CONCURRENCY, STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES, STANDARD_MIN_EXPECTED_VALUE,
+        TraversalProfile,
     };
 
     #[test]
@@ -243,6 +280,7 @@ mod tests {
                     args.resolved_min_expected_value(),
                     STANDARD_MIN_EXPECTED_VALUE
                 );
+                assert_eq!(args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
             Command::Guard(_) => panic!("expected measure command"),
         }
@@ -257,6 +295,7 @@ mod tests {
                     measure_args.resolved_min_expected_value(),
                     STANDARD_MIN_EXPECTED_VALUE
                 );
+                assert_eq!(measure_args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
             Command::Measure(_) => panic!("expected guard command"),
         }
@@ -280,6 +319,8 @@ mod tests {
             "128",
             "--min-expected-value",
             "90",
+            "--concurrency",
+            "11",
         ])
         .expect("valid overrides");
 
@@ -289,6 +330,7 @@ mod tests {
             QUICK_MAX_DEPTH,
             QUICK_MAX_PROBES,
             QUICK_MIN_EXPECTED_VALUE,
+            QUICK_CONCURRENCY,
         );
         assert_budget(
             deep,
@@ -296,8 +338,9 @@ mod tests {
             DEEP_MAX_DEPTH,
             DEEP_MAX_PROBES,
             DEEP_MIN_EXPECTED_VALUE,
+            DEEP_CONCURRENCY,
         );
-        assert_budget(override_depth, TraversalProfile::Quick, 7, 128, 90);
+        assert_budget(override_depth, TraversalProfile::Quick, 7, 128, 90, 11);
     }
 
     fn assert_budget(
@@ -306,6 +349,7 @@ mod tests {
         max_depth: usize,
         max_probes: usize,
         min_expected_value: u16,
+        concurrency: usize,
     ) {
         match cli.command {
             Command::Measure(args) => {
@@ -313,6 +357,7 @@ mod tests {
                 assert_eq!(args.resolved_max_depth(), max_depth);
                 assert_eq!(args.resolved_max_probes(), max_probes);
                 assert_eq!(args.resolved_min_expected_value(), min_expected_value);
+                assert_eq!(args.resolved_concurrency(), concurrency);
             }
             Command::Guard(_) => panic!("expected measure command"),
         }

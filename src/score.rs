@@ -94,7 +94,11 @@ pub struct Coverage {
     max_depth: usize,
     max_probes: usize,
     min_expected_value: u16,
+    concurrency_limit: usize,
+    traversal_rounds: usize,
+    probes_scheduled: usize,
     probes_completed: usize,
+    probes_cancelled: usize,
     probes_timed_out: usize,
     probes_failed_to_spawn: usize,
     frontier_remaining: usize,
@@ -165,6 +169,10 @@ pub struct ScoreArtifactSummary {
     pub max_depth: usize,
     pub max_probes: usize,
     pub min_expected_value: u16,
+    pub concurrency_limit: usize,
+    pub traversal_rounds: usize,
+    pub probes_scheduled: usize,
+    pub probes_cancelled: usize,
     pub frontier_remaining: usize,
     pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
@@ -186,6 +194,10 @@ pub struct ScoreRunContext {
     pub max_depth: usize,
     pub max_probes: usize,
     pub min_expected_value: u16,
+    pub concurrency_limit: usize,
+    pub traversal_rounds: usize,
+    pub probes_scheduled: usize,
+    pub probes_cancelled: usize,
     pub frontier_remaining: usize,
     pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
@@ -248,6 +260,10 @@ pub async fn write_score_artifacts(
         max_depth: scorecard.coverage.max_depth,
         max_probes: scorecard.coverage.max_probes,
         min_expected_value: scorecard.coverage.min_expected_value,
+        concurrency_limit: scorecard.coverage.concurrency_limit,
+        traversal_rounds: scorecard.coverage.traversal_rounds,
+        probes_scheduled: scorecard.coverage.probes_scheduled,
+        probes_cancelled: scorecard.coverage.probes_cancelled,
         frontier_remaining: scorecard.coverage.frontier_remaining,
         highest_pending_expected_value: scorecard.coverage.highest_pending_expected_value,
         candidates_skipped_by_depth: scorecard.coverage.candidates_skipped_by_depth,
@@ -717,8 +733,24 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.min_expected_value
     ));
     report.push_str(&format!(
+        "- Concurrency limit: `{}`\n",
+        scorecard.coverage.concurrency_limit
+    ));
+    report.push_str(&format!(
+        "- Scheduler rounds: `{}`\n",
+        scorecard.coverage.traversal_rounds
+    ));
+    report.push_str(&format!(
+        "- Probes scheduled: `{}`\n",
+        scorecard.coverage.probes_scheduled
+    ));
+    report.push_str(&format!(
         "- Probes completed: `{}`\n",
         scorecard.coverage.probes_completed
+    ));
+    report.push_str(&format!(
+        "- Probes cancelled: `{}`\n",
+        scorecard.coverage.probes_cancelled
     ));
     report.push_str(&format!(
         "- Probe timeouts: `{}`\n",
@@ -932,7 +964,11 @@ impl Metrics {
                 max_depth: run_context.max_depth,
                 max_probes: run_context.max_probes,
                 min_expected_value: run_context.min_expected_value,
+                concurrency_limit: run_context.concurrency_limit,
+                traversal_rounds: run_context.traversal_rounds,
+                probes_scheduled: run_context.probes_scheduled,
                 probes_completed: observations.len(),
+                probes_cancelled: run_context.probes_cancelled,
                 probes_timed_out: process_metrics.timed_out,
                 probes_failed_to_spawn: process_metrics.failed_to_spawn,
                 frontier_remaining: run_context.frontier_remaining,
@@ -1238,6 +1274,10 @@ mod tests {
                 max_depth: 5,
                 max_probes: 256,
                 min_expected_value: 150,
+                concurrency_limit: 4,
+                traversal_rounds: 1,
+                probes_scheduled: 1,
+                probes_cancelled: 0,
                 frontier_remaining: 0,
                 highest_pending_expected_value: None,
                 candidates_skipped_by_depth: 0,
@@ -1255,6 +1295,10 @@ mod tests {
         assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
         assert!(report.contains("- Minimum expected probe value: `150`"));
+        assert!(report.contains("- Concurrency limit: `4`"));
+        assert!(report.contains("- Scheduler rounds: `1`"));
+        assert!(report.contains("- Probes scheduled: `1`"));
+        assert!(report.contains("- Probes cancelled: `0`"));
         assert!(report.contains("- Sandbox profile: `isolated`"));
         assert!(report.contains("- Environment policy: `cleared_with_allowlist`"));
         assert!(report.contains("- Budget exhausted: `false`"));
@@ -1289,6 +1333,10 @@ mod tests {
                 max_depth: 1,
                 max_probes: 2,
                 min_expected_value: 300,
+                concurrency_limit: 2,
+                traversal_rounds: 1,
+                probes_scheduled: 2,
+                probes_cancelled: 0,
                 frontier_remaining: 3,
                 highest_pending_expected_value: Some(400),
                 candidates_skipped_by_depth: 1,
@@ -1302,6 +1350,10 @@ mod tests {
         assert_eq!(scorecard.coverage.max_depth, 1);
         assert_eq!(scorecard.coverage.max_probes, 2);
         assert_eq!(scorecard.coverage.min_expected_value, 300);
+        assert_eq!(scorecard.coverage.concurrency_limit, 2);
+        assert_eq!(scorecard.coverage.traversal_rounds, 1);
+        assert_eq!(scorecard.coverage.probes_scheduled, 2);
+        assert_eq!(scorecard.coverage.probes_cancelled, 0);
         assert_eq!(scorecard.coverage.frontier_remaining, 3);
         assert_eq!(scorecard.coverage.highest_pending_expected_value, Some(400));
         assert_eq!(scorecard.coverage.candidates_skipped_by_depth, 1);
