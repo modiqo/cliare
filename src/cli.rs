@@ -6,10 +6,13 @@ use serde::{Deserialize, Serialize};
 
 pub const QUICK_MAX_DEPTH: usize = 3;
 pub const QUICK_MAX_PROBES: usize = 64;
+pub const QUICK_MIN_EXPECTED_VALUE: u16 = 300;
 pub const STANDARD_MAX_DEPTH: usize = 5;
 pub const STANDARD_MAX_PROBES: usize = 256;
+pub const STANDARD_MIN_EXPECTED_VALUE: u16 = 150;
 pub const DEEP_MAX_DEPTH: usize = 8;
 pub const DEEP_MAX_PROBES: usize = 1_000;
+pub const DEEP_MIN_EXPECTED_VALUE: u16 = 50;
 
 #[derive(Debug, Parser)]
 #[command(name = "cliare")]
@@ -62,6 +65,10 @@ pub struct MeasureArgs {
     #[arg(long, value_name = "N")]
     pub max_probes: Option<usize>,
 
+    /// Minimum expected value for dynamically scheduled probes.
+    #[arg(long, value_name = "N")]
+    pub min_expected_value: Option<u16>,
+
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
@@ -80,6 +87,11 @@ impl MeasureArgs {
     pub fn resolved_max_probes(&self) -> usize {
         self.max_probes
             .unwrap_or_else(|| self.profile.default_max_probes())
+    }
+
+    pub fn resolved_min_expected_value(&self) -> u16 {
+        self.min_expected_value
+            .unwrap_or_else(|| self.profile.default_min_expected_value())
     }
 }
 
@@ -121,6 +133,10 @@ pub struct GuardArgs {
     #[arg(long, value_name = "N")]
     pub max_probes: Option<usize>,
 
+    /// Minimum expected value for dynamically scheduled probes.
+    #[arg(long, value_name = "N")]
+    pub min_expected_value: Option<u16>,
+
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
@@ -136,6 +152,7 @@ impl From<&GuardArgs> for MeasureArgs {
             profile: args.profile,
             max_depth: args.max_depth,
             max_probes: args.max_probes,
+            min_expected_value: args.min_expected_value,
             refresh: args.refresh,
         }
     }
@@ -166,6 +183,14 @@ impl TraversalProfile {
         }
     }
 
+    pub fn default_min_expected_value(self) -> u16 {
+        match self {
+            Self::Quick => QUICK_MIN_EXPECTED_VALUE,
+            Self::Standard => STANDARD_MIN_EXPECTED_VALUE,
+            Self::Deep => DEEP_MIN_EXPECTED_VALUE,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Quick => "quick",
@@ -186,8 +211,9 @@ mod tests {
     use clap::{CommandFactory, Parser};
 
     use super::{
-        Cli, Command, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, QUICK_MAX_DEPTH, QUICK_MAX_PROBES,
-        STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES, TraversalProfile,
+        Cli, Command, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, DEEP_MIN_EXPECTED_VALUE, QUICK_MAX_DEPTH,
+        QUICK_MAX_PROBES, QUICK_MIN_EXPECTED_VALUE, STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES,
+        STANDARD_MIN_EXPECTED_VALUE, TraversalProfile,
     };
 
     #[test]
@@ -213,6 +239,10 @@ mod tests {
                 assert_eq!(args.profile, TraversalProfile::Standard);
                 assert_eq!(args.resolved_max_depth(), STANDARD_MAX_DEPTH);
                 assert_eq!(args.resolved_max_probes(), STANDARD_MAX_PROBES);
+                assert_eq!(
+                    args.resolved_min_expected_value(),
+                    STANDARD_MIN_EXPECTED_VALUE
+                );
             }
             Command::Guard(_) => panic!("expected measure command"),
         }
@@ -223,6 +253,10 @@ mod tests {
                 assert_eq!(args.profile, TraversalProfile::Standard);
                 assert_eq!(measure_args.resolved_max_depth(), STANDARD_MAX_DEPTH);
                 assert_eq!(measure_args.resolved_max_probes(), STANDARD_MAX_PROBES);
+                assert_eq!(
+                    measure_args.resolved_min_expected_value(),
+                    STANDARD_MIN_EXPECTED_VALUE
+                );
             }
             Command::Measure(_) => panic!("expected guard command"),
         }
@@ -244,6 +278,8 @@ mod tests {
             "7",
             "--max-probes",
             "128",
+            "--min-expected-value",
+            "90",
         ])
         .expect("valid overrides");
 
@@ -252,22 +288,31 @@ mod tests {
             TraversalProfile::Quick,
             QUICK_MAX_DEPTH,
             QUICK_MAX_PROBES,
+            QUICK_MIN_EXPECTED_VALUE,
         );
         assert_budget(
             deep,
             TraversalProfile::Deep,
             DEEP_MAX_DEPTH,
             DEEP_MAX_PROBES,
+            DEEP_MIN_EXPECTED_VALUE,
         );
-        assert_budget(override_depth, TraversalProfile::Quick, 7, 128);
+        assert_budget(override_depth, TraversalProfile::Quick, 7, 128, 90);
     }
 
-    fn assert_budget(cli: Cli, profile: TraversalProfile, max_depth: usize, max_probes: usize) {
+    fn assert_budget(
+        cli: Cli,
+        profile: TraversalProfile,
+        max_depth: usize,
+        max_probes: usize,
+        min_expected_value: u16,
+    ) {
         match cli.command {
             Command::Measure(args) => {
                 assert_eq!(args.profile, profile);
                 assert_eq!(args.resolved_max_depth(), max_depth);
                 assert_eq!(args.resolved_max_probes(), max_probes);
+                assert_eq!(args.resolved_min_expected_value(), min_expected_value);
             }
             Command::Guard(_) => panic!("expected measure command"),
         }

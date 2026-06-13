@@ -11,38 +11,69 @@ pub trait ProbePlanner {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConvergencePolicy {
+    pub min_expected_value: u16,
+}
+
+impl ConvergencePolicy {
+    pub fn new(min_expected_value: u16) -> Self {
+        Self { min_expected_value }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlannerStats {
     pub max_depth: usize,
+    pub min_expected_value: u16,
     pub frontier_remaining: usize,
+    pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
+    pub candidates_skipped_by_convergence: usize,
 }
 
 #[derive(Debug)]
 pub struct DeterministicPlanner {
-    queue: VecDeque<ProbeSpec>,
+    queue: VecDeque<ProbePlan>,
     scheduled_args: BTreeSet<Vec<String>>,
     depth_skipped_paths: BTreeSet<Vec<String>>,
+    convergence_skipped_args: BTreeSet<Vec<String>>,
     max_depth: usize,
+    convergence_policy: ConvergencePolicy,
     invalid_token_seed: String,
 }
 
 impl DeterministicPlanner {
     pub fn new(max_depth: usize, invalid_token_seed: String) -> Self {
+        Self::with_policy(max_depth, ConvergencePolicy::new(0), invalid_token_seed)
+    }
+
+    pub fn with_policy(
+        max_depth: usize,
+        convergence_policy: ConvergencePolicy,
+        invalid_token_seed: String,
+    ) -> Self {
         Self {
             queue: VecDeque::new(),
             scheduled_args: BTreeSet::new(),
             depth_skipped_paths: BTreeSet::new(),
+            convergence_skipped_args: BTreeSet::new(),
             max_depth,
+            convergence_policy,
             invalid_token_seed,
         }
     }
 
-    fn schedule(&mut self, probe: ProbeSpec) -> bool {
-        if !self.scheduled_args.insert(probe.args.clone()) {
+    fn schedule(&mut self, plan: ProbePlan) -> bool {
+        if plan.expected_value < self.convergence_policy.min_expected_value {
+            self.convergence_skipped_args
+                .insert(plan.probe.args.clone());
+            return false;
+        }
+        if !self.scheduled_args.insert(plan.probe.args.clone()) {
             return false;
         }
 
-        self.queue.push_back(probe);
+        self.queue.push_back(plan);
         true
     }
 
@@ -51,15 +82,18 @@ impl DeterministicPlanner {
         plans.sort();
 
         for plan in plans {
-            self.schedule(plan.probe);
+            self.schedule(plan);
         }
     }
 
     pub fn stats(&self) -> PlannerStats {
         PlannerStats {
             max_depth: self.max_depth,
+            min_expected_value: self.convergence_policy.min_expected_value,
             frontier_remaining: self.queue.len(),
+            highest_pending_expected_value: self.queue.iter().map(|plan| plan.expected_value).max(),
             candidates_skipped_by_depth: self.depth_skipped_paths.len(),
+            candidates_skipped_by_convergence: self.convergence_skipped_args.len(),
         }
     }
 
@@ -122,7 +156,7 @@ impl DeterministicPlanner {
 impl ProbePlanner for DeterministicPlanner {
     fn seed(&mut self, probes: impl IntoIterator<Item = ProbeSpec>) {
         for probe in probes {
-            self.schedule(probe);
+            self.schedule(ProbePlan::bootstrap(probe));
         }
     }
 
@@ -135,19 +169,32 @@ impl ProbePlanner for DeterministicPlanner {
     }
 
     fn next(&mut self) -> Option<ProbeSpec> {
-        self.queue.pop_front()
+        self.queue.pop_front().map(|plan| plan.probe)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ProbePlan {
     rank: PlannerRank,
     probe: ProbeSpec,
+    expected_value: u16,
 }
 
 impl ProbePlan {
     fn new(probe: ProbeSpec, rank: PlannerRank) -> Self {
-        Self { rank, probe }
+        Self {
+            rank,
+            probe,
+            expected_value: rank.expected_value,
+        }
+    }
+
+    fn bootstrap(probe: ProbeSpec) -> Self {
+        Self {
+            rank: PlannerRank::bootstrap(),
+            probe,
+            expected_value: 1_000,
+        }
     }
 }
 
@@ -155,6 +202,7 @@ impl Ord for ProbePlan {
     fn cmp(&self, other: &Self) -> Ordering {
         self.rank
             .cmp(&other.rank)
+            .then_with(|| other.expected_value.cmp(&self.expected_value))
             .then_with(|| self.probe.args.cmp(&other.probe.args))
     }
 }
@@ -167,7 +215,9 @@ impl PartialOrd for ProbePlan {
 
 impl PartialEq for ProbePlan {
     fn eq(&self, other: &Self) -> bool {
-        self.rank == other.rank && self.probe.args == other.probe.args
+        self.rank == other.rank
+            && self.expected_value == other.expected_value
+            && self.probe.args == other.probe.args
     }
 }
 
@@ -176,6 +226,7 @@ impl Eq for ProbePlan {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PlannerRank {
     category: u8,
+    expected_value: u16,
     uncertainty: u16,
     confidence: u16,
     depth: u16,
@@ -183,11 +234,24 @@ struct PlannerRank {
 }
 
 impl PlannerRank {
-    fn for_help_confirmation(claim: &CommandClaim, intent_order: u8) -> Self {
-        let confidence = quantized_confidence(claim.confidence());
+    fn bootstrap() -> Self {
         Self {
             category: 0,
-            uncertainty: uncertainty(confidence),
+            expected_value: 1_000,
+            uncertainty: 1_000,
+            confidence: 1_000,
+            depth: 0,
+            intent_order: 0,
+        }
+    }
+
+    fn for_help_confirmation(claim: &CommandClaim, intent_order: u8) -> Self {
+        let confidence = quantized_confidence(claim.confidence());
+        let uncertainty = uncertainty(confidence);
+        Self {
+            category: 0,
+            expected_value: help_expected_value(confidence, uncertainty),
+            uncertainty,
             confidence,
             depth: claim.path().len() as u16,
             intent_order,
@@ -197,6 +261,7 @@ impl PlannerRank {
     fn for_diagnostic_probe(claim: &CommandClaim, intent_order: u8) -> Self {
         Self {
             category: 1,
+            expected_value: diagnostic_expected_value(quantized_confidence(claim.confidence())),
             uncertainty: 0,
             confidence: quantized_confidence(claim.confidence()),
             depth: claim.path().len() as u16,
@@ -209,6 +274,7 @@ impl Ord for PlannerRank {
     fn cmp(&self, other: &Self) -> Ordering {
         self.category
             .cmp(&other.category)
+            .then_with(|| other.expected_value.cmp(&self.expected_value))
             .then_with(|| other.uncertainty.cmp(&self.uncertainty))
             .then_with(|| other.confidence.cmp(&self.confidence))
             .then_with(|| self.depth.cmp(&other.depth))
@@ -230,6 +296,14 @@ fn uncertainty(confidence: u16) -> u16 {
     500_u16.saturating_sub(500_u16.abs_diff(confidence))
 }
 
+fn help_expected_value(confidence: u16, uncertainty: u16) -> u16 {
+    uncertainty.saturating_add(confidence / 4).min(1_000)
+}
+
+fn diagnostic_expected_value(confidence: u16) -> u16 {
+    200_u16.saturating_add(confidence / 2).min(1_000)
+}
+
 pub fn bootstrap_invalid_command_token(target_name: &str) -> String {
     format!("__cliare_unknown_{target_name}_command__")
 }
@@ -240,7 +314,7 @@ pub fn bootstrap_invalid_flag_token(target_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{DeterministicPlanner, ProbePlanner};
+    use super::{ConvergencePolicy, DeterministicPlanner, ProbePlanner};
     use crate::claims::ClaimSet;
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::observation::ShapeObservation;
@@ -362,6 +436,28 @@ mod tests {
                 "epsilon".to_owned(),
                 "--help".to_owned(),
             ]));
+    }
+
+    #[test]
+    fn planner_skips_low_value_dynamic_probes_by_convergence_policy() {
+        let observations = vec![observation(
+            "e_000003",
+            ProbeIntent::Help,
+            vec![],
+            "Commands:\n  maybe  Weak candidate\n",
+            Some(0),
+        )];
+        let claims = ClaimSet::from_observations("tool", &observations);
+        let mut planner =
+            DeterministicPlanner::with_policy(2, ConvergencePolicy::new(1_000), "tool".to_owned());
+
+        planner.extend_from_claims(&claims);
+
+        assert!(planner.next().is_none());
+        let stats = planner.stats();
+        assert_eq!(stats.frontier_remaining, 0);
+        assert_eq!(stats.candidates_skipped_by_convergence, 2);
+        assert_eq!(stats.min_expected_value, 1_000);
     }
 
     fn observation(

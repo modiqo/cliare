@@ -77,13 +77,27 @@ pub struct Coverage {
     traversal_profile: &'static str,
     max_depth: usize,
     max_probes: usize,
+    min_expected_value: u16,
     probes_completed: usize,
     probes_timed_out: usize,
     probes_failed_to_spawn: usize,
     frontier_remaining: usize,
+    highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
+    candidates_skipped_by_convergence: usize,
     probes_skipped_by_budget: usize,
     budget_exhausted: bool,
+    traversal_stop_reason: TraversalStopReason,
+    traversal_complete: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TraversalStopReason {
+    FrontierExhausted,
+    Converged,
+    DepthBudgetExhausted,
+    ProbeBudgetExhausted,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,10 +138,15 @@ pub struct ScoreArtifactSummary {
     pub traversal_profile: &'static str,
     pub max_depth: usize,
     pub max_probes: usize,
+    pub min_expected_value: u16,
     pub frontier_remaining: usize,
+    pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
+    pub candidates_skipped_by_convergence: usize,
     pub probes_skipped_by_budget: usize,
     pub budget_exhausted: bool,
+    pub traversal_stop_reason: &'static str,
+    pub traversal_complete: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -135,8 +154,11 @@ pub struct ScoreRunContext {
     pub traversal_profile: &'static str,
     pub max_depth: usize,
     pub max_probes: usize,
+    pub min_expected_value: u16,
     pub frontier_remaining: usize,
+    pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
+    pub candidates_skipped_by_convergence: usize,
 }
 
 pub async fn write_score_artifacts(
@@ -162,10 +184,17 @@ pub async fn write_score_artifacts(
         traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
         max_probes: scorecard.coverage.max_probes,
+        min_expected_value: scorecard.coverage.min_expected_value,
         frontier_remaining: scorecard.coverage.frontier_remaining,
+        highest_pending_expected_value: scorecard.coverage.highest_pending_expected_value,
         candidates_skipped_by_depth: scorecard.coverage.candidates_skipped_by_depth,
+        candidates_skipped_by_convergence: scorecard.coverage.candidates_skipped_by_convergence,
         probes_skipped_by_budget: scorecard.coverage.probes_skipped_by_budget,
         budget_exhausted: scorecard.coverage.budget_exhausted,
+        traversal_stop_reason: traversal_stop_reason_label(
+            scorecard.coverage.traversal_stop_reason,
+        ),
+        traversal_complete: scorecard.coverage.traversal_complete,
     })
 }
 
@@ -498,6 +527,10 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.max_probes
     ));
     report.push_str(&format!(
+        "- Minimum expected probe value: `{}`\n",
+        scorecard.coverage.min_expected_value
+    ));
+    report.push_str(&format!(
         "- Probes completed: `{}`\n",
         scorecard.coverage.probes_completed
     ));
@@ -514,8 +547,19 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.frontier_remaining
     ));
     report.push_str(&format!(
+        "- Highest pending expected value: `{}`\n",
+        scorecard
+            .coverage
+            .highest_pending_expected_value
+            .map_or_else(|| "none".to_owned(), |value| value.to_string())
+    ));
+    report.push_str(&format!(
         "- Candidates skipped by depth: `{}`\n",
         scorecard.coverage.candidates_skipped_by_depth
+    ));
+    report.push_str(&format!(
+        "- Candidates skipped by convergence: `{}`\n",
+        scorecard.coverage.candidates_skipped_by_convergence
     ));
     report.push_str(&format!(
         "- Probes skipped by budget: `{}`\n",
@@ -524,6 +568,14 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Budget exhausted: `{}`\n\n",
         scorecard.coverage.budget_exhausted
+    ));
+    report.push_str(&format!(
+        "- Traversal stop reason: `{}`\n",
+        traversal_stop_reason_label(scorecard.coverage.traversal_stop_reason)
+    ));
+    report.push_str(&format!(
+        "- Traversal complete: `{}`\n\n",
+        scorecard.coverage.traversal_complete
     ));
 
     report.push_str("## Findings\n\n");
@@ -585,6 +637,15 @@ fn severity_label(severity: &Severity) -> &'static str {
     }
 }
 
+fn traversal_stop_reason_label(reason: TraversalStopReason) -> &'static str {
+    match reason {
+        TraversalStopReason::FrontierExhausted => "frontier_exhausted",
+        TraversalStopReason::Converged => "converged",
+        TraversalStopReason::DepthBudgetExhausted => "depth_budget_exhausted",
+        TraversalStopReason::ProbeBudgetExhausted => "probe_budget_exhausted",
+    }
+}
+
 fn escape_table_cell(value: &str) -> String {
     value.replace('|', "\\|")
 }
@@ -625,6 +686,12 @@ impl Metrics {
             } else {
                 0
             };
+        let traversal_stop_reason = traversal_stop_reason(
+            commands_discovered,
+            probes_skipped_by_budget,
+            run_context.candidates_skipped_by_depth,
+            run_context.candidates_skipped_by_convergence,
+        );
 
         Self {
             coverage: Coverage {
@@ -638,13 +705,21 @@ impl Metrics {
                 traversal_profile: run_context.traversal_profile,
                 max_depth: run_context.max_depth,
                 max_probes: run_context.max_probes,
+                min_expected_value: run_context.min_expected_value,
                 probes_completed: observations.len(),
                 probes_timed_out: process_metrics.timed_out,
                 probes_failed_to_spawn: process_metrics.failed_to_spawn,
                 frontier_remaining: run_context.frontier_remaining,
+                highest_pending_expected_value: run_context.highest_pending_expected_value,
                 candidates_skipped_by_depth: run_context.candidates_skipped_by_depth,
+                candidates_skipped_by_convergence: run_context.candidates_skipped_by_convergence,
                 probes_skipped_by_budget,
                 budget_exhausted: probes_skipped_by_budget > 0,
+                traversal_stop_reason,
+                traversal_complete: matches!(
+                    traversal_stop_reason,
+                    TraversalStopReason::Converged | TraversalStopReason::FrontierExhausted
+                ),
             },
             grammar_gap_count,
             invalid_probe_count: process_metrics.invalid_probe_count,
@@ -655,6 +730,23 @@ impl Metrics {
     fn grammar_gap_rate(&self) -> f64 {
         let possible = self.coverage.commands_runtime_confirmed.saturating_mul(2);
         ratio(self.grammar_gap_count, possible)
+    }
+}
+
+fn traversal_stop_reason(
+    commands_discovered: usize,
+    probes_skipped_by_budget: usize,
+    candidates_skipped_by_depth: usize,
+    candidates_skipped_by_convergence: usize,
+) -> TraversalStopReason {
+    if probes_skipped_by_budget > 0 {
+        TraversalStopReason::ProbeBudgetExhausted
+    } else if candidates_skipped_by_depth > 0 {
+        TraversalStopReason::DepthBudgetExhausted
+    } else if commands_discovered > 0 || candidates_skipped_by_convergence > 0 {
+        TraversalStopReason::Converged
+    } else {
+        TraversalStopReason::FrontierExhausted
     }
 }
 
@@ -832,8 +924,11 @@ mod tests {
                 traversal_profile: "standard",
                 max_depth: 5,
                 max_probes: 256,
+                min_expected_value: 150,
                 frontier_remaining: 0,
+                highest_pending_expected_value: None,
                 candidates_skipped_by_depth: 0,
+                candidates_skipped_by_convergence: 0,
             },
         );
 
@@ -844,7 +939,10 @@ mod tests {
         assert!(report.contains("experimental partial"));
         assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
+        assert!(report.contains("- Minimum expected probe value: `150`"));
         assert!(report.contains("- Budget exhausted: `false`"));
+        assert!(report.contains("- Traversal stop reason: `converged`"));
+        assert!(report.contains("- Traversal complete: `true`"));
     }
 
     #[test]
@@ -873,8 +971,11 @@ mod tests {
                 traversal_profile: "quick",
                 max_depth: 1,
                 max_probes: 2,
+                min_expected_value: 300,
                 frontier_remaining: 3,
+                highest_pending_expected_value: Some(400),
                 candidates_skipped_by_depth: 1,
+                candidates_skipped_by_convergence: 2,
             },
         );
 
@@ -882,10 +983,72 @@ mod tests {
         assert_eq!(scorecard.coverage.traversal_profile, "quick");
         assert_eq!(scorecard.coverage.max_depth, 1);
         assert_eq!(scorecard.coverage.max_probes, 2);
+        assert_eq!(scorecard.coverage.min_expected_value, 300);
         assert_eq!(scorecard.coverage.frontier_remaining, 3);
+        assert_eq!(scorecard.coverage.highest_pending_expected_value, Some(400));
         assert_eq!(scorecard.coverage.candidates_skipped_by_depth, 1);
+        assert_eq!(scorecard.coverage.candidates_skipped_by_convergence, 2);
         assert_eq!(scorecard.coverage.probes_skipped_by_budget, 3);
         assert!(scorecard.coverage.budget_exhausted);
+        assert_eq!(
+            scorecard.coverage.traversal_stop_reason,
+            super::TraversalStopReason::ProbeBudgetExhausted
+        );
+        assert!(!scorecard.coverage.traversal_complete);
+    }
+
+    #[test]
+    fn scorecard_classifies_depth_budget_stop_before_convergence() {
+        let scorecard = scorecard(
+            target(),
+            &[observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  alpha  First level\n",
+                Some(0),
+            )],
+            ScoreRunContext {
+                traversal_profile: "quick",
+                max_depth: 1,
+                max_probes: 64,
+                min_expected_value: 300,
+                frontier_remaining: 0,
+                highest_pending_expected_value: None,
+                candidates_skipped_by_depth: 2,
+                candidates_skipped_by_convergence: 0,
+            },
+        );
+
+        assert_eq!(
+            scorecard.coverage.traversal_stop_reason,
+            super::TraversalStopReason::DepthBudgetExhausted
+        );
+        assert!(!scorecard.coverage.traversal_complete);
+    }
+
+    #[test]
+    fn scorecard_classifies_empty_frontier_without_claims() {
+        let scorecard = scorecard(
+            target(),
+            &[],
+            ScoreRunContext {
+                traversal_profile: "standard",
+                max_depth: 5,
+                max_probes: 256,
+                min_expected_value: 150,
+                frontier_remaining: 0,
+                highest_pending_expected_value: None,
+                candidates_skipped_by_depth: 0,
+                candidates_skipped_by_convergence: 0,
+            },
+        );
+
+        assert_eq!(
+            scorecard.coverage.traversal_stop_reason,
+            super::TraversalStopReason::FrontierExhausted
+        );
+        assert!(scorecard.coverage.traversal_complete);
     }
 
     fn dimension_score(scorecard: &super::Scorecard, dimension: Dimension) -> f64 {

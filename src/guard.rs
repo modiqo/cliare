@@ -178,10 +178,15 @@ mod tests {
             traversal_profile: "standard".to_owned(),
             max_depth: 5,
             max_probes: 256,
+            min_expected_value: 150,
             frontier_remaining: 0,
+            highest_pending_expected_value: None,
             candidates_skipped_by_depth: 0,
+            candidates_skipped_by_convergence: 0,
             probes_skipped_by_budget: 0,
             budget_exhausted: false,
+            traversal_stop_reason: "converged".to_owned(),
+            traversal_complete: true,
             cache_hit: false,
         }
     }

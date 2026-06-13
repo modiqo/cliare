@@ -80,6 +80,10 @@ async fn noisy_help_still_infers_from_stdout_layout() {
         artifacts.scorecard["coverage"]["max_probes"].as_u64(),
         Some(32)
     );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["min_expected_value"].as_u64(),
+        Some(150)
+    );
     assert!(
         artifacts.scorecard["coverage"]["observed_max_depth"]
             .as_u64()
@@ -87,13 +91,33 @@ async fn noisy_help_still_infers_from_stdout_layout() {
             >= 1
     );
     assert!(
+        artifacts.scorecard["coverage"]["highest_pending_expected_value"].is_number()
+            || artifacts.scorecard["coverage"]["highest_pending_expected_value"].is_null()
+    );
+    assert!(
         artifacts.scorecard["coverage"]["frontier_remaining"]
             .as_u64()
+            .is_some()
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["candidates_skipped_by_convergence"]
+            .as_u64()
+            .is_some()
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["traversal_stop_reason"]
+            .as_str()
+            .is_some()
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["traversal_complete"]
+            .as_bool()
             .is_some()
     );
     assert!(artifacts.report.contains("# CLIARE Report"));
     assert!(artifacts.report.contains("not measured"));
     assert!(artifacts.report.contains("Budget exhausted"));
+    assert!(artifacts.report.contains("Traversal stop reason"));
 }
 
 #[tokio::test]
@@ -131,6 +155,7 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
+        min_expected_value: None,
         refresh: false,
     })
     .await
@@ -143,6 +168,7 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
+        min_expected_value: None,
         refresh: false,
     })
     .await
@@ -155,6 +181,7 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
+        min_expected_value: None,
         refresh: true,
     })
     .await
@@ -182,6 +209,7 @@ async fn guard_passes_against_same_score_baseline() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
+        min_expected_value: None,
         refresh: false,
     })
     .await
@@ -197,6 +225,7 @@ async fn guard_passes_against_same_score_baseline() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(32),
+        min_expected_value: None,
         refresh: false,
     })
     .await
@@ -227,6 +256,7 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(16),
+        min_expected_value: None,
         refresh: false,
     })
     .await
@@ -250,6 +280,7 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
         profile: TraversalProfile::Standard,
         max_depth: Some(2),
         max_probes: Some(max_probes),
+        min_expected_value: None,
         refresh: false,
     })
     .await

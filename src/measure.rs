@@ -13,7 +13,7 @@ use crate::evidence::{
 use crate::fingerprint::{TargetFingerprint, fingerprint_target};
 use crate::observation::ShapeObservation;
 use crate::planner::{
-    DeterministicPlanner, ProbePlanner, bootstrap_invalid_command_token,
+    ConvergencePolicy, DeterministicPlanner, ProbePlanner, bootstrap_invalid_command_token,
     bootstrap_invalid_flag_token,
 };
 use crate::process::{ProbeSpec, TargetProcess};
@@ -41,10 +41,15 @@ pub struct MeasurementSummary {
     pub traversal_profile: String,
     pub max_depth: usize,
     pub max_probes: usize,
+    pub min_expected_value: u16,
     pub frontier_remaining: usize,
+    pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
+    pub candidates_skipped_by_convergence: usize,
     pub probes_skipped_by_budget: usize,
     pub budget_exhausted: bool,
+    pub traversal_stop_reason: String,
+    pub traversal_complete: bool,
     pub cache_hit: bool,
 }
 
@@ -75,13 +80,25 @@ impl MeasurementSummary {
                 "  probes: completed {} / budget {}",
                 self.probes_completed, self.max_probes
             ),
+            format!("  min expected value: {}", self.min_expected_value),
             format!("  frontier remaining: {}", self.frontier_remaining),
+            format!(
+                "  highest pending expected value: {}",
+                self.highest_pending_expected_value
+                    .map_or_else(|| "none".to_owned(), |value| value.to_string())
+            ),
             format!("  skipped by depth: {}", self.candidates_skipped_by_depth),
+            format!(
+                "  skipped by convergence: {}",
+                self.candidates_skipped_by_convergence
+            ),
             format!(
                 "  skipped by probe budget: {}",
                 self.probes_skipped_by_budget
             ),
             format!("  budget exhausted: {}", self.budget_exhausted),
+            format!("  stop reason: {}", self.traversal_stop_reason),
+            format!("  traversal complete: {}", self.traversal_complete),
             "artifacts:".to_owned(),
             format!("  evidence: {}", self.evidence_path.display()),
             format!("  shape: {}", self.shape_path.display()),
@@ -97,7 +114,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let target = fingerprint_target(&args.target).await?;
     let max_depth = args.resolved_max_depth();
     let max_probes = args.resolved_max_probes();
-    let profile = ProbeProfile::from_args(&args, max_depth, max_probes);
+    let min_expected_value = args.resolved_min_expected_value();
+    let profile = ProbeProfile::from_args(&args, max_depth, max_probes, min_expected_value);
 
     if !args.refresh
         && let Some(summary) = cached_summary(&args.out, &target, &profile).await?
@@ -115,7 +133,11 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .await?;
 
     let binary_name = target_binary_name(&target);
-    let mut planner = DeterministicPlanner::new(max_depth, invalid_token_seed(&binary_name));
+    let mut planner = DeterministicPlanner::with_policy(
+        max_depth,
+        ConvergencePolicy::new(min_expected_value),
+        invalid_token_seed(&binary_name),
+    );
     planner.seed(bootstrap_probes(&target));
     let process = TargetProcess::new(
         target.resolved.clone(),
@@ -169,9 +191,12 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let run_context = ScoreRunContext {
         max_depth: planner_stats.max_depth,
         max_probes,
+        min_expected_value: planner_stats.min_expected_value,
         traversal_profile: args.profile.label(),
         frontier_remaining: planner_stats.frontier_remaining,
+        highest_pending_expected_value: planner_stats.highest_pending_expected_value,
         candidates_skipped_by_depth: planner_stats.candidates_skipped_by_depth,
+        candidates_skipped_by_convergence: planner_stats.candidates_skipped_by_convergence,
     };
     let score_artifacts =
         score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
@@ -193,10 +218,15 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         traversal_profile: score_artifacts.traversal_profile.to_owned(),
         max_depth: score_artifacts.max_depth,
         max_probes: score_artifacts.max_probes,
+        min_expected_value: score_artifacts.min_expected_value,
         frontier_remaining: score_artifacts.frontier_remaining,
+        highest_pending_expected_value: score_artifacts.highest_pending_expected_value,
         candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
+        candidates_skipped_by_convergence: score_artifacts.candidates_skipped_by_convergence,
         probes_skipped_by_budget: score_artifacts.probes_skipped_by_budget,
         budget_exhausted: score_artifacts.budget_exhausted,
+        traversal_stop_reason: score_artifacts.traversal_stop_reason.to_owned(),
+        traversal_complete: score_artifacts.traversal_complete,
         cache_hit: false,
     };
     write_cache_manifest(&args.out, &summary, profile).await?;
@@ -211,16 +241,23 @@ struct ProbeProfile {
     output_limit_bytes: usize,
     max_depth: usize,
     max_probes: usize,
+    min_expected_value: u16,
 }
 
 impl ProbeProfile {
-    fn from_args(args: &MeasureArgs, max_depth: usize, max_probes: usize) -> Self {
+    fn from_args(
+        args: &MeasureArgs,
+        max_depth: usize,
+        max_probes: usize,
+        min_expected_value: u16,
+    ) -> Self {
         Self {
             traversal_profile: args.profile,
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
             max_depth,
             max_probes,
+            min_expected_value,
         }
     }
 }
@@ -248,10 +285,15 @@ struct CachedMeasurementSummary {
     traversal_profile: String,
     max_depth: usize,
     max_probes: usize,
+    min_expected_value: u16,
     frontier_remaining: usize,
+    highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
+    candidates_skipped_by_convergence: usize,
     probes_skipped_by_budget: usize,
     budget_exhausted: bool,
+    traversal_stop_reason: String,
+    traversal_complete: bool,
 }
 
 async fn cached_summary(
@@ -307,10 +349,15 @@ impl MeasurementCacheManifest {
             traversal_profile: self.summary.traversal_profile,
             max_depth: self.summary.max_depth,
             max_probes: self.summary.max_probes,
+            min_expected_value: self.summary.min_expected_value,
             frontier_remaining: self.summary.frontier_remaining,
+            highest_pending_expected_value: self.summary.highest_pending_expected_value,
             candidates_skipped_by_depth: self.summary.candidates_skipped_by_depth,
+            candidates_skipped_by_convergence: self.summary.candidates_skipped_by_convergence,
             probes_skipped_by_budget: self.summary.probes_skipped_by_budget,
             budget_exhausted: self.summary.budget_exhausted,
+            traversal_stop_reason: self.summary.traversal_stop_reason,
+            traversal_complete: self.summary.traversal_complete,
             cache_hit: true,
         }
     }
@@ -360,10 +407,15 @@ async fn write_cache_manifest(
             traversal_profile: summary.traversal_profile.to_owned(),
             max_depth: summary.max_depth,
             max_probes: summary.max_probes,
+            min_expected_value: summary.min_expected_value,
             frontier_remaining: summary.frontier_remaining,
+            highest_pending_expected_value: summary.highest_pending_expected_value,
             candidates_skipped_by_depth: summary.candidates_skipped_by_depth,
+            candidates_skipped_by_convergence: summary.candidates_skipped_by_convergence,
             probes_skipped_by_budget: summary.probes_skipped_by_budget,
             budget_exhausted: summary.budget_exhausted,
+            traversal_stop_reason: summary.traversal_stop_reason.to_owned(),
+            traversal_complete: summary.traversal_complete,
         },
     };
     let bytes =
@@ -460,10 +512,15 @@ mod tests {
             traversal_profile: "standard".to_owned(),
             max_depth: 5,
             max_probes: 256,
+            min_expected_value: 150,
             frontier_remaining: 0,
+            highest_pending_expected_value: None,
             candidates_skipped_by_depth: 0,
+            candidates_skipped_by_convergence: 0,
             probes_skipped_by_budget: 0,
             budget_exhausted: false,
+            traversal_stop_reason: "converged".to_owned(),
+            traversal_complete: true,
             cache_hit: false,
         };
 
@@ -473,6 +530,8 @@ mod tests {
         assert!(text.contains("score: 82.4/100"));
         assert!(text.contains("cache: miss"));
         assert!(text.contains("depth: observed 1 / budget 5"));
+        assert!(text.contains("min expected value: 150"));
+        assert!(text.contains("stop reason: converged"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
     }
