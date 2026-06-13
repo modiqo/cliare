@@ -93,15 +93,13 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
         let Some(first_column) = row.columns.first() else {
             continue;
         };
-        let Some(path) = command_path_from_cell(first_column, binary_name) else {
-            continue;
-        };
-
-        candidates.entry(path.clone()).or_insert(CandidateCommand {
-            path,
-            summary: row.columns.get(1).cloned(),
-            evidence_detail: format!("layout row {}", row.index),
-        });
+        for path in command_paths_from_cell(first_column, binary_name) {
+            candidates.entry(path.clone()).or_insert(CandidateCommand {
+                path,
+                summary: row.columns.get(1).cloned(),
+                evidence_detail: format!("layout row {}", row.index),
+            });
+        }
     }
 
     candidates.into_values().collect()
@@ -155,8 +153,9 @@ pub struct CandidateFlag {
     pub evidence_detail: String,
 }
 
-fn command_path_from_cell(cell: &str, binary_name: &str) -> Option<Vec<String>> {
+fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
     let mut path = Vec::new();
+    let mut saw_alias_separator = false;
 
     for token in cell.split_whitespace() {
         let cleaned = clean_token(token);
@@ -172,10 +171,18 @@ fn command_path_from_cell(cell: &str, binary_name: &str) -> Option<Vec<String>> 
         if !is_command_token(cleaned) {
             break;
         }
+        saw_alias_separator |= token.ends_with(',');
         path.push(cleaned.to_owned());
     }
 
-    (!path.is_empty()).then_some(path)
+    if path.is_empty() {
+        return Vec::new();
+    }
+    if saw_alias_separator {
+        return path.into_iter().map(|segment| vec![segment]).collect();
+    }
+
+    vec![path]
 }
 
 fn is_argument_like(token: &str) -> bool {
@@ -274,5 +281,15 @@ mod tests {
                 .iter()
                 .any(|item| item.name == "--help")
         );
+    }
+
+    #[test]
+    fn extracts_simple_comma_separated_aliases_as_sibling_commands() {
+        let text = "Commands:\n  rm, remove    Remove an item\n";
+        let candidates = command_candidates(text, "tool");
+
+        assert!(candidates.iter().any(|item| item.path == ["rm"]));
+        assert!(candidates.iter().any(|item| item.path == ["remove"]));
+        assert!(!candidates.iter().any(|item| item.path == ["rm", "remove"]));
     }
 }

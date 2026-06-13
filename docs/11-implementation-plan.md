@@ -197,6 +197,7 @@ The current implementation has the first generic claim pipeline in place:
 - `planner` ranks confirmation and diagnostic probes deterministically.
 - `shape` emits the catalog from claims rather than from a framework parser.
 - Invalid-child probes are gated on evidence of nested commands so leaf commands with positionals are not misclassified as command trees.
+- Fixture CLI integration tests cover custom help, aliases, noisy help, and runtime false-positive rejection.
 
 ---
 

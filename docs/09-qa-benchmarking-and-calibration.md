@@ -59,6 +59,15 @@ Categories:
 
 Synthetic CLIs should be cheap to run and portable.
 
+Current fixture coverage includes executable black-box CLIs for:
+
+- custom aligned help with multi-token commands
+- simple comma-separated aliases
+- noisy stderr during otherwise valid help
+- help rows that look command-like but are runtime false positives
+
+These fixtures exercise the full measurement path: fingerprinting, process execution, evidence logging, claim updates, planner expansion, and shape emission.
+
 ### Real-World CLIs
 
 Public tools with human-verified truth subsets.
@@ -408,4 +417,3 @@ False-safe rate should be a headline safety metric.
 - verification levels
 - real-world benchmark set
 - documented governance for model changes
-
