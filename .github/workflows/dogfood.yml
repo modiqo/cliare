@@ -1,0 +1,124 @@
+name: Dogfood
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: CLIARE traversal profile to run.
+        required: false
+        default: standard
+        type: choice
+        options:
+          - quick
+          - standard
+          - deep
+
+permissions:
+  contents: read
+
+jobs:
+  dogfood:
+    name: Measure CLIARE with CLIARE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Select profile
+        id: profile
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PROFILE: ${{ github.event.inputs.profile || '' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$INPUT_PROFILE" ]]; then
+            profile="$INPUT_PROFILE"
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            profile="quick"
+          elif [[ "$EVENT_NAME" == "schedule" ]]; then
+            profile="deep"
+          else
+            profile="standard"
+          fi
+
+          case "$profile" in
+            quick)
+              concurrency=2
+              ;;
+            standard)
+              concurrency=4
+              ;;
+            deep)
+              concurrency=8
+              ;;
+            *)
+              echo "unsupported CLIARE profile: $profile" >&2
+              exit 2
+              ;;
+          esac
+
+          {
+            echo "profile=$profile"
+            echo "concurrency=$concurrency"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build CLIARE
+        run: cargo build --locked --bin cliare
+
+      - name: Measure dogfood target
+        id: dogfood
+        uses: ./
+        with:
+          target: ./target/debug/cliare
+          cliare-command: ./target/debug/cliare
+          out: .cliare/dogfood
+          profile: ${{ steps.profile.outputs.profile }}
+          concurrency: ${{ steps.profile.outputs.concurrency }}
+          extra-args: --refresh
+          artifact-name: cliare-dogfood-${{ steps.profile.outputs.profile }}
+
+      - name: Print dogfood score
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("fs");
+          const scorecard = JSON.parse(fs.readFileSync(".cliare/dogfood/scorecard.json", "utf8"));
+          const lines = [
+            "",
+            "## CLIARE Dogfood Score",
+            "",
+            "| Field | Value |",
+            "| --- | ---: |",
+            `| Total | ${scorecard.score.total.toFixed(1)} |`,
+            `| Model | ${scorecard.score.model} |`,
+            `| Profile | ${scorecard.coverage.traversal_profile} |`,
+            `| Probes | ${scorecard.coverage.probes_completed} |`,
+            `| Commands discovered | ${scorecard.coverage.commands_discovered} |`,
+            `| Commands runtime-confirmed | ${scorecard.coverage.commands_runtime_confirmed} |`,
+            `| Traversal complete | ${scorecard.coverage.traversal_complete} |`,
+            ""
+          ];
+          const text = `${lines.join("\n")}\n`;
+          process.stdout.write(text);
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          if (summaryPath) {
+            fs.appendFileSync(summaryPath, text);
+          }
+          NODE

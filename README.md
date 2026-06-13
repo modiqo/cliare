@@ -53,6 +53,8 @@ The ambition is not only to score CLIs. It is to raise the quality bar for CLI d
 
 This repository is private while the project is being shaped. The initial commit contains the Rust project scaffold and the full design packet under [`docs/`](docs/00-index.md).
 
+CLIARE dogfoods itself in GitHub Actions. Pull requests measure the freshly built `cliare` binary with the `quick` profile, pushes to `main` use `standard`, scheduled weekly runs use `deep`, and each run publishes a clean job-summary score plus uploaded evidence, shape, scorecard, and report artifacts.
+
 ## Goals
 
 - Infer command trees, flags, arguments, output contracts, and safety properties from runtime evidence.
