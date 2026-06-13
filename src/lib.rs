@@ -13,6 +13,7 @@ pub mod observation;
 pub mod output;
 pub mod planner;
 pub mod policy;
+pub mod precondition;
 pub mod process;
 pub mod sandbox;
 pub mod score;

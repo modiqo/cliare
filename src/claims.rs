@@ -5,6 +5,7 @@ use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::layout;
 use crate::observation::ShapeObservation;
 use crate::output::{self, ObservedOutputKind, OutputMode};
+use crate::precondition::{self, PreconditionKind};
 
 const COMMAND_PRIOR: f64 = 0.08;
 const FLAG_PRIOR: f64 = 0.12;
@@ -83,11 +84,15 @@ impl ClaimSet {
 
     fn apply_help_observation(&mut self, binary_name: &str, observation: &ShapeObservation) {
         let help_like = successful_help_like(observation);
+        let precondition = precondition_for_observation(observation);
         let current_path = CommandPath::new(observation.path.clone());
 
         if !current_path.is_empty() {
-            self.command_mut(current_path.clone())
-                .apply_runtime_help(&observation.evidence_id, help_like);
+            self.command_mut(current_path.clone()).apply_runtime_help(
+                &observation.evidence_id,
+                help_like,
+                precondition,
+            );
         }
 
         let Some(text) = observation.process.stdout.text.as_deref() else {
@@ -159,6 +164,11 @@ impl ClaimSet {
         if path.is_empty() {
             return;
         }
+        if let Some(precondition) = precondition_for_observation(observation) {
+            self.command_mut(path)
+                .apply_precondition_blocked(&observation.evidence_id, precondition);
+            return;
+        }
 
         self.command_mut(path)
             .apply_invalid_child(&observation.evidence_id, rejected_by_runtime(observation));
@@ -167,6 +177,11 @@ impl ClaimSet {
     fn apply_invalid_flag_observation(&mut self, observation: &ShapeObservation) {
         let path = CommandPath::new(observation.path.clone());
         if path.is_empty() {
+            return;
+        }
+        if let Some(precondition) = precondition_for_observation(observation) {
+            self.command_mut(path)
+                .apply_precondition_blocked(&observation.evidence_id, precondition);
             return;
         }
 
@@ -179,11 +194,11 @@ impl ClaimSet {
             return;
         };
         let path = CommandPath::new(observation.path.clone());
-        let classification = output::classify(
-            mode,
-            &observation.process.status,
-            observation.process.stdout.text.as_deref(),
-        );
+        let precondition = precondition_for_observation(observation);
+        if let Some(precondition) = precondition {
+            self.command_mut(path.clone())
+                .apply_precondition_blocked(&observation.evidence_id, precondition);
+        }
         let argv_fragment = output_probe_fragment(observation, path.as_slice());
 
         let matching_keys = self
@@ -203,18 +218,38 @@ impl ClaimSet {
                 mode,
                 argv_fragment: argv_fragment.clone(),
             };
-            self.outputs
-                .entry(key)
-                .or_insert_with(|| {
-                    OutputContractClaim::new(path, mode, mode.label().to_owned(), argv_fragment)
-                })
-                .apply_probe(&observation.evidence_id, classification);
+            let claim = self.outputs.entry(key).or_insert_with(|| {
+                OutputContractClaim::new(path, mode, mode.label().to_owned(), argv_fragment)
+            });
+            if let Some(precondition) = precondition {
+                claim.apply_precondition_probe(&observation.evidence_id, precondition);
+            } else {
+                claim.apply_probe(
+                    &observation.evidence_id,
+                    output::classify(
+                        mode,
+                        &observation.process.status,
+                        observation.process.stdout.text.as_deref(),
+                    ),
+                );
+            }
             return;
         }
 
         for key in matching_keys {
             if let Some(claim) = self.outputs.get_mut(&key) {
-                claim.apply_probe(&observation.evidence_id, classification.clone());
+                if let Some(precondition) = precondition {
+                    claim.apply_precondition_probe(&observation.evidence_id, precondition);
+                } else {
+                    claim.apply_probe(
+                        &observation.evidence_id,
+                        output::classify(
+                            mode,
+                            &observation.process.status,
+                            observation.process.stdout.text.as_deref(),
+                        ),
+                    );
+                }
             }
         }
     }
@@ -243,6 +278,7 @@ pub struct CommandClaim {
     belief: Belief,
     runtime_confirmed: bool,
     help_unavailable: bool,
+    preconditions: BTreeSet<PreconditionKind>,
     has_child_candidates: bool,
     invalid_child_rejected: bool,
     invalid_flag_rejected: bool,
@@ -260,6 +296,7 @@ impl CommandClaim {
             belief: Belief::with_prior(COMMAND_PRIOR),
             runtime_confirmed: false,
             help_unavailable: false,
+            preconditions: BTreeSet::new(),
             has_child_candidates: false,
             invalid_child_rejected: false,
             invalid_flag_rejected: false,
@@ -310,15 +347,30 @@ impl CommandClaim {
         self.evidence.push(format!("{evidence_id}:usage syntax"));
     }
 
-    fn apply_runtime_help(&mut self, evidence_id: &str, help_like: bool) {
+    fn apply_runtime_help(
+        &mut self,
+        evidence_id: &str,
+        help_like: bool,
+        precondition: Option<PreconditionKind>,
+    ) {
         if help_like {
             self.belief.update(4.0);
             self.runtime_confirmed = true;
+        } else if let Some(precondition) = precondition {
+            self.apply_precondition_blocked(evidence_id, precondition);
+            return;
         } else {
             self.belief.update(-2.0);
             self.help_unavailable = true;
         }
         self.evidence.push(evidence_id.to_owned());
+    }
+
+    fn apply_precondition_blocked(&mut self, evidence_id: &str, precondition: PreconditionKind) {
+        self.belief.update(2.0);
+        self.preconditions.insert(precondition);
+        self.evidence
+            .push(format!("{evidence_id}:{}", precondition.label()));
     }
 
     fn apply_child_candidate(&mut self, evidence_id: &str) {
@@ -373,6 +425,14 @@ impl CommandClaim {
 
     pub fn help_unavailable(&self) -> bool {
         self.help_unavailable
+    }
+
+    pub fn precondition_blocked(&self) -> bool {
+        !self.preconditions.is_empty()
+    }
+
+    pub fn preconditions(&self) -> impl Iterator<Item = PreconditionKind> + '_ {
+        self.preconditions.iter().copied()
     }
 
     pub fn has_child_candidates(&self) -> bool {
@@ -441,6 +501,8 @@ pub struct OutputContractClaim {
     advertised: bool,
     probed: bool,
     parse_success: bool,
+    precondition_blocked: bool,
+    preconditions: BTreeSet<PreconditionKind>,
     observed_kind: Option<ObservedOutputKind>,
     diagnostic: Option<String>,
     evidence: Vec<String>,
@@ -461,6 +523,8 @@ impl OutputContractClaim {
             advertised: false,
             probed: false,
             parse_success: false,
+            precondition_blocked: false,
+            preconditions: BTreeSet::new(),
             observed_kind: None,
             diagnostic: None,
             evidence: Vec::new(),
@@ -480,6 +544,20 @@ impl OutputContractClaim {
         self.diagnostic = Some(classification.detail);
         self.evidence
             .push(format!("{evidence_id}:output mode probe"));
+    }
+
+    fn apply_precondition_probe(&mut self, evidence_id: &str, precondition: PreconditionKind) {
+        self.probed = true;
+        self.precondition_blocked = true;
+        self.preconditions.insert(precondition);
+        self.diagnostic = Some(format!(
+            "output-mode probe blocked by {} precondition",
+            precondition.label()
+        ));
+        self.evidence.push(format!(
+            "{evidence_id}:output mode blocked by {}",
+            precondition.label()
+        ));
     }
 
     pub fn command_path(&self) -> &CommandPath {
@@ -508,6 +586,14 @@ impl OutputContractClaim {
 
     pub fn parse_success(&self) -> bool {
         self.parse_success
+    }
+
+    pub fn precondition_blocked(&self) -> bool {
+        self.precondition_blocked
+    }
+
+    pub fn preconditions(&self) -> impl Iterator<Item = PreconditionKind> + '_ {
+        self.preconditions.iter().copied()
     }
 
     pub fn observed_kind(&self) -> Option<ObservedOutputKind> {
@@ -631,6 +717,14 @@ fn successful_help_like(observation: &ShapeObservation) -> bool {
         .is_some_and(layout::is_help_like)
 }
 
+fn precondition_for_observation(observation: &ShapeObservation) -> Option<PreconditionKind> {
+    precondition::classify_process(
+        &observation.process.status,
+        observation.process.stdout.text.as_deref(),
+        observation.process.stderr.text.as_deref(),
+    )
+}
+
 fn rejected_by_runtime(observation: &ShapeObservation) -> bool {
     matches!(
         &observation.process.status,
@@ -695,6 +789,7 @@ mod tests {
     use super::{ClaimSet, FlagValueKind};
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::observation::ShapeObservation;
+    use crate::precondition::PreconditionKind;
     use crate::process::OutputCapture;
 
     #[test]
@@ -774,6 +869,41 @@ mod tests {
         assert!(measure.invalid_child_rejected());
         assert!(measure.invalid_flag_rejected());
         assert!(measure.has_child_candidates());
+    }
+
+    #[test]
+    fn auth_blocked_help_records_precondition_without_negative_help_failure() {
+        let observations = vec![
+            observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  model  Track AI model identity\n",
+                Some(0),
+            ),
+            observation(
+                "e_000005",
+                ProbeIntent::Help,
+                vec!["model".to_owned()],
+                "error: rote requires login\n\nrun rote login",
+                Some(77),
+            ),
+        ];
+
+        let claims = ClaimSet::from_observations("rote", &observations);
+        let model = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["model"])
+            .expect("model claim exists");
+
+        assert!(model.precondition_blocked());
+        assert_eq!(
+            model.preconditions().collect::<Vec<_>>(),
+            vec![PreconditionKind::AuthRequired]
+        );
+        assert!(!model.help_unavailable());
+        assert!(!model.runtime_confirmed());
+        assert!(model.confidence() > 0.5);
     }
 
     fn observation(

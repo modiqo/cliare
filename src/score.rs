@@ -9,6 +9,7 @@ use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
+use crate::precondition::{self, PreconditionKind};
 use crate::sandbox::SandboxMetadata;
 
 const SCHEMA_VERSION: &str = "cliare.scorecard.v1";
@@ -75,12 +76,14 @@ pub struct Coverage {
     sandbox_env_policy: &'static str,
     commands_discovered: usize,
     commands_runtime_confirmed: usize,
+    commands_precondition_blocked: usize,
     command_confirmation_rate: f64,
     flags_discovered: usize,
     output_contracts_discovered: usize,
     machine_readable_output_contracts: usize,
     output_mode_probes_completed: usize,
     output_mode_parse_successes: usize,
+    output_mode_precondition_blocked: usize,
     side_effect_files_created: usize,
     side_effect_files_modified: usize,
     side_effect_files_deleted: usize,
@@ -101,6 +104,8 @@ pub struct Coverage {
     probes_cancelled: usize,
     probes_timed_out: usize,
     probes_failed_to_spawn: usize,
+    precondition_blocked_probes: usize,
+    auth_required_probes: usize,
     frontier_remaining: usize,
     highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
@@ -154,10 +159,14 @@ pub struct ScoreArtifactSummary {
     pub model: &'static str,
     pub status: &'static str,
     pub findings: usize,
+    pub commands_precondition_blocked: usize,
     pub output_contracts_discovered: usize,
     pub machine_readable_output_contracts: usize,
     pub output_mode_probes_completed: usize,
     pub output_mode_parse_successes: usize,
+    pub output_mode_precondition_blocked: usize,
+    pub precondition_blocked_probes: usize,
+    pub auth_required_probes: usize,
     pub side_effect_files_created: usize,
     pub side_effect_files_modified: usize,
     pub side_effect_files_deleted: usize,
@@ -245,10 +254,14 @@ pub async fn write_score_artifacts(
         model: scorecard.score.model,
         status: score_status_label(&scorecard.score.status),
         findings: scorecard.findings.len(),
+        commands_precondition_blocked: scorecard.coverage.commands_precondition_blocked,
         output_contracts_discovered: scorecard.coverage.output_contracts_discovered,
         machine_readable_output_contracts: scorecard.coverage.machine_readable_output_contracts,
         output_mode_probes_completed: scorecard.coverage.output_mode_probes_completed,
         output_mode_parse_successes: scorecard.coverage.output_mode_parse_successes,
+        output_mode_precondition_blocked: scorecard.coverage.output_mode_precondition_blocked,
+        precondition_blocked_probes: scorecard.coverage.precondition_blocked_probes,
+        auth_required_probes: scorecard.coverage.auth_required_probes,
         side_effect_files_created: scorecard.coverage.side_effect_files_created,
         side_effect_files_modified: scorecard.coverage.side_effect_files_modified,
         side_effect_files_deleted: scorecard.coverage.side_effect_files_deleted,
@@ -339,7 +352,7 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
         Dimension::Discovery,
         DimensionScore {
             score: Some(round_score(
-                70.0 * metrics.coverage.command_confirmation_rate
+                70.0 * metrics.command_recognition_rate()
                     + 30.0 * metrics.coverage.avg_command_confidence,
             )),
             weight: 0.35,
@@ -476,8 +489,10 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
             severity: Severity::High,
             title: "Most discovered command candidates are not runtime-confirmed",
             detail: format!(
-                "{} of {} command candidates were runtime-confirmed.",
-                metrics.coverage.commands_runtime_confirmed, metrics.coverage.commands_discovered
+                "{} of {} command candidates were runtime-confirmed; {} were blocked by runtime preconditions.",
+                metrics.coverage.commands_runtime_confirmed,
+                metrics.coverage.commands_discovered,
+                metrics.coverage.commands_precondition_blocked
             ),
             recommendation: "Increase probe budget, improve help consistency, or expose a clearer command catalog.",
         });
@@ -532,20 +547,36 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
                 .to_owned(),
             recommendation: "Advertise a stable JSON or YAML output mode in command help.",
         });
-    } else if metrics.coverage.output_mode_parse_successes
-        < metrics.coverage.output_mode_probes_completed
-    {
+    } else if metrics.output_mode_parse_failures() > 0 {
         findings.push(Finding {
             id: "finding.output.unparseable_mode",
             dimension: Dimension::Output,
             severity: Severity::High,
             title: "Some advertised output modes did not parse",
             detail: format!(
-                "{} of {} output-mode probes parsed successfully.",
+                "{} of {} non-blocked output-mode probes parsed successfully.",
                 metrics.coverage.output_mode_parse_successes,
-                metrics.coverage.output_mode_probes_completed
+                metrics
+                    .coverage
+                    .output_mode_probes_completed
+                    .saturating_sub(metrics.coverage.output_mode_precondition_blocked)
             ),
             recommendation: "Ensure documented machine-readable modes produce valid output for safe help or diagnostic probes.",
+        });
+    }
+
+    if metrics.coverage.precondition_blocked_probes > 0 {
+        findings.push(Finding {
+            id: "finding.precondition.auth_required",
+            dimension: Dimension::Discovery,
+            severity: Severity::Medium,
+            title: "Some probes were blocked by runtime preconditions",
+            detail: format!(
+                "{} probes were blocked by auth/profile preconditions across {} command candidates.",
+                metrics.coverage.precondition_blocked_probes,
+                metrics.coverage.commands_precondition_blocked
+            ),
+            recommendation: "Expose unauthenticated help where practical, or document required auth/profile preconditions separately from command existence.",
         });
     }
 
@@ -657,6 +688,10 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.commands_runtime_confirmed
     ));
     report.push_str(&format!(
+        "- Commands precondition-blocked: `{}`\n",
+        scorecard.coverage.commands_precondition_blocked
+    ));
+    report.push_str(&format!(
         "- Command confirmation rate: `{:.1}%`\n",
         scorecard.coverage.command_confirmation_rate * 100.0
     ));
@@ -679,6 +714,10 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Output-mode parse successes: `{}`\n",
         scorecard.coverage.output_mode_parse_successes
+    ));
+    report.push_str(&format!(
+        "- Output-mode precondition-blocked: `{}`\n",
+        scorecard.coverage.output_mode_precondition_blocked
     ));
     report.push_str(&format!(
         "- Side-effect file changes: `{}`\n",
@@ -759,6 +798,14 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Probe spawn failures: `{}`\n\n",
         scorecard.coverage.probes_failed_to_spawn
+    ));
+    report.push_str(&format!(
+        "- Precondition-blocked probes: `{}`\n",
+        scorecard.coverage.precondition_blocked_probes
+    ));
+    report.push_str(&format!(
+        "- Auth-required probes: `{}`\n\n",
+        scorecard.coverage.auth_required_probes
     ));
     report.push_str(&format!(
         "- Frontier remaining: `{}`\n",
@@ -882,6 +929,7 @@ struct Metrics {
     machine_readable_output_contracts: usize,
     output_mode_probe_count: usize,
     output_mode_parse_successes: usize,
+    output_mode_precondition_blocked: usize,
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
@@ -903,6 +951,10 @@ impl Metrics {
             .iter()
             .filter(|command| command.runtime_confirmed())
             .count();
+        let commands_precondition_blocked = commands
+            .iter()
+            .filter(|command| command.precondition_blocked())
+            .count();
         let avg_command_confidence = average(commands.iter().map(|command| command.confidence()));
         let avg_flag_confidence = average(flags.iter().map(|flag| flag.confidence()));
         let grammar_gap_count = commands
@@ -920,6 +972,10 @@ impl Metrics {
         let output_mode_parse_successes = outputs
             .iter()
             .filter(|contract| contract.parse_success())
+            .count();
+        let output_mode_precondition_blocked = outputs
+            .iter()
+            .filter(|contract| contract.precondition_blocked())
             .count();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
@@ -945,12 +1001,14 @@ impl Metrics {
                 sandbox_env_policy: run_context.sandbox.env_policy,
                 commands_discovered,
                 commands_runtime_confirmed,
+                commands_precondition_blocked,
                 command_confirmation_rate: ratio(commands_runtime_confirmed, commands_discovered),
                 flags_discovered: flags.len(),
                 output_contracts_discovered,
                 machine_readable_output_contracts,
                 output_mode_probes_completed: output_mode_probe_count,
                 output_mode_parse_successes,
+                output_mode_precondition_blocked,
                 side_effect_files_created: process_metrics.side_effect_files_created,
                 side_effect_files_modified: process_metrics.side_effect_files_modified,
                 side_effect_files_deleted: process_metrics.side_effect_files_deleted,
@@ -971,6 +1029,8 @@ impl Metrics {
                 probes_cancelled: run_context.probes_cancelled,
                 probes_timed_out: process_metrics.timed_out,
                 probes_failed_to_spawn: process_metrics.failed_to_spawn,
+                precondition_blocked_probes: process_metrics.precondition_blocked,
+                auth_required_probes: process_metrics.auth_required,
                 frontier_remaining: run_context.frontier_remaining,
                 highest_pending_expected_value: run_context.highest_pending_expected_value,
                 candidates_skipped_by_depth: run_context.candidates_skipped_by_depth,
@@ -988,6 +1048,7 @@ impl Metrics {
             machine_readable_output_contracts,
             output_mode_probe_count,
             output_mode_parse_successes,
+            output_mode_precondition_blocked,
             side_effect_files_total: process_metrics.side_effect_files_total,
             side_effect_probe_count: process_metrics.side_effect_probe_count,
             credential_like_side_effects: process_metrics.credential_like_side_effects,
@@ -1007,6 +1068,19 @@ impl Metrics {
             self.coverage.flags_discovered,
         )
     }
+
+    fn command_recognition_rate(&self) -> f64 {
+        ratio(
+            self.coverage.commands_runtime_confirmed + self.coverage.commands_precondition_blocked,
+            self.coverage.commands_discovered,
+        )
+    }
+
+    fn output_mode_parse_failures(&self) -> usize {
+        self.output_mode_probe_count
+            .saturating_sub(self.output_mode_parse_successes)
+            .saturating_sub(self.output_mode_precondition_blocked)
+    }
 }
 
 fn output_score(metrics: &Metrics) -> f64 {
@@ -1015,9 +1089,12 @@ fn output_score(metrics: &Metrics) -> f64 {
     }
 
     let advertised_score = 40.0;
+    let non_blocked_probe_count = metrics
+        .output_mode_probe_count
+        .saturating_sub(metrics.output_mode_precondition_blocked);
     let denominator = metrics
         .machine_readable_output_contracts
-        .max(metrics.output_mode_probe_count);
+        .max(non_blocked_probe_count);
     advertised_score + 60.0 * ratio(metrics.output_mode_parse_successes, denominator)
 }
 
@@ -1079,6 +1156,8 @@ struct ProcessMetrics {
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
+    precondition_blocked: usize,
+    auth_required: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -1108,10 +1187,23 @@ impl ProcessMetrics {
                 .filter(|change| credential_like_path(&change.path))
                 .count();
 
+            let precondition = precondition::classify_process(
+                &observation.process.status,
+                observation.process.stdout.text.as_deref(),
+                observation.process.stderr.text.as_deref(),
+            );
+            if let Some(precondition) = precondition {
+                metrics.precondition_blocked += 1;
+                if precondition == PreconditionKind::AuthRequired {
+                    metrics.auth_required += 1;
+                }
+            }
+
             if matches!(
                 observation.intent,
                 ProbeIntent::InvalidCommand | ProbeIntent::InvalidChild | ProbeIntent::InvalidFlag
-            ) {
+            ) && precondition.is_none()
+            {
                 metrics.invalid_probe_count += 1;
                 if exited_nonzero(&observation.process.status) {
                     metrics.invalid_probe_rejections += 1;
@@ -1256,6 +1348,50 @@ mod tests {
         let scorecard = scorecard(target, &observations, ScoreRunContext::default());
 
         assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
+    }
+
+    #[test]
+    fn auth_blocked_probes_are_reported_as_preconditions_not_recovery_success() {
+        let observations = vec![
+            observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  model  Track AI model identity\n",
+                Some(0),
+            ),
+            observation(
+                "e_000005",
+                ProbeIntent::Help,
+                vec!["model".to_owned()],
+                "error: rote requires login\n\nrun rote login",
+                Some(77),
+            ),
+            observation(
+                "e_000007",
+                ProbeIntent::InvalidFlag,
+                vec!["model".to_owned()],
+                "error: rote requires login\n\nrun rote login",
+                Some(77),
+            ),
+        ];
+
+        let scorecard = scorecard(target(), &observations, ScoreRunContext::default());
+
+        assert_eq!(scorecard.coverage.commands_runtime_confirmed, 0);
+        assert_eq!(scorecard.coverage.commands_precondition_blocked, 1);
+        assert_eq!(scorecard.coverage.precondition_blocked_probes, 2);
+        assert_eq!(scorecard.coverage.auth_required_probes, 2);
+        assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 0.0);
+        assert!(scorecard.findings.iter().any(|finding| {
+            finding.id == "finding.precondition.auth_required"
+                && finding.title == "Some probes were blocked by runtime preconditions"
+        }));
+
+        let report = render_report(&scorecard);
+        assert!(report.contains("- Commands precondition-blocked: `1`"));
+        assert!(report.contains("- Precondition-blocked probes: `2`"));
+        assert!(report.contains("- Auth-required probes: `2`"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
 use crate::output::{ObservedOutputKind, OutputMode};
+use crate::precondition::PreconditionKind;
 
 const SCHEMA_VERSION: &str = "cliare.command-shape.v1";
 const INFERENCE_MODEL: &str = "cliare-generic-claims-v0";
@@ -36,6 +37,8 @@ pub struct CommandCandidate {
     usage_observed: bool,
     confidence: f64,
     runtime_confirmed: bool,
+    runtime_state: CommandRuntimeState,
+    preconditions: Vec<PreconditionKind>,
     evidence: Vec<String>,
 }
 
@@ -70,6 +73,8 @@ pub struct OutputContractCandidate {
     advertised: bool,
     probed: bool,
     parse_success: bool,
+    precondition_blocked: bool,
+    preconditions: Vec<PreconditionKind>,
     observed_kind: Option<ObservedOutputKind>,
     diagnostic: Option<String>,
     evidence: Vec<String>,
@@ -96,12 +101,21 @@ pub struct Gap {
 pub enum GapKind {
     ExistenceUnconfirmed,
     HelpUnavailable,
+    PreconditionBlocked,
     FlagsUnknown,
     ArgumentArityUnknown,
     InvalidChildDiagnosticsUnknown,
     InvalidFlagDiagnosticsUnknown,
     OutputModeUnprobed,
     OutputModeParseFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandRuntimeState {
+    RuntimeConfirmed,
+    PreconditionBlocked,
+    Unconfirmed,
 }
 
 #[derive(Debug, Serialize)]
@@ -176,7 +190,19 @@ fn command_candidate(binary_name: &str, command: &CommandClaim) -> CommandCandid
         usage_observed: command.usage_observed(),
         confidence: command.confidence(),
         runtime_confirmed: command.runtime_confirmed(),
+        runtime_state: command_runtime_state(command),
+        preconditions: command.preconditions().collect(),
         evidence: command.evidence().to_vec(),
+    }
+}
+
+fn command_runtime_state(command: &CommandClaim) -> CommandRuntimeState {
+    if command.runtime_confirmed() {
+        CommandRuntimeState::RuntimeConfirmed
+    } else if command.precondition_blocked() {
+        CommandRuntimeState::PreconditionBlocked
+    } else {
+        CommandRuntimeState::Unconfirmed
     }
 }
 
@@ -213,6 +239,8 @@ fn output_contract_candidate(contract: &OutputContractClaim) -> OutputContractCa
         advertised: contract.advertised(),
         probed: contract.probed(),
         parse_success: contract.parse_success(),
+        precondition_blocked: contract.precondition_blocked(),
+        preconditions: contract.preconditions().collect(),
         observed_kind: contract.observed_kind(),
         diagnostic: contract.diagnostic().map(str::to_owned),
         evidence: contract.evidence().to_vec(),
@@ -244,7 +272,14 @@ fn gap_items<'a>(
                 evidence: command.evidence().to_vec(),
             });
         }
-        if command.help_unavailable() {
+        if command.precondition_blocked() {
+            gaps.push(Gap {
+                kind: GapKind::PreconditionBlocked,
+                command_path: command.path().to_vec(),
+                reason: "safe probe was blocked by a runtime precondition".to_owned(),
+                evidence: command.evidence().to_vec(),
+            });
+        } else if command.help_unavailable() {
             gaps.push(Gap {
                 kind: GapKind::HelpUnavailable,
                 command_path: command.path().to_vec(),
@@ -296,6 +331,13 @@ fn gap_items<'a>(
                 kind: GapKind::OutputModeUnprobed,
                 command_path: contract.command_path.clone(),
                 reason: "advertised output mode has not been runtime-probed".to_owned(),
+                evidence: contract.evidence.clone(),
+            });
+        } else if contract.precondition_blocked {
+            gaps.push(Gap {
+                kind: GapKind::PreconditionBlocked,
+                command_path: contract.command_path.clone(),
+                reason: "advertised output mode was blocked by a runtime precondition".to_owned(),
                 evidence: contract.evidence.clone(),
             });
         } else if !contract.parse_success {
@@ -390,6 +432,45 @@ mod tests {
             .expect("measure candidate exists");
         assert!(measure.runtime_confirmed);
         assert!(measure.confidence > 0.90);
+    }
+
+    #[test]
+    fn auth_blocked_help_is_shape_precondition_not_help_unavailable() {
+        let target = target();
+        let root = observation(
+            "e_000003",
+            ProbeIntent::Help,
+            vec![],
+            "Commands:\n  model  Track AI model identity\n",
+            Some(0),
+        );
+        let model_help = observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["model".to_owned()],
+            "error: rote requires login\n\nrun rote login",
+            Some(77),
+        );
+
+        let shape = infer_shape(target, &[root, model_help]);
+        let model = shape
+            .commands
+            .iter()
+            .find(|command| command.path == ["model"])
+            .expect("model candidate exists");
+
+        assert!(!model.runtime_confirmed);
+        assert!(matches!(
+            model.runtime_state,
+            super::CommandRuntimeState::PreconditionBlocked
+        ));
+        assert_eq!(model.preconditions.len(), 1);
+        assert!(shape.gaps.iter().any(|gap| {
+            gap.command_path == ["model"] && matches!(gap.kind, super::GapKind::PreconditionBlocked)
+        }));
+        assert!(!shape.gaps.iter().any(|gap| {
+            gap.command_path == ["model"] && matches!(gap.kind, super::GapKind::HelpUnavailable)
+        }));
     }
 
     #[test]

@@ -48,10 +48,14 @@ pub struct MeasurementSummary {
     pub score_model: String,
     pub score_status: String,
     pub findings: usize,
+    pub commands_precondition_blocked: usize,
     pub output_contracts_discovered: usize,
     pub machine_readable_output_contracts: usize,
     pub output_mode_probes_completed: usize,
     pub output_mode_parse_successes: usize,
+    pub output_mode_precondition_blocked: usize,
+    pub precondition_blocked_probes: usize,
+    pub auth_required_probes: usize,
     pub side_effect_files_created: usize,
     pub side_effect_files_modified: usize,
     pub side_effect_files_deleted: usize,
@@ -101,6 +105,10 @@ impl MeasurementSummary {
             format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
+            "preconditions:".to_owned(),
+            format!("  commands blocked: {}", self.commands_precondition_blocked),
+            format!("  probes blocked: {}", self.precondition_blocked_probes),
+            format!("  auth required: {}", self.auth_required_probes),
             "output contracts:".to_owned(),
             format!("  discovered: {}", self.output_contracts_discovered),
             format!(
@@ -109,6 +117,7 @@ impl MeasurementSummary {
             ),
             format!("  probes completed: {}", self.output_mode_probes_completed),
             format!("  parse successes: {}", self.output_mode_parse_successes),
+            format!("  blocked: {}", self.output_mode_precondition_blocked),
             "side effects:".to_owned(),
             format!("  file changes: {}", self.side_effect_files_total),
             format!("  probes with changes: {}", self.side_effect_probe_count),
@@ -283,10 +292,14 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         score_model: score_artifacts.model.to_owned(),
         score_status: score_artifacts.status.to_owned(),
         findings: score_artifacts.findings,
+        commands_precondition_blocked: score_artifacts.commands_precondition_blocked,
         output_contracts_discovered: score_artifacts.output_contracts_discovered,
         machine_readable_output_contracts: score_artifacts.machine_readable_output_contracts,
         output_mode_probes_completed: score_artifacts.output_mode_probes_completed,
         output_mode_parse_successes: score_artifacts.output_mode_parse_successes,
+        output_mode_precondition_blocked: score_artifacts.output_mode_precondition_blocked,
+        precondition_blocked_probes: score_artifacts.precondition_blocked_probes,
+        auth_required_probes: score_artifacts.auth_required_probes,
         side_effect_files_created: score_artifacts.side_effect_files_created,
         side_effect_files_modified: score_artifacts.side_effect_files_modified,
         side_effect_files_deleted: score_artifacts.side_effect_files_deleted,
@@ -497,10 +510,18 @@ struct CachedMeasurementSummary {
     sandbox_workdir: PathBuf,
     sandbox_env_policy: String,
     findings: usize,
+    #[serde(default)]
+    commands_precondition_blocked: usize,
     output_contracts_discovered: usize,
     machine_readable_output_contracts: usize,
     output_mode_probes_completed: usize,
     output_mode_parse_successes: usize,
+    #[serde(default)]
+    output_mode_precondition_blocked: usize,
+    #[serde(default)]
+    precondition_blocked_probes: usize,
+    #[serde(default)]
+    auth_required_probes: usize,
     side_effect_files_created: usize,
     side_effect_files_modified: usize,
     side_effect_files_deleted: usize,
@@ -587,10 +608,14 @@ impl MeasurementCacheManifest {
             sandbox_workdir: self.summary.sandbox_workdir,
             sandbox_env_policy: self.summary.sandbox_env_policy,
             findings: self.summary.findings,
+            commands_precondition_blocked: self.summary.commands_precondition_blocked,
             output_contracts_discovered: self.summary.output_contracts_discovered,
             machine_readable_output_contracts: self.summary.machine_readable_output_contracts,
             output_mode_probes_completed: self.summary.output_mode_probes_completed,
             output_mode_parse_successes: self.summary.output_mode_parse_successes,
+            output_mode_precondition_blocked: self.summary.output_mode_precondition_blocked,
+            precondition_blocked_probes: self.summary.precondition_blocked_probes,
+            auth_required_probes: self.summary.auth_required_probes,
             side_effect_files_created: self.summary.side_effect_files_created,
             side_effect_files_modified: self.summary.side_effect_files_modified,
             side_effect_files_deleted: self.summary.side_effect_files_deleted,
@@ -667,10 +692,14 @@ async fn write_cache_manifest(
             sandbox_workdir: summary.sandbox_workdir.clone(),
             sandbox_env_policy: summary.sandbox_env_policy.to_owned(),
             findings: summary.findings,
+            commands_precondition_blocked: summary.commands_precondition_blocked,
             output_contracts_discovered: summary.output_contracts_discovered,
             machine_readable_output_contracts: summary.machine_readable_output_contracts,
             output_mode_probes_completed: summary.output_mode_probes_completed,
             output_mode_parse_successes: summary.output_mode_parse_successes,
+            output_mode_precondition_blocked: summary.output_mode_precondition_blocked,
+            precondition_blocked_probes: summary.precondition_blocked_probes,
+            auth_required_probes: summary.auth_required_probes,
             side_effect_files_created: summary.side_effect_files_created,
             side_effect_files_modified: summary.side_effect_files_modified,
             side_effect_files_deleted: summary.side_effect_files_deleted,
@@ -797,10 +826,14 @@ mod tests {
             score_model: "cliare-score-v0".to_owned(),
             score_status: "experimental partial".to_owned(),
             findings: 2,
+            commands_precondition_blocked: 1,
             output_contracts_discovered: 1,
             machine_readable_output_contracts: 1,
             output_mode_probes_completed: 1,
             output_mode_parse_successes: 1,
+            output_mode_precondition_blocked: 0,
+            precondition_blocked_probes: 1,
+            auth_required_probes: 1,
             side_effect_files_created: 0,
             side_effect_files_modified: 0,
             side_effect_files_deleted: 0,
@@ -832,8 +865,13 @@ mod tests {
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
         assert!(text.contains("cache: miss"));
+        assert!(text.contains("preconditions:"));
+        assert!(text.contains("commands blocked: 1"));
+        assert!(text.contains("probes blocked: 1"));
+        assert!(text.contains("auth required: 1"));
         assert!(text.contains("output contracts:"));
         assert!(text.contains("machine-readable: 1"));
+        assert!(text.contains("blocked: 0"));
         assert!(text.contains("side effects:"));
         assert!(text.contains("file changes: 0"));
         assert!(text.contains("sandbox profile: isolated"));

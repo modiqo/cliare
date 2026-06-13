@@ -384,9 +384,13 @@ fn target_report_from_summary(
         max_depth: Some(summary.max_depth),
         max_probes: Some(summary.max_probes),
         concurrency_limit: Some(summary.concurrency_limit),
+        commands_precondition_blocked: Some(summary.commands_precondition_blocked),
+        precondition_blocked_probes: Some(summary.precondition_blocked_probes),
+        auth_required_probes: Some(summary.auth_required_probes),
         output_contracts_discovered: Some(summary.output_contracts_discovered),
         machine_readable_output_contracts: Some(summary.machine_readable_output_contracts),
         output_mode_parse_successes: Some(summary.output_mode_parse_successes),
+        output_mode_precondition_blocked: Some(summary.output_mode_precondition_blocked),
         side_effect_files_total: Some(summary.side_effect_files_total),
         side_effect_probe_count: Some(summary.side_effect_probe_count),
         credential_like_side_effects: Some(summary.credential_like_side_effects),
@@ -502,6 +506,18 @@ async fn write_markdown_report(out_dir: &Path, report: &BenchmarkReport) -> Resu
         report.calibration.findings_total
     ));
     text.push_str(&format!(
+        "| Commands precondition-blocked | {} |\n",
+        report.calibration.commands_precondition_blocked
+    ));
+    text.push_str(&format!(
+        "| Precondition-blocked probes | {} |\n",
+        report.calibration.precondition_blocked_probes
+    ));
+    text.push_str(&format!(
+        "| Auth-required probes | {} |\n",
+        report.calibration.auth_required_probes
+    ));
+    text.push_str(&format!(
         "| Output contracts discovered | {} |\n",
         report.calibration.output_contracts_discovered
     ));
@@ -512,6 +528,10 @@ async fn write_markdown_report(out_dir: &Path, report: &BenchmarkReport) -> Resu
     text.push_str(&format!(
         "| Output parse successes | {} |\n",
         report.calibration.output_mode_parse_successes
+    ));
+    text.push_str(&format!(
+        "| Output precondition-blocked | {} |\n",
+        report.calibration.output_mode_precondition_blocked
     ));
     text.push_str(&format!(
         "| Side-effect file changes | {} |\n",
@@ -527,11 +547,11 @@ async fn write_markdown_report(out_dir: &Path, report: &BenchmarkReport) -> Resu
     ));
 
     text.push_str("## Targets\n\n");
-    text.push_str("| Target | Status | Score | Expected | Duration | Probes | Depth | Budget | Output | Side effects | Issues |\n");
-    text.push_str("|---|---|---:|---:|---:|---:|---:|---|---:|---:|---|\n");
+    text.push_str("| Target | Status | Score | Expected | Duration | Probes | Depth | Budget | Preconditions | Output | Side effects | Issues |\n");
+    text.push_str("|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---|\n");
     for target in &report.targets {
         text.push_str(&format!(
-            "| `{}` | `{}` | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| `{}` | `{}` | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             escape_markdown(&target.id),
             target.status.label(),
             optional_score(target.score),
@@ -540,6 +560,7 @@ async fn write_markdown_report(out_dir: &Path, report: &BenchmarkReport) -> Resu
             optional_usize(target.probes_completed),
             optional_depth(target.observed_max_depth, target.max_depth),
             budget_label(target),
+            precondition_label(target),
             output_label(target),
             optional_usize(target.side_effect_files_total),
             escape_markdown(&target.issues.join("; "))
@@ -668,6 +689,17 @@ fn output_label(target: &BenchmarkTargetReport) -> String {
         (Some(machine), Some(discovered), Some(parse_successes)) => {
             format!("{machine}/{discovered}; parse {parse_successes}")
         }
+        _ => "n/a".to_owned(),
+    }
+}
+
+fn precondition_label(target: &BenchmarkTargetReport) -> String {
+    match (
+        target.commands_precondition_blocked,
+        target.precondition_blocked_probes,
+        target.auth_required_probes,
+    ) {
+        (Some(commands), Some(probes), Some(auth)) => format!("{commands}/{probes}/{auth}"),
         _ => "n/a".to_owned(),
     }
 }
@@ -862,9 +894,13 @@ struct BenchmarkCalibration {
     budget_exhaustion_rate: Option<f64>,
     probes_completed_total: usize,
     findings_total: usize,
+    commands_precondition_blocked: usize,
+    precondition_blocked_probes: usize,
+    auth_required_probes: usize,
     output_contracts_discovered: usize,
     machine_readable_output_contracts: usize,
     output_mode_parse_successes: usize,
+    output_mode_precondition_blocked: usize,
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
@@ -926,6 +962,13 @@ impl BenchmarkCalibration {
             budget_exhaustion_rate,
             probes_completed_total: sum_optional_usize(targets, |target| target.probes_completed),
             findings_total: sum_optional_usize(targets, |target| target.findings),
+            commands_precondition_blocked: sum_optional_usize(targets, |target| {
+                target.commands_precondition_blocked
+            }),
+            precondition_blocked_probes: sum_optional_usize(targets, |target| {
+                target.precondition_blocked_probes
+            }),
+            auth_required_probes: sum_optional_usize(targets, |target| target.auth_required_probes),
             output_contracts_discovered: sum_optional_usize(targets, |target| {
                 target.output_contracts_discovered
             }),
@@ -934,6 +977,9 @@ impl BenchmarkCalibration {
             }),
             output_mode_parse_successes: sum_optional_usize(targets, |target| {
                 target.output_mode_parse_successes
+            }),
+            output_mode_precondition_blocked: sum_optional_usize(targets, |target| {
+                target.output_mode_precondition_blocked
             }),
             side_effect_files_total: sum_optional_usize(targets, |target| {
                 target.side_effect_files_total
@@ -988,9 +1034,13 @@ struct BenchmarkTargetReport {
     max_depth: Option<usize>,
     max_probes: Option<usize>,
     concurrency_limit: Option<usize>,
+    commands_precondition_blocked: Option<usize>,
+    precondition_blocked_probes: Option<usize>,
+    auth_required_probes: Option<usize>,
     output_contracts_discovered: Option<usize>,
     machine_readable_output_contracts: Option<usize>,
     output_mode_parse_successes: Option<usize>,
+    output_mode_precondition_blocked: Option<usize>,
     side_effect_files_total: Option<usize>,
     side_effect_probe_count: Option<usize>,
     credential_like_side_effects: Option<usize>,
@@ -1020,9 +1070,13 @@ impl BenchmarkTargetReport {
             max_depth: None,
             max_probes: None,
             concurrency_limit: None,
+            commands_precondition_blocked: None,
+            precondition_blocked_probes: None,
+            auth_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,
+            output_mode_precondition_blocked: None,
             side_effect_files_total: None,
             side_effect_probe_count: None,
             credential_like_side_effects: None,
@@ -1057,9 +1111,13 @@ impl BenchmarkTargetReport {
             max_depth: None,
             max_probes: None,
             concurrency_limit: None,
+            commands_precondition_blocked: None,
+            precondition_blocked_probes: None,
+            auth_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,
+            output_mode_precondition_blocked: None,
             side_effect_files_total: None,
             side_effect_probe_count: None,
             credential_like_side_effects: None,
@@ -1095,9 +1153,13 @@ impl BenchmarkTargetReport {
             max_depth: None,
             max_probes: None,
             concurrency_limit: None,
+            commands_precondition_blocked: None,
+            precondition_blocked_probes: None,
+            auth_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,
+            output_mode_precondition_blocked: None,
             side_effect_files_total: None,
             side_effect_probe_count: None,
             credential_like_side_effects: None,
