@@ -1,10 +1,10 @@
-# CLIARE: CLI for Agent Readiness
+# CLIARE: CLI Agent Readiness Evaluation
 
 > **Status:** Product and Technical Design Draft
 > **Owner:** modiqo
 > **Scope:** Independent OSS standard, reference implementation, CI runner, scorecard, and leaderboard for agent-ready CLIs
 > **Working Name:** CLIARE, pronounced "clear"
-> **Expansion:** CLI for Agent Readiness
+> **Expansion:** CLI Agent Readiness Evaluation
 
 ---
 
@@ -76,6 +76,7 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **14** | [Operational Contracts](14-operational-contracts.md) | Post-core hardening for cache reuse, adversarial targets, dependency policy, score governance, and reproducibility | Non-critical follow-up before public certification |
 | **15** | [Generic Inference Processor](15-generic-inference-processor.md) | Corrected framework-agnostic inference design: layout observations, candidate claims, Bayesian updates, confirmation probes | Clap is dogfood only, not an inference assumption |
 | **16** | [Progress Scorecard](16-progress-scorecard.md) | Project delivery scorecard, MVP progress, next checkpoint | Current MVP estimate: 96% complete, 4% remaining |
+| **17** | [Scoring Model and Bayesian Confidence](17-scoring-model-and-bayesian-confidence.md) | Current score v0 formulas, Bayesian claim confidence, credibility boundary, and calibration path | v0 is credible for CI and improvement tracking; v1 needs public calibration before leaderboard certification |
 
 ---
 

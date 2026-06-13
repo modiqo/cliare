@@ -74,7 +74,7 @@ Example:
 
 ## Subscores
 
-The first implementation emits an experimental partial scorecard. It computes a deterministic total over dimensions that currently have direct evidence and marks unsupported dimensions as `not_measured`.
+The current implementation emits an experimental partial scorecard. It computes a deterministic total over dimensions that currently have direct evidence and keeps the model status explicit as `experimental_partial`.
 
 Score v0 measures:
 
@@ -82,13 +82,12 @@ Score v0 measures:
 - grammar from flag confidence and unresolved grammar gaps
 - execution from completed probes, timeouts, and spawn failures
 - recovery from invalid command, invalid child, and invalid flag rejection behavior
+- output from advertised machine-readable modes and safe parse probes
+- safety from persistent filesystem side effects observed during safe probes
 
-Score v0 does not yet measure:
+Score v0 does not yet include the full certified model: calibrated confidence intervals, destructive-action classification, workload-specific task weighting, public truth-set calibration, or profile-normalized leaderboard scoring.
 
-- output parseability
-- safety, side effects, dry-run, or confirmation behavior
-
-Those unmeasured dimensions remain in the scorecard with rationales, but they are not included in the partial total.
+For the exact implemented formulas and Bayesian confidence layer, see [Scoring Model and Bayesian Confidence](17-scoring-model-and-bayesian-confidence.md).
 
 ### Discovery
 

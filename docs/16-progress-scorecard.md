@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `feat: classify precondition-blocked probes`
+> Last updated: after checkpoint `docs: explain scoring model`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -15,7 +15,7 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | Runtime probing | 82% | Safe bootstrap, bounded output, timeouts, recursive probes, per-probe isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env, per-probe filesystem diffs, transient-file-safe snapshots, and inherited pipe drain protection |
 | Generic inference | 67% | Layout claims, runtime confirmation, precondition-blocked runtime state, Bayesian confidence, usage positionals, aliases, flag grammar, output-mode claims, structural command-row extraction, and manpage false-positive suppression exist; value domains still planned |
 | Command shape artifact | 71% | Commands, runtime states, auth preconditions, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
-| Scoring | 58% | v0 dimensions for discovery, grammar, execution, recovery, output, and initial safety; determinism still planned |
+| Scoring | 62% | v0 dimensions for discovery, grammar, execution, recovery, output, and initial safety; Bayesian claim confidence and implemented formulas are now documented; full calibration and confidence intervals still planned |
 | CI guard | 86% | Baseline comparison, policy evaluation, SARIF, JUnit, Markdown CI summary, and GitHub Action wrapper exist; richer policy ergonomics still planned |
 | Cache and fingerprinting | 65% | Binary/profile/version/sandbox-profile/concurrency/artifact-set cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 86% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, pressure reporting, bounded async probe rounds, and corpus-level target parallelism exist; richer cancellation policy still planned |
@@ -53,12 +53,13 @@ The current implementation is useful for local measurement, CI regression checks
 17. Real CLI benchmark corpus with `cliare.benchmark-corpus.v1` manifests, target-level parallelism, expected score bands, runtime caps, streaming JSON/Markdown reports, single-writer atomic aggregate writes, output-directory locking, per-target artifacts, and a deep local corpus covering `cliare`, `rote`, `git`, `supabase`, `gh`, `cargo`, `npm`, `docker`, and `deno`.
 18. Structural command-row extraction hardening that avoids semantic section-title allowlists, rejects wrapped prose and numeric menu rows, suppresses non-root manpage child-command false positives, and keeps command discovery rooted in layout morphology plus runtime confirmation.
 19. Precondition-blocked runtime state with auth-required diagnostic classification, command shape `runtime_state: precondition_blocked`, precondition gaps, scorecard/report coverage counts, recovery accounting that excludes auth-blocked invalid probes, and benchmark precondition totals.
+20. Scoring model documentation that explains the current `cliare-score-v0` formulas, Bayesian log-odds claim confidence, the credibility boundary between CI-ready scoring and public leaderboard certification, and the calibration path to `cliare-score-v1`.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 18: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 21: Baseline Accept, Rescore, Certify, and Replay
 
 Goal: turn the current measurement and benchmark core into a complete user-facing MVP flow for maintainers and CI.
 
