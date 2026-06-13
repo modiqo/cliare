@@ -97,6 +97,44 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read scorecard for CI artifacts {path}")]
+    ReadCiScorecard {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse scorecard for CI artifacts {path}")]
+    ParseCiScorecard {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to write CI summary {path}")]
+    WriteCiSummary {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to serialize SARIF")]
+    SerializeSarif(#[source] serde_json::Error),
+
+    #[error("failed to write SARIF {path}")]
+    WriteSarif {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write JUnit XML {path}")]
+    WriteJunit {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read measurement cache manifest {path}")]
     ReadMeasurementCache {
         path: PathBuf,

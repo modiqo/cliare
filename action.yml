@@ -1,0 +1,135 @@
+name: CLIARE
+description: Measure CLI agent readiness and publish local CI score artifacts.
+
+inputs:
+  target:
+    description: Path or PATH-resolved command name for the CLI to measure.
+    required: true
+  mode:
+    description: Run mode, either measure or guard.
+    required: false
+    default: measure
+  baseline:
+    description: Baseline scorecard path for guard mode.
+    required: false
+  allowed-drop:
+    description: Allowed score drop for guard mode.
+    required: false
+    default: "0"
+  out:
+    description: Output directory for CLIARE artifacts.
+    required: false
+    default: .cliare
+  profile:
+    description: Traversal profile: quick, standard, or deep.
+    required: false
+    default: standard
+  cliare-command:
+    description: CLIARE executable to invoke. Install it before using this action.
+    required: false
+    default: cliare
+  extra-args:
+    description: Additional trusted arguments passed to cliare.
+    required: false
+    default: ""
+  upload-artifacts:
+    description: Upload the generated CLIARE artifact directory.
+    required: false
+    default: "true"
+  artifact-name:
+    description: Name for uploaded CLIARE artifacts.
+    required: false
+    default: cliare-artifacts
+
+outputs:
+  score:
+    description: Numeric CLIARE score from scorecard.json.
+    value: ${{ steps.collect.outputs.score }}
+  scorecard:
+    description: Path to scorecard.json.
+    value: ${{ steps.collect.outputs.scorecard }}
+  summary:
+    description: Path to summary.md.
+    value: ${{ steps.collect.outputs.summary }}
+  sarif:
+    description: Path to findings.sarif.
+    value: ${{ steps.collect.outputs.sarif }}
+  junit:
+    description: Path to junit.xml.
+    value: ${{ steps.collect.outputs.junit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run CLIARE
+      shell: bash
+      env:
+        CLIARE_MODE: ${{ inputs.mode }}
+        CLIARE_TARGET: ${{ inputs.target }}
+        CLIARE_OUT: ${{ inputs.out }}
+        CLIARE_PROFILE: ${{ inputs.profile }}
+        CLIARE_COMMAND: ${{ inputs.cliare-command }}
+        CLIARE_EXTRA_ARGS: ${{ inputs.extra-args }}
+        CLIARE_BASELINE: ${{ inputs.baseline }}
+        CLIARE_ALLOWED_DROP: ${{ inputs.allowed-drop }}
+      run: |
+        set -euo pipefail
+
+        extra_args=()
+        if [[ -n "$CLIARE_EXTRA_ARGS" ]]; then
+          read -r -a extra_args <<< "$CLIARE_EXTRA_ARGS"
+        fi
+
+        case "$CLIARE_MODE" in
+          measure)
+            "$CLIARE_COMMAND" measure "$CLIARE_TARGET" --out "$CLIARE_OUT" --profile "$CLIARE_PROFILE" "${extra_args[@]}"
+            ;;
+          guard)
+            if [[ -z "$CLIARE_BASELINE" ]]; then
+              echo "baseline input is required when mode=guard" >&2
+              exit 2
+            fi
+            "$CLIARE_COMMAND" guard "$CLIARE_TARGET" --baseline "$CLIARE_BASELINE" --out "$CLIARE_OUT" --profile "$CLIARE_PROFILE" --allowed-drop "$CLIARE_ALLOWED_DROP" "${extra_args[@]}"
+            ;;
+          *)
+            echo "mode must be 'measure' or 'guard', got '$CLIARE_MODE'" >&2
+            exit 2
+            ;;
+        esac
+
+    - name: Publish Step Summary
+      shell: bash
+      env:
+        CLIARE_OUT: ${{ inputs.out }}
+      run: |
+        set -euo pipefail
+
+        summary="$CLIARE_OUT/summary.md"
+        if [[ -n "${GITHUB_STEP_SUMMARY:-}" && -f "$summary" ]]; then
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Collect Outputs
+      id: collect
+      shell: bash
+      env:
+        CLIARE_OUT: ${{ inputs.out }}
+      run: |
+        set -euo pipefail
+
+        out="$CLIARE_OUT"
+        score="$(node -e 'const fs=require("fs"); const p=process.argv[1]; const s=JSON.parse(fs.readFileSync(p,"utf8")); process.stdout.write(String(s.score.total));' "$out/scorecard.json")"
+        {
+          echo "score=$score"
+          echo "scorecard=$out/scorecard.json"
+          echo "summary=$out/summary.md"
+          echo "sarif=$out/findings.sarif"
+          echo "junit=$out/junit.xml"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Upload CLIARE Artifacts
+      if: ${{ inputs.upload-artifacts == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.out }}

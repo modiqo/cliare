@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use crate::ci::{self, CiArtifactSummary};
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
 use crate::error::{CliareError, Result};
@@ -32,6 +33,9 @@ pub struct MeasurementSummary {
     pub shape_path: PathBuf,
     pub scorecard_path: PathBuf,
     pub report_path: PathBuf,
+    pub ci_summary_path: PathBuf,
+    pub sarif_path: PathBuf,
+    pub junit_path: PathBuf,
     pub sandbox_profile: String,
     pub sandbox_root: PathBuf,
     pub sandbox_home: PathBuf,
@@ -70,6 +74,12 @@ pub struct MeasurementSummary {
 }
 
 impl MeasurementSummary {
+    pub fn set_ci_artifacts(&mut self, artifacts: CiArtifactSummary) {
+        self.ci_summary_path = artifacts.summary_path;
+        self.sarif_path = artifacts.sarif_path;
+        self.junit_path = artifacts.junit_path;
+    }
+
     pub fn terminal_summary(&self) -> String {
         let lines = [
             "CLIARE measure complete".to_owned(),
@@ -144,6 +154,9 @@ impl MeasurementSummary {
             format!("  shape: {}", self.shape_path.display()),
             format!("  scorecard: {}", self.scorecard_path.display()),
             format!("  report: {}", self.report_path.display()),
+            format!("  ci summary: {}", self.ci_summary_path.display()),
+            format!("  sarif: {}", self.sarif_path.display()),
+            format!("  junit: {}", self.junit_path.display()),
         ];
 
         format!("{}\n", lines.join("\n"))
@@ -251,6 +264,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     };
     let score_artifacts =
         score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
+    let ci_artifacts = ci::write_ci_artifacts(&args.out, None).await?;
 
     let summary = MeasurementSummary {
         target,
@@ -259,6 +273,9 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         shape_path: args.out.join("shape.json"),
         scorecard_path: score_artifacts.scorecard_path,
         report_path: score_artifacts.report_path,
+        ci_summary_path: ci_artifacts.summary_path,
+        sarif_path: ci_artifacts.sarif_path,
+        junit_path: ci_artifacts.junit_path,
         sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
         sandbox_root: score_artifacts.sandbox_root,
         sandbox_home: score_artifacts.sandbox_home,
@@ -423,6 +440,9 @@ impl MeasurementCacheManifest {
             shape_path: out_dir.join("shape.json"),
             scorecard_path: out_dir.join("scorecard.json"),
             report_path: out_dir.join("report.md"),
+            ci_summary_path: out_dir.join("summary.md"),
+            sarif_path: out_dir.join("findings.sarif"),
+            junit_path: out_dir.join("junit.xml"),
             score_total: self.summary.score_total,
             score_measured_weight: self.summary.score_measured_weight,
             score_max_weight: self.summary.score_max_weight,
@@ -468,6 +488,9 @@ async fn artifacts_exist(out_dir: &std::path::Path) -> Result<bool> {
         "shape.json",
         "scorecard.json",
         "report.md",
+        "summary.md",
+        "findings.sarif",
+        "junit.xml",
     ] {
         let path = out_dir.join(name);
         match fs::metadata(&path).await {
@@ -619,6 +642,9 @@ mod tests {
             shape_path: PathBuf::from(".cliare/shape.json"),
             scorecard_path: PathBuf::from(".cliare/scorecard.json"),
             report_path: PathBuf::from(".cliare/report.md"),
+            ci_summary_path: PathBuf::from(".cliare/summary.md"),
+            sarif_path: PathBuf::from(".cliare/findings.sarif"),
+            junit_path: PathBuf::from(".cliare/junit.xml"),
             sandbox_profile: "isolated".to_owned(),
             sandbox_root: PathBuf::from(".cliare/sandbox"),
             sandbox_home: PathBuf::from(".cliare/sandbox/home"),
@@ -672,6 +698,9 @@ mod tests {
         assert!(text.contains("stop reason: converged"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
+        assert!(text.contains("  ci summary: .cliare/summary.md"));
+        assert!(text.contains("  sarif: .cliare/findings.sarif"));
+        assert!(text.contains("  junit: .cliare/junit.xml"));
     }
 
     #[cfg(unix)]

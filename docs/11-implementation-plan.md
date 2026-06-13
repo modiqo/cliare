@@ -240,7 +240,7 @@ Compute initial CLIARE score and produce human report.
 
 ### Current Checkpoint
 
-The current implementation emits experimental partial `scorecard.json` and `report.md` artifacts from `measure`.
+The current implementation emits experimental partial `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` artifacts from `measure`.
 
 - Discovery, grammar, execution, recovery, output, and initial safety are scored from current evidence.
 - Output scoring credits advertised JSON/YAML contracts and safe parse-probe success; CLIs with no machine-readable mode now receive output findings.
@@ -249,6 +249,9 @@ The current implementation emits experimental partial `scorecard.json` and `repo
 - Fixture tests verify that parseable JSON output improves the output subscore and malformed JSON records a parse gap.
 - Fixture tests verify that clean probes receive full safety credit and help-time writes lower the safety score.
 - The Markdown report explains the score, measured coverage, output coverage, side-effect coverage, and findings.
+- The CI summary renders a compact PR-oriented Markdown view of score, subscores, findings, output coverage, safety evidence, and artifact paths.
+- SARIF maps CLIARE findings to code-scanning levels: high as error, medium as warning, and low as note.
+- JUnit XML exposes each finding as a failure-style test case for CI systems that consume test reports.
 - The CLI prints a terminal summary with score, probe count, finding count, and artifact paths.
 
 ---
@@ -285,12 +288,15 @@ Make CLIARE useful in PRs and release pipelines.
 
 ### Current Checkpoint
 
-The current implementation includes a first guard mode:
+The current implementation includes guard mode and CI artifacts:
 
 - `cliare guard <TARGET> --baseline <scorecard.json>` measures the target and compares total score.
 - `--allowed-drop <POINTS>` controls tolerated score regression.
 - Guard prints the measurement summary plus pass/fail comparison details.
-- Fixture tests cover pass and fail behavior for total-score regressions.
+- Guard rewrites `summary.md` and `junit.xml` with baseline score, current score, delta, allowed drop, and pass/fail context.
+- `findings.sarif` is emitted from the same scorecard findings that drive the Markdown and JUnit artifacts.
+- The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads the artifact directory, appends `summary.md` to `$GITHUB_STEP_SUMMARY`, and exposes score/output paths.
+- Fixture tests cover pass and fail behavior for total-score regressions, generated SARIF, generated JUnit XML, and generated CI summaries.
 
 The default recursion budget has also been raised for real-world CLIs with deep subcommand hierarchies:
 
@@ -317,7 +323,7 @@ Measurement cache reuse is now implemented:
 
 - successful measurement writes `measure-cache.json`
 - cache matching requires the same target fingerprint, traversal profile, resolved probe budget, expected-value threshold, CLIARE package version, and measurement engine
-- reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, and `report.md` to still exist
+- reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` to still exist
 - terminal summaries print `cache: hit` or `cache: miss`
 - `--refresh` bypasses cache reuse for both `measure` and `guard`
 

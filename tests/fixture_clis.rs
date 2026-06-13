@@ -137,6 +137,42 @@ async fn noisy_help_still_infers_from_stdout_layout() {
 }
 
 #[tokio::test]
+async fn measure_writes_ci_artifacts_from_scorecard() {
+    let artifacts = measure_fixture(
+        "measure_writes_ci_artifacts_from_scorecard",
+        malformed_json_output_script(),
+        64,
+    )
+    .await;
+
+    assert!(artifacts.ci_summary.contains("# CLIARE CI Summary"));
+    assert!(artifacts.ci_summary.contains("| Score |"));
+    assert!(artifacts.ci_summary.contains("Machine-readable outputs"));
+    assert!(
+        artifacts
+            .ci_summary
+            .contains("Some advertised output modes did not parse")
+    );
+
+    assert_eq!(artifacts.sarif["version"].as_str(), Some("2.1.0"));
+    assert_eq!(
+        artifacts.sarif["runs"][0]["tool"]["driver"]["name"].as_str(),
+        Some("CLIARE")
+    );
+    assert!(
+        artifacts.sarif["runs"][0]["results"]
+            .as_array()
+            .expect("sarif results is an array")
+            .iter()
+            .any(|result| result["ruleId"].as_str() == Some("finding.output.unparseable_mode"))
+    );
+
+    assert!(artifacts.junit.contains("<testsuite name=\"cliare\""));
+    assert!(artifacts.junit.contains("<failure"));
+    assert!(artifacts.junit.contains("finding.output.unparseable_mode"));
+}
+
+#[tokio::test]
 async fn clearer_cli_scores_higher_than_poor_cli() {
     let poor = measure_fixture(
         "clearer_cli_scores_higher_than_poor_cli_poor",
@@ -372,7 +408,7 @@ async fn guard_passes_against_same_score_baseline() {
     let summary = cliare::guard::guard(GuardArgs {
         target,
         baseline: baseline_out.join("scorecard.json"),
-        out: guard_out,
+        out: guard_out.clone(),
         allowed_drop: 0.0,
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
@@ -387,6 +423,11 @@ async fn guard_passes_against_same_score_baseline() {
 
     assert!(summary.passed);
     assert!(summary.terminal_summary().contains("result: pass"));
+    let ci_summary = fs::read_to_string(guard_out.join("summary.md")).expect("summary is readable");
+    let junit = fs::read_to_string(guard_out.join("junit.xml")).expect("junit is readable");
+    assert!(ci_summary.contains("## Guard"));
+    assert!(ci_summary.contains("| Result | pass |"));
+    assert!(junit.contains("cliare.guard"));
 }
 
 #[tokio::test]
@@ -419,6 +460,9 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
     assert!(!summary.passed);
     assert!(summary.delta < -1.0);
     assert!(summary.terminal_summary().contains("result: fail"));
+    let junit = fs::read_to_string(summary.measurement.junit_path).expect("junit is readable");
+    assert!(junit.contains("score_regression"));
+    assert!(junit.contains("CLIARE score regression exceeded allowed drop"));
 }
 
 async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> MeasuredFixture {
@@ -442,7 +486,10 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
 
     let shape = read_json(&out.join("shape.json"));
     let scorecard = read_json(&out.join("scorecard.json"));
+    let sarif = read_json(&out.join("findings.sarif"));
     let report = fs::read_to_string(out.join("report.md")).expect("report is readable");
+    let ci_summary = fs::read_to_string(out.join("summary.md")).expect("ci summary is readable");
+    let junit = fs::read_to_string(out.join("junit.xml")).expect("junit is readable");
     let evidence =
         fs::read_to_string(out.join("evidence.jsonl")).expect("evidence log is readable");
 
@@ -450,7 +497,10 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
         _workspace: workspace,
         shape,
         scorecard,
+        sarif,
         report,
+        ci_summary,
+        junit,
         evidence,
     }
 }
@@ -459,7 +509,10 @@ struct MeasuredFixture {
     _workspace: TempWorkspace,
     shape: Value,
     scorecard: Value,
+    sarif: Value,
     report: String,
+    ci_summary: String,
+    junit: String,
     evidence: String,
 }
 

@@ -1,4 +1,5 @@
 pub mod belief;
+pub mod ci;
 pub mod claims;
 pub mod cli;
 pub mod error;

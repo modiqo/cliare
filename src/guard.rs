@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tokio::fs;
 
+use crate::ci::{self, GuardCiContext};
 use crate::cli::{GuardArgs, MeasureArgs};
 use crate::error::{CliareError, Result};
 use crate::measure::{self, MeasurementSummary};
@@ -40,11 +41,24 @@ pub async fn guard(args: GuardArgs) -> Result<GuardSummary> {
     let baseline = read_baseline(&args.baseline).await?;
     let allowed_drop = allowed_drop(args.allowed_drop)?;
     let baseline_path = args.baseline.clone();
-    let measurement = measure::measure(MeasureArgs::from(&args)).await?;
+    let mut measurement = measure::measure(MeasureArgs::from(&args)).await?;
     let current_total = measurement.score_total;
     let baseline_total = baseline.total()?;
     let delta = current_total - baseline_total;
     let passed = delta + allowed_drop >= 0.0;
+    let ci_artifacts = ci::write_ci_artifacts(
+        &args.out,
+        Some(&GuardCiContext {
+            baseline_path: baseline_path.clone(),
+            baseline_total,
+            current_total,
+            delta,
+            allowed_drop,
+            passed,
+        }),
+    )
+    .await?;
+    measurement.set_ci_artifacts(ci_artifacts);
 
     Ok(GuardSummary {
         measurement,
@@ -168,6 +182,9 @@ mod tests {
             shape_path: PathBuf::from(".cliare/shape.json"),
             scorecard_path: PathBuf::from(".cliare/scorecard.json"),
             report_path: PathBuf::from(".cliare/report.md"),
+            ci_summary_path: PathBuf::from(".cliare/summary.md"),
+            sarif_path: PathBuf::from(".cliare/findings.sarif"),
+            junit_path: PathBuf::from(".cliare/junit.xml"),
             sandbox_profile: "isolated".to_owned(),
             sandbox_root: PathBuf::from(".cliare/sandbox"),
             sandbox_home: PathBuf::from(".cliare/sandbox/home"),
