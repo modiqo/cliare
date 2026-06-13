@@ -14,6 +14,7 @@ use crate::evidence::ProbeIntent;
 #[derive(Debug, Clone)]
 pub struct ProbeSpec {
     pub args: Vec<String>,
+    pub path: Vec<String>,
     pub intent: ProbeIntent,
 }
 
@@ -21,12 +22,38 @@ impl ProbeSpec {
     pub fn new<const N: usize>(args: [&str; N], intent: ProbeIntent) -> Self {
         Self {
             args: args.into_iter().map(str::to_owned).collect(),
+            path: Vec::new(),
             intent,
         }
     }
 
     pub fn from_vec(args: Vec<String>, intent: ProbeIntent) -> Self {
-        Self { args, intent }
+        Self {
+            args,
+            path: Vec::new(),
+            intent,
+        }
+    }
+
+    pub fn path_help(path: Vec<String>) -> Self {
+        let mut args = path.clone();
+        args.push("--help".to_owned());
+        Self {
+            args,
+            path,
+            intent: ProbeIntent::Help,
+        }
+    }
+
+    pub fn help_path(path: Vec<String>) -> Self {
+        let mut args = Vec::with_capacity(path.len() + 1);
+        args.push("help".to_owned());
+        args.extend(path.iter().cloned());
+        Self {
+            args,
+            path,
+            intent: ProbeIntent::Help,
+        }
     }
 
     pub fn argv(&self, target: &Path) -> Vec<String> {
@@ -53,9 +80,9 @@ impl TargetProcess {
         }
     }
 
-    pub async fn run(&self, probe: ProbeSpec) -> Result<ProbeOutcome> {
+    pub async fn run(&self, probe: &ProbeSpec) -> Result<ProbeOutcome> {
         let started = Instant::now();
-        let argv = self.argv(&probe);
+        let argv = self.argv(probe);
         let mut child = Command::new(&self.target)
             .args(&probe.args)
             .env("CI", "1")
@@ -120,7 +147,7 @@ pub struct ProbeOutcome {
     pub stderr: OutputCapture,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OutputCapture {
     pub sha256: String,
     pub bytes: usize,

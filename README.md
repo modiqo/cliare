@@ -18,7 +18,7 @@ This repository is private while the project is being shaped. The initial commit
 - Emit portable artifacts: evidence logs, command-shape catalogs, scorecards, and reports.
 - Provide a public standard that CLI maintainers can use to improve agent operability.
 
-## Planned CLI
+## CLI
 
 ```sh
 cliare measure ./mycli
@@ -27,7 +27,7 @@ cliare certify ./mycli
 cliare rescore .cliare/evidence.jsonl
 ```
 
-The current binary is only a placeholder while the implementation begins.
+The implemented `measure` command fingerprints a target binary, runs bounded safe probes, records `evidence.jsonl`, and emits a generic `shape.json` built from layout candidates plus runtime confirmation. Other commands remain planned.
 
 ## Design Packet
 
@@ -41,4 +41,3 @@ Start here:
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-

@@ -300,7 +300,9 @@ The inference engine produces:
 - contradictions
 - unknowns
 
-The engine should be modular. Early versions can use rule-based likelihoods. Later versions can add learned calibration models.
+The engine must be framework-agnostic. Clap, Cobra, Click, argparse, and custom CLIs all enter through the same evidence-to-claim pipeline. Framework detectors may adjust priors, but they must not select a hard-coded truth path. Help text generates candidate claims; runtime confirmation probes update confidence.
+
+Early versions can use rule-based likelihoods and weighted log-odds updates. Later versions can add learned calibration models over the same generic claim representation.
 
 ---
 
@@ -565,4 +567,3 @@ MVP does not need:
 - plugin system
 
 But the artifact model should be correct from day one.
-

@@ -39,6 +39,14 @@ pub struct MeasureArgs {
     /// Maximum stdout bytes and stderr bytes retained per probe.
     #[arg(long, value_name = "BYTES", default_value_t = 1_048_576)]
     pub output_limit_bytes: usize,
+
+    /// Maximum command-path depth to recursively confirm.
+    #[arg(long, value_name = "N", default_value_t = 2)]
+    pub max_depth: usize,
+
+    /// Maximum probes to execute for this run.
+    #[arg(long, value_name = "N", default_value_t = 64)]
+    pub max_probes: usize,
 }
 
 impl MeasureArgs {

@@ -137,6 +137,8 @@ The split matters:
 
 Do not let process execution directly mutate final score state.
 
+The inference portion of this pipeline must stay generic. A framework-specific recognizer may emit evidence annotations or priors, but the core runtime should operate on layout blocks, candidate claims, belief updates, and confirmation probes. CLIARE's own use of Clap is a dogfood target, not an internal shortcut.
+
 ---
 
 ## Async Execution Model
@@ -872,4 +874,3 @@ Build the runtime in this order:
 7. `cliare-cli`: commands, diagnostics, reports.
 
 This structure keeps the difficult async runtime isolated from scoring math and from report generation.
-

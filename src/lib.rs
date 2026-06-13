@@ -1,6 +1,9 @@
+pub mod belief;
 pub mod cli;
 pub mod error;
 pub mod evidence;
 pub mod fingerprint;
+pub mod layout;
 pub mod measure;
 pub mod process;
+pub mod shape;

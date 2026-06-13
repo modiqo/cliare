@@ -53,10 +53,11 @@ impl EvidenceWriter {
         })
     }
 
-    pub async fn append(&mut self, kind: EvidenceKind) -> Result<()> {
+    pub async fn append(&mut self, kind: EvidenceKind) -> Result<String> {
+        let event_id = format!("e_{:06}", self.next_event_id.next().0);
         let event = EvidenceEvent {
             schema_version: SCHEMA_VERSION,
-            event_id: format!("e_{:06}", self.next_event_id.next().0),
+            event_id: event_id.clone(),
             timestamp: timestamp()?,
             kind,
         };
@@ -67,7 +68,12 @@ impl EvidenceWriter {
             .write_all(&line)
             .await
             .map_err(CliareError::WriteEvidence)?;
-        self.file.flush().await.map_err(CliareError::WriteEvidence)
+        self.file
+            .flush()
+            .await
+            .map_err(CliareError::WriteEvidence)?;
+
+        Ok(event_id)
     }
 }
 
@@ -105,10 +111,11 @@ pub struct RunStarted {
 pub struct ProbeScheduled {
     pub probe_id: String,
     pub argv: Vec<String>,
+    pub path: Vec<String>,
     pub intent: ProbeIntent,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProcessCompleted {
     pub probe_id: String,
     pub argv: Vec<String>,
@@ -132,7 +139,7 @@ pub enum ProbeIntent {
     InvalidFlag,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProcessStatus {
     Exited { code: Option<i32> },

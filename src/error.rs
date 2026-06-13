@@ -35,6 +35,16 @@ pub enum CliareError {
     #[error("failed to serialize evidence event")]
     SerializeEvidence(#[source] serde_json::Error),
 
+    #[error("failed to serialize command shape")]
+    SerializeShape(#[source] serde_json::Error),
+
+    #[error("failed to write command shape {path}")]
+    WriteShape {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to spawn target process")]
     Spawn(#[source] std::io::Error),
 

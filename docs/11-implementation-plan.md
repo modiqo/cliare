@@ -147,29 +147,43 @@ Run basic safe probes against a binary and record evidence.
 
 ### Goal
 
-Infer commands and flags from safe evidence.
+Infer candidate commands and flags from safe evidence without assuming a specific CLI framework.
 
 ### Tasks
 
-1. Implement help parsers:
-   - generic usage parser
-   - command list parser
-   - option table parser
-2. Implement command candidate discovery.
-3. Implement help traversal scheduler.
-4. Implement basic flag inference:
+1. Implement a help document layout pass:
+   - line tokenization
+   - indentation and section grouping
+   - aligned-row detection
+   - continuation-line detection
+   - command-like and flag-like token features
+2. Implement a generic claim store:
+   - candidate command claims
+   - candidate flag claims
+   - candidate arity/domain claims
+   - evidence references
+   - confidence values
+3. Implement lightweight Bayesian updates:
+   - weighted log-odds for binary claims
+   - categorical beliefs for line class and output kind
+4. Implement confirmation probe planning:
+   - `<candidate> --help`
+   - `help <candidate>`
+   - invalid child and invalid flag probes
+5. Implement basic flag inference:
    - existence
    - long/short
    - arity
    - required
-5. Implement basic positional inference.
-6. Implement output kind classifier.
-7. Implement contradiction detector.
-8. Emit `shape.json`.
+6. Implement basic positional inference.
+7. Implement output kind classifier.
+8. Implement contradiction detector.
+9. Emit `shape.json`.
 
 ### Checkpoint 2 Pass Criteria
 
-- Synthetic CLI command tree is inferred.
+- Synthetic CLI command tree is inferred through the generic claim pipeline.
+- CLIARE can measure its own Clap-based CLI without a Clap-specific parser.
 - Flags are inferred with confidence.
 - Help/runtime contradictions are recorded.
 - Shape validates against schema.
@@ -398,4 +412,3 @@ But do not compromise on:
 5. Implement portable sandbox.
 6. Build three synthetic fixture CLIs.
 7. Ship first internal dogfood score.
-

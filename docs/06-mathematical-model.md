@@ -148,6 +148,10 @@ O(z | E) = O(z) * product_i LR_i
 
 In practice, evidence is not fully independent. The first version can use capped likelihood accumulation to avoid overconfidence.
 
+Help text is not modeled as a parser-specific truth source. It is transformed into layout features and candidate claims. A line that looks like a command row increases the posterior probability that a command exists, but runtime confirmation is stronger evidence.
+
+Framework identity is a prior, not a switch. If evidence suggests a target is Clap-like, the prior probabilities for common help and completion conventions may change, but the emitted shape still comes from generic claims and evidence updates.
+
 Example:
 
 ```text
@@ -744,4 +748,3 @@ Then graduate to:
 ```text
 CLIARE Score v1
 ```
-
