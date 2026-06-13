@@ -273,6 +273,22 @@ Make CLIARE useful in PRs and release pipelines.
 - Guard fails when new destructive command lacks mitigation.
 - GitHub Action uploads artifacts.
 
+### Current Checkpoint
+
+The current implementation includes a first guard mode:
+
+- `cliare guard <TARGET> --baseline <scorecard.json>` measures the target and compares total score.
+- `--allowed-drop <POINTS>` controls tolerated score regression.
+- Guard prints the measurement summary plus pass/fail comparison details.
+- Fixture tests cover pass and fail behavior for total-score regressions.
+
+The default recursion budget has also been raised for real-world CLIs with deep subcommand hierarchies:
+
+- `--max-depth` defaults to 5 command path segments.
+- `--max-probes` defaults to 256 probes.
+- `measure` and `guard` share the same defaults.
+- The planner still enforces both limits deterministically so CI runs stay bounded.
+
 ---
 
 ## Phase 5: Benchmark and Calibration

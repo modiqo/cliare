@@ -13,5 +13,18 @@ async fn main() -> miette::Result<()> {
             print!("{}", summary.terminal_summary());
             Ok(())
         }
+        Command::Guard(args) => {
+            let summary = cliare::guard::guard(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            if summary.passed {
+                Ok(())
+            } else {
+                Err(miette::miette!(
+                    "guard failed: score changed by {:+.1}, allowed drop is {:.1}",
+                    summary.delta,
+                    summary.allowed_drop
+                ))
+            }
+        }
     }
 }

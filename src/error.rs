@@ -62,6 +62,26 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read baseline scorecard {path}")]
+    ReadBaselineScorecard {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse baseline scorecard {path}")]
+    ParseBaselineScorecard {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("baseline score must be finite and between 0 and 100: {total}")]
+    InvalidBaselineScore { total: f64 },
+
+    #[error("allowed score drop must be finite and non-negative: {value}")]
+    InvalidAllowedDrop { value: f64 },
+
     #[error("failed to spawn target process")]
     Spawn(#[source] std::io::Error),
 

@@ -4,6 +4,7 @@ pub mod cli;
 pub mod error;
 pub mod evidence;
 pub mod fingerprint;
+pub mod guard;
 pub mod layout;
 pub mod measure;
 pub mod observation;

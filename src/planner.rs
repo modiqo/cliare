@@ -286,6 +286,63 @@ mod tests {
         assert!(probes.contains(&ProbeIntent::InvalidFlag));
     }
 
+    #[test]
+    fn planner_respects_deep_recursion_limit() {
+        let observations = vec![
+            observation(
+                "e_000001",
+                ProbeIntent::Help,
+                vec!["alpha".to_owned(), "beta".to_owned(), "gamma".to_owned()],
+                "Usage: tool alpha beta gamma <COMMAND>\n\nCommands:\n  delta  Continue\n",
+                Some(0),
+            ),
+            observation(
+                "e_000002",
+                ProbeIntent::Help,
+                vec![
+                    "alpha".to_owned(),
+                    "beta".to_owned(),
+                    "gamma".to_owned(),
+                    "delta".to_owned(),
+                ],
+                "Usage: tool alpha beta gamma delta <COMMAND>\n\nCommands:\n  epsilon  Continue\n",
+                Some(0),
+            ),
+        ];
+        let claims = ClaimSet::from_observations("tool", &observations);
+
+        let mut shallow = DeterministicPlanner::new(3, "tool".to_owned());
+        shallow.extend_from_claims(&claims);
+        let shallow_probes = std::iter::from_fn(|| shallow.next())
+            .map(|probe| probe.args)
+            .collect::<Vec<_>>();
+
+        let mut deep = DeterministicPlanner::new(5, "tool".to_owned());
+        deep.extend_from_claims(&claims);
+        let deep_probes = std::iter::from_fn(|| deep.next())
+            .map(|probe| probe.args)
+            .collect::<Vec<_>>();
+
+        assert!(!shallow_probes.iter().any(|args| args
+            == &[
+                "alpha".to_owned(),
+                "beta".to_owned(),
+                "gamma".to_owned(),
+                "delta".to_owned(),
+                "epsilon".to_owned(),
+                "--help".to_owned(),
+            ]));
+        assert!(deep_probes.iter().any(|args| args
+            == &[
+                "alpha".to_owned(),
+                "beta".to_owned(),
+                "gamma".to_owned(),
+                "delta".to_owned(),
+                "epsilon".to_owned(),
+                "--help".to_owned(),
+            ]));
+    }
+
     fn observation(
         evidence_id: &str,
         intent: ProbeIntent,

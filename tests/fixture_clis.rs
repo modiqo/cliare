@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cliare::cli::MeasureArgs;
+use cliare::cli::{GuardArgs, MeasureArgs};
 use serde_json::Value;
 
 #[tokio::test]
@@ -95,6 +95,70 @@ async fn clearer_cli_scores_higher_than_poor_cli() {
         clear.scorecard["score"]["total"].as_f64().unwrap_or(0.0)
             > poor.scorecard["score"]["total"].as_f64().unwrap_or(100.0)
     );
+}
+
+#[tokio::test]
+async fn guard_passes_against_same_score_baseline() {
+    let workspace = TempWorkspace::new("guard_passes_against_same_score_baseline");
+    let target = workspace.write_executable("fixture-cli", noisy_help_script());
+    let baseline_out = workspace.path().join("baseline");
+    let guard_out = workspace.path().join("guard");
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: baseline_out.clone(),
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 32,
+    })
+    .await
+    .expect("baseline measurement succeeds");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline: baseline_out.join("scorecard.json"),
+        out: guard_out,
+        allowed_drop: 0.0,
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 32,
+    })
+    .await
+    .expect("guard measurement succeeds");
+
+    assert!(summary.passed);
+    assert!(summary.terminal_summary().contains("result: pass"));
+}
+
+#[tokio::test]
+async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
+    let workspace = TempWorkspace::new("guard_fails_when_score_drops_beyond_allowed_threshold");
+    let target = workspace.write_executable("fixture-cli", poor_help_script());
+    let baseline = workspace.path().join("baseline.scorecard.json");
+    fs::write(
+        &baseline,
+        r#"{"schema_version":"cliare.scorecard.v1","score":{"total":100.0}}"#,
+    )
+    .expect("baseline scorecard is written");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline,
+        out: workspace.path().join("guard"),
+        allowed_drop: 1.0,
+        timeout_ms: 1_000,
+        output_limit_bytes: 64 * 1024,
+        max_depth: 2,
+        max_probes: 16,
+    })
+    .await
+    .expect("guard measurement succeeds");
+
+    assert!(!summary.passed);
+    assert!(summary.delta < -1.0);
+    assert!(summary.terminal_summary().contains("result: fail"));
 }
 
 async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> MeasuredFixture {
