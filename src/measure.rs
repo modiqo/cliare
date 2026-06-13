@@ -14,7 +14,7 @@ use crate::planner::{
     bootstrap_invalid_flag_token,
 };
 use crate::process::{ProbeSpec, TargetProcess};
-use crate::score;
+use crate::score::{self, ScoreRunContext};
 use crate::shape;
 
 #[derive(Debug, Clone)]
@@ -31,6 +31,13 @@ pub struct MeasurementSummary {
     pub score_model: &'static str,
     pub score_status: &'static str,
     pub findings: usize,
+    pub observed_max_depth: usize,
+    pub max_depth: usize,
+    pub max_probes: usize,
+    pub frontier_remaining: usize,
+    pub candidates_skipped_by_depth: usize,
+    pub probes_skipped_by_budget: usize,
+    pub budget_exhausted: bool,
 }
 
 impl MeasurementSummary {
@@ -49,6 +56,22 @@ impl MeasurementSummary {
             ),
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
+            "coverage pressure:".to_owned(),
+            format!(
+                "  depth: observed {} / budget {}",
+                self.observed_max_depth, self.max_depth
+            ),
+            format!(
+                "  probes: completed {} / budget {}",
+                self.probes_completed, self.max_probes
+            ),
+            format!("  frontier remaining: {}", self.frontier_remaining),
+            format!("  skipped by depth: {}", self.candidates_skipped_by_depth),
+            format!(
+                "  skipped by probe budget: {}",
+                self.probes_skipped_by_budget
+            ),
+            format!("  budget exhausted: {}", self.budget_exhausted),
             "artifacts:".to_owned(),
             format!("  evidence: {}", self.evidence_path.display()),
             format!("  shape: {}", self.shape_path.display()),
@@ -122,8 +145,15 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .await?;
 
     shape::write_shape(&args.out, target.clone(), &observations).await?;
+    let planner_stats = planner.stats();
+    let run_context = ScoreRunContext {
+        max_depth: planner_stats.max_depth,
+        max_probes: args.max_probes,
+        frontier_remaining: planner_stats.frontier_remaining,
+        candidates_skipped_by_depth: planner_stats.candidates_skipped_by_depth,
+    };
     let score_artifacts =
-        score::write_score_artifacts(&args.out, target.clone(), &observations).await?;
+        score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
 
     Ok(MeasurementSummary {
         target,
@@ -138,6 +168,13 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         score_model: score_artifacts.model,
         score_status: score_artifacts.status,
         findings: score_artifacts.findings,
+        observed_max_depth: score_artifacts.observed_max_depth,
+        max_depth: score_artifacts.max_depth,
+        max_probes: score_artifacts.max_probes,
+        frontier_remaining: score_artifacts.frontier_remaining,
+        candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
+        probes_skipped_by_budget: score_artifacts.probes_skipped_by_budget,
+        budget_exhausted: score_artifacts.budget_exhausted,
     })
 }
 
@@ -224,12 +261,20 @@ mod tests {
             score_model: "cliare-score-v0",
             score_status: "experimental partial",
             findings: 2,
+            observed_max_depth: 1,
+            max_depth: 5,
+            max_probes: 256,
+            frontier_remaining: 0,
+            candidates_skipped_by_depth: 0,
+            probes_skipped_by_budget: 0,
+            budget_exhausted: false,
         };
 
         let text = summary.terminal_summary();
 
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
+        assert!(text.contains("depth: observed 1 / budget 5"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
     }

@@ -10,10 +10,18 @@ pub trait ProbePlanner {
     fn next(&mut self) -> Option<ProbeSpec>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlannerStats {
+    pub max_depth: usize,
+    pub frontier_remaining: usize,
+    pub candidates_skipped_by_depth: usize,
+}
+
 #[derive(Debug)]
 pub struct DeterministicPlanner {
     queue: VecDeque<ProbeSpec>,
     scheduled_args: BTreeSet<Vec<String>>,
+    depth_skipped_paths: BTreeSet<Vec<String>>,
     max_depth: usize,
     invalid_token_seed: String,
 }
@@ -23,6 +31,7 @@ impl DeterministicPlanner {
         Self {
             queue: VecDeque::new(),
             scheduled_args: BTreeSet::new(),
+            depth_skipped_paths: BTreeSet::new(),
             max_depth,
             invalid_token_seed,
         }
@@ -46,8 +55,20 @@ impl DeterministicPlanner {
         }
     }
 
-    fn probe_plans_for(&self, claim: &CommandClaim) -> Vec<ProbePlan> {
-        if claim.path().is_empty() || claim.path().len() > self.max_depth {
+    pub fn stats(&self) -> PlannerStats {
+        PlannerStats {
+            max_depth: self.max_depth,
+            frontier_remaining: self.queue.len(),
+            candidates_skipped_by_depth: self.depth_skipped_paths.len(),
+        }
+    }
+
+    fn probe_plans_for(&mut self, claim: &CommandClaim) -> Vec<ProbePlan> {
+        if claim.path().is_empty() {
+            return Vec::new();
+        }
+        if claim.path().len() > self.max_depth {
+            self.depth_skipped_paths.insert(claim.path().to_vec());
             return Vec::new();
         }
 
@@ -106,10 +127,10 @@ impl ProbePlanner for DeterministicPlanner {
     }
 
     fn extend_from_claims(&mut self, claims: &ClaimSet) {
-        let plans = claims
-            .commands()
-            .flat_map(|claim| self.probe_plans_for(claim))
-            .collect::<Vec<_>>();
+        let mut plans = Vec::new();
+        for claim in claims.commands() {
+            plans.extend(self.probe_plans_for(claim));
+        }
         self.schedule_ranked(plans);
     }
 

@@ -73,9 +73,16 @@ pub struct Coverage {
     flags_discovered: usize,
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
+    observed_max_depth: usize,
+    max_depth: usize,
+    max_probes: usize,
     probes_completed: usize,
     probes_timed_out: usize,
     probes_failed_to_spawn: usize,
+    frontier_remaining: usize,
+    candidates_skipped_by_depth: usize,
+    probes_skipped_by_budget: usize,
+    budget_exhausted: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -112,14 +119,30 @@ pub struct ScoreArtifactSummary {
     pub model: &'static str,
     pub status: &'static str,
     pub findings: usize,
+    pub observed_max_depth: usize,
+    pub max_depth: usize,
+    pub max_probes: usize,
+    pub frontier_remaining: usize,
+    pub candidates_skipped_by_depth: usize,
+    pub probes_skipped_by_budget: usize,
+    pub budget_exhausted: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScoreRunContext {
+    pub max_depth: usize,
+    pub max_probes: usize,
+    pub frontier_remaining: usize,
+    pub candidates_skipped_by_depth: usize,
 }
 
 pub async fn write_score_artifacts(
     out_dir: &Path,
     target: TargetFingerprint,
     observations: &[ShapeObservation],
+    run_context: ScoreRunContext,
 ) -> Result<ScoreArtifactSummary> {
-    let scorecard = scorecard(target, observations);
+    let scorecard = scorecard(target, observations, run_context);
     let scorecard_path = write_scorecard(out_dir, &scorecard).await?;
     let report_path = write_report(out_dir, &scorecard).await?;
 
@@ -132,6 +155,13 @@ pub async fn write_score_artifacts(
         model: scorecard.score.model,
         status: score_status_label(&scorecard.score.status),
         findings: scorecard.findings.len(),
+        observed_max_depth: scorecard.coverage.observed_max_depth,
+        max_depth: scorecard.coverage.max_depth,
+        max_probes: scorecard.coverage.max_probes,
+        frontier_remaining: scorecard.coverage.frontier_remaining,
+        candidates_skipped_by_depth: scorecard.coverage.candidates_skipped_by_depth,
+        probes_skipped_by_budget: scorecard.coverage.probes_skipped_by_budget,
+        budget_exhausted: scorecard.coverage.budget_exhausted,
     })
 }
 
@@ -158,10 +188,14 @@ async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> 
     Ok(path)
 }
 
-pub fn scorecard(target: TargetFingerprint, observations: &[ShapeObservation]) -> Scorecard {
+pub fn scorecard(
+    target: TargetFingerprint,
+    observations: &[ShapeObservation],
+    run_context: ScoreRunContext,
+) -> Scorecard {
     let binary_name = target_binary_name(&target);
     let claims = ClaimSet::from_observations(&binary_name, observations);
-    let metrics = Metrics::from_claims_and_observations(&claims, observations);
+    let metrics = Metrics::from_claims_and_observations(&claims, observations, run_context);
 
     let subscores = subscores(&metrics);
     let score = total_score(&subscores);
@@ -444,6 +478,18 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.avg_flag_confidence
     ));
     report.push_str(&format!(
+        "- Observed max command depth: `{}`\n",
+        scorecard.coverage.observed_max_depth
+    ));
+    report.push_str(&format!(
+        "- Depth budget: `{}`\n",
+        scorecard.coverage.max_depth
+    ));
+    report.push_str(&format!(
+        "- Probe budget: `{}`\n",
+        scorecard.coverage.max_probes
+    ));
+    report.push_str(&format!(
         "- Probes completed: `{}`\n",
         scorecard.coverage.probes_completed
     ));
@@ -454,6 +500,22 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Probe spawn failures: `{}`\n\n",
         scorecard.coverage.probes_failed_to_spawn
+    ));
+    report.push_str(&format!(
+        "- Frontier remaining: `{}`\n",
+        scorecard.coverage.frontier_remaining
+    ));
+    report.push_str(&format!(
+        "- Candidates skipped by depth: `{}`\n",
+        scorecard.coverage.candidates_skipped_by_depth
+    ));
+    report.push_str(&format!(
+        "- Probes skipped by budget: `{}`\n",
+        scorecard.coverage.probes_skipped_by_budget
+    ));
+    report.push_str(&format!(
+        "- Budget exhausted: `{}`\n\n",
+        scorecard.coverage.budget_exhausted
     ));
 
     report.push_str("## Findings\n\n");
@@ -528,7 +590,11 @@ struct Metrics {
 }
 
 impl Metrics {
-    fn from_claims_and_observations(claims: &ClaimSet, observations: &[ShapeObservation]) -> Self {
+    fn from_claims_and_observations(
+        claims: &ClaimSet,
+        observations: &[ShapeObservation],
+        run_context: ScoreRunContext,
+    ) -> Self {
         let commands = claims.commands().collect::<Vec<_>>();
         let flags = claims.flags().collect::<Vec<_>>();
         let commands_discovered = commands.len();
@@ -545,6 +611,12 @@ impl Metrics {
             .sum();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
+        let probes_skipped_by_budget =
+            if run_context.max_probes > 0 && observations.len() >= run_context.max_probes {
+                run_context.frontier_remaining
+            } else {
+                0
+            };
 
         Self {
             coverage: Coverage {
@@ -554,9 +626,16 @@ impl Metrics {
                 flags_discovered: flags.len(),
                 avg_command_confidence,
                 avg_flag_confidence,
+                observed_max_depth: observed_max_depth(&commands),
+                max_depth: run_context.max_depth,
+                max_probes: run_context.max_probes,
                 probes_completed: observations.len(),
                 probes_timed_out: process_metrics.timed_out,
                 probes_failed_to_spawn: process_metrics.failed_to_spawn,
+                frontier_remaining: run_context.frontier_remaining,
+                candidates_skipped_by_depth: run_context.candidates_skipped_by_depth,
+                probes_skipped_by_budget,
+                budget_exhausted: probes_skipped_by_budget > 0,
             },
             grammar_gap_count,
             invalid_probe_count: process_metrics.invalid_probe_count,
@@ -568,6 +647,14 @@ impl Metrics {
         let possible = self.coverage.commands_runtime_confirmed.saturating_mul(2);
         ratio(self.grammar_gap_count, possible)
     }
+}
+
+fn observed_max_depth(commands: &[&CommandClaim]) -> usize {
+    commands
+        .iter()
+        .map(|command| command.path().len())
+        .max()
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Default)]
@@ -654,7 +741,7 @@ fn target_binary_name(target: &TargetFingerprint) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Dimension, render_report, scorecard};
+    use super::{Dimension, ScoreRunContext, render_report, scorecard};
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::fingerprint::TargetFingerprint;
     use crate::observation::ShapeObservation;
@@ -687,8 +774,8 @@ mod tests {
             ),
         ];
 
-        let weak_score = scorecard(target.clone(), &weak);
-        let strong_score = scorecard(target, &strong);
+        let weak_score = scorecard(target.clone(), &weak, ScoreRunContext::default());
+        let strong_score = scorecard(target, &strong, ScoreRunContext::default());
 
         assert!(
             dimension_score(&strong_score, Dimension::Discovery)
@@ -716,7 +803,7 @@ mod tests {
             ),
         ];
 
-        let scorecard = scorecard(target, &observations);
+        let scorecard = scorecard(target, &observations, ScoreRunContext::default());
 
         assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
     }
@@ -732,6 +819,12 @@ mod tests {
                 "Commands:\n  measure  Run probes\n",
                 Some(0),
             )],
+            ScoreRunContext {
+                max_depth: 5,
+                max_probes: 256,
+                frontier_remaining: 0,
+                candidates_skipped_by_depth: 0,
+            },
         );
 
         let report = render_report(&scorecard);
@@ -739,6 +832,47 @@ mod tests {
         assert!(report.contains("# CLIARE Report"));
         assert!(report.contains("| output | not measured |"));
         assert!(report.contains("experimental partial"));
+        assert!(report.contains("- Depth budget: `5`"));
+        assert!(report.contains("- Budget exhausted: `false`"));
+    }
+
+    #[test]
+    fn scorecard_reports_budget_pressure_without_lowering_score() {
+        let observations = vec![
+            observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  alpha  First level\n",
+                Some(0),
+            ),
+            observation(
+                "e_000004",
+                ProbeIntent::Help,
+                vec!["alpha".to_owned()],
+                "Commands:\n  beta  Second level\n",
+                Some(0),
+            ),
+        ];
+
+        let scorecard = scorecard(
+            target(),
+            &observations,
+            ScoreRunContext {
+                max_depth: 1,
+                max_probes: 2,
+                frontier_remaining: 3,
+                candidates_skipped_by_depth: 1,
+            },
+        );
+
+        assert_eq!(scorecard.coverage.observed_max_depth, 2);
+        assert_eq!(scorecard.coverage.max_depth, 1);
+        assert_eq!(scorecard.coverage.max_probes, 2);
+        assert_eq!(scorecard.coverage.frontier_remaining, 3);
+        assert_eq!(scorecard.coverage.candidates_skipped_by_depth, 1);
+        assert_eq!(scorecard.coverage.probes_skipped_by_budget, 3);
+        assert!(scorecard.coverage.budget_exhausted);
     }
 
     fn dimension_score(scorecard: &super::Scorecard, dimension: Dimension) -> f64 {

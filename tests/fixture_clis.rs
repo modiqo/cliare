@@ -72,8 +72,28 @@ async fn noisy_help_still_infers_from_stdout_layout() {
             .unwrap_or(0.0)
             > 0.0
     );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["max_depth"].as_u64(),
+        Some(2)
+    );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["max_probes"].as_u64(),
+        Some(32)
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["observed_max_depth"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["frontier_remaining"]
+            .as_u64()
+            .is_some()
+    );
     assert!(artifacts.report.contains("# CLIARE Report"));
     assert!(artifacts.report.contains("not measured"));
+    assert!(artifacts.report.contains("Budget exhausted"));
 }
 
 #[tokio::test]

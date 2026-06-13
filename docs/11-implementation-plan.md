@@ -289,6 +289,13 @@ The default recursion budget has also been raised for real-world CLIs with deep 
 - `measure` and `guard` share the same defaults.
 - The planner still enforces both limits deterministically so CI runs stay bounded.
 
+Coverage pressure is now explicit rather than hidden inside the score:
+
+- terminal summaries show observed depth, depth budget, completed probes, probe budget, remaining frontier, depth-skipped candidates, budget-skipped probes, and whether the run exhausted its budget
+- `scorecard.json` records the same fields under `coverage`
+- `report.md` renders the budget pressure fields for CI artifacts and human review
+- score v0 does not directly penalize a CLI for being deep; it exposes budget pressure so callers can decide whether to rerun with a larger profile
+
 ---
 
 ## Phase 5: Benchmark and Calibration

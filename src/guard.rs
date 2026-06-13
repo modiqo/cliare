@@ -174,6 +174,13 @@ mod tests {
             score_model: "cliare-score-v0",
             score_status: "experimental partial",
             findings: 0,
+            observed_max_depth: 1,
+            max_depth: 5,
+            max_probes: 256,
+            frontier_remaining: 0,
+            candidates_skipped_by_depth: 0,
+            probes_skipped_by_budget: 0,
+            budget_exhausted: false,
         }
     }
 }
