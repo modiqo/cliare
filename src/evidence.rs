@@ -130,12 +130,13 @@ pub struct RunFinished {
     pub probes_completed: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProbeIntent {
     Help,
     Version,
     InvalidCommand,
+    InvalidChild,
     InvalidFlag,
 }
 

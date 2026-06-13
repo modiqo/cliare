@@ -189,6 +189,15 @@ Infer candidate commands and flags from safe evidence without assuming a specifi
 - Shape validates against schema.
 - Every shape claim references evidence.
 
+### Current Checkpoint
+
+The current implementation has the first generic claim pipeline in place:
+
+- `claims` converts observations into command and flag beliefs.
+- `planner` ranks confirmation and diagnostic probes deterministically.
+- `shape` emits the catalog from claims rather than from a framework parser.
+- Invalid-child probes are gated on evidence of nested commands so leaf commands with positionals are not misclassified as command trees.
+
 ---
 
 ## Phase 3: Scorecard and Report

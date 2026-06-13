@@ -1,25 +1,15 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Serialize;
 use tokio::fs;
 
-use crate::belief::Belief;
+use crate::claims::{ClaimSet, CommandClaim, FlagClaim};
 use crate::error::{CliareError, Result};
-use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
-use crate::layout;
+use crate::observation::ShapeObservation;
 
 const SCHEMA_VERSION: &str = "cliare.command-shape.v1";
-const INFERENCE_MODEL: &str = "cliare-generic-layout-v0";
-
-#[derive(Debug)]
-pub struct ShapeObservation {
-    pub evidence_id: String,
-    pub intent: ProbeIntent,
-    pub path: Vec<String>,
-    pub process: ProcessCompleted,
-}
+const INFERENCE_MODEL: &str = "cliare-generic-claims-v0";
 
 #[derive(Debug, Serialize)]
 pub struct CommandShape {
@@ -66,101 +56,15 @@ pub enum GapKind {
     ExistenceUnconfirmed,
     HelpUnavailable,
     FlagsUnknown,
+    ArgumentArityUnknown,
+    InvalidChildDiagnosticsUnknown,
+    InvalidFlagDiagnosticsUnknown,
 }
 
 #[derive(Debug, Serialize)]
 pub struct InferenceModel {
     name: &'static str,
     source: &'static str,
-}
-
-#[derive(Debug)]
-struct CommandAccumulator {
-    path: Vec<String>,
-    summary: Option<String>,
-    belief: Belief,
-    runtime_confirmed: bool,
-    help_unavailable: bool,
-    evidence: Vec<String>,
-}
-
-impl CommandAccumulator {
-    fn new(path: Vec<String>) -> Self {
-        Self {
-            path,
-            summary: None,
-            belief: Belief::with_prior(0.08),
-            runtime_confirmed: false,
-            help_unavailable: false,
-            evidence: Vec::new(),
-        }
-    }
-
-    fn apply_layout_candidate(
-        &mut self,
-        summary: Option<String>,
-        evidence_id: &str,
-        evidence_detail: &str,
-    ) {
-        self.belief.update(1.0);
-        if self.summary.is_none() {
-            self.summary = summary;
-        }
-        self.evidence
-            .push(format!("{evidence_id}:{evidence_detail}"));
-    }
-
-    fn apply_runtime_confirmation(&mut self, evidence_id: &str, help_like: bool) {
-        if help_like {
-            self.belief.update(4.0);
-            self.runtime_confirmed = true;
-        } else {
-            self.belief.update(-2.0);
-            self.help_unavailable = true;
-        }
-        self.evidence.push(evidence_id.to_owned());
-    }
-}
-
-#[derive(Debug)]
-struct FlagAccumulator {
-    command_path: Vec<String>,
-    name: String,
-    short: Option<String>,
-    summary: Option<String>,
-    belief: Belief,
-    evidence: Vec<String>,
-}
-
-impl FlagAccumulator {
-    fn new(command_path: Vec<String>, name: String) -> Self {
-        Self {
-            command_path,
-            name,
-            short: None,
-            summary: None,
-            belief: Belief::with_prior(0.12),
-            evidence: Vec::new(),
-        }
-    }
-
-    fn apply_layout_candidate(
-        &mut self,
-        short: Option<String>,
-        summary: Option<String>,
-        evidence_id: &str,
-        evidence_detail: &str,
-    ) {
-        self.belief.update(1.0);
-        if self.short.is_none() {
-            self.short = short;
-        }
-        if self.summary.is_none() {
-            self.summary = summary;
-        }
-        self.evidence
-            .push(format!("{evidence_id}:{evidence_detail}"));
-    }
 }
 
 pub async fn write_shape(
@@ -177,176 +81,117 @@ pub async fn write_shape(
 }
 
 pub fn infer_shape(target: TargetFingerprint, observations: &[ShapeObservation]) -> CommandShape {
-    let binary_name = target
-        .resolved
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("target");
-    let mut commands = BTreeMap::<Vec<String>, CommandAccumulator>::new();
-    let mut flags = BTreeMap::<(Vec<String>, String), FlagAccumulator>::new();
-
-    for observation in observations {
-        if !matches!(observation.intent, ProbeIntent::Help) {
-            continue;
-        }
-
-        let help_like = successful_help_like(observation);
-        if !observation.path.is_empty() {
-            commands
-                .entry(observation.path.clone())
-                .or_insert_with(|| CommandAccumulator::new(observation.path.clone()))
-                .apply_runtime_confirmation(&observation.evidence_id, help_like);
-        }
-
-        let Some(text) = observation.process.stdout.text.as_deref() else {
-            continue;
-        };
-        if !help_like && !observation.path.is_empty() {
-            continue;
-        }
-
-        for candidate in layout::command_candidates(text, binary_name) {
-            let full_path = absolutize_candidate_path(&observation.path, candidate.path);
-            if full_path == observation.path {
-                continue;
-            }
-            commands
-                .entry(full_path.clone())
-                .or_insert_with(|| CommandAccumulator::new(full_path))
-                .apply_layout_candidate(
-                    candidate.summary,
-                    &observation.evidence_id,
-                    &candidate.evidence_detail,
-                );
-        }
-
-        for candidate in layout::flag_candidates(text) {
-            let key = (observation.path.clone(), candidate.name.clone());
-            flags
-                .entry(key)
-                .or_insert_with(|| {
-                    FlagAccumulator::new(observation.path.clone(), candidate.name.clone())
-                })
-                .apply_layout_candidate(
-                    candidate.short,
-                    candidate.summary,
-                    &observation.evidence_id,
-                    &candidate.evidence_detail,
-                );
-        }
-    }
-
-    let command_items = commands
-        .values()
-        .map(|command| command_candidate(binary_name, command))
+    let binary_name = target_binary_name(&target);
+    let claims = ClaimSet::from_observations(&binary_name, observations);
+    let commands = claims
+        .commands()
+        .map(|command| command_candidate(&binary_name, command))
         .collect::<Vec<_>>();
-    let flag_items = flags.values().map(flag_candidate).collect::<Vec<_>>();
-    let gaps = gap_items(commands.values());
+    let flags = claims.flags().map(flag_candidate).collect::<Vec<_>>();
+    let gaps = gap_items(claims.commands());
 
     CommandShape {
         schema_version: SCHEMA_VERSION,
         target,
-        commands: command_items,
-        flags: flag_items,
+        commands,
+        flags,
         gaps,
         model: InferenceModel {
             name: INFERENCE_MODEL,
-            source: "generic layout candidates plus runtime confirmation",
+            source: "generic claim store with layout evidence, runtime confirmation, and diagnostic probes",
         },
     }
 }
 
-pub fn discover_command_paths(
-    text: &str,
-    binary_name: &str,
-    current_path: &[String],
-) -> Vec<Vec<String>> {
-    layout::command_candidates(text, binary_name)
-        .into_iter()
-        .map(|candidate| absolutize_candidate_path(current_path, candidate.path))
-        .collect()
+fn target_binary_name(target: &TargetFingerprint) -> String {
+    target
+        .resolved
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("target")
+        .to_owned()
 }
 
-pub fn is_help_like(text: &str) -> bool {
-    layout::is_help_like(text)
-}
-
-fn successful_help_like(observation: &ShapeObservation) -> bool {
-    matches!(
-        &observation.process.status,
-        ProcessStatus::Exited { code: Some(0) }
-    ) && observation
-        .process
-        .stdout
-        .text
-        .as_deref()
-        .is_some_and(layout::is_help_like)
-}
-
-fn absolutize_candidate_path(current_path: &[String], candidate: Vec<String>) -> Vec<String> {
-    if current_path.is_empty() || candidate.starts_with(current_path) {
-        return candidate;
-    }
-
-    let mut full_path = current_path.to_vec();
-    full_path.extend(candidate);
-    full_path
-}
-
-fn command_candidate(binary_name: &str, command: &CommandAccumulator) -> CommandCandidate {
-    let mut argv = Vec::with_capacity(command.path.len() + 1);
+fn command_candidate(binary_name: &str, command: &CommandClaim) -> CommandCandidate {
+    let path = command.path().to_vec();
+    let mut argv = Vec::with_capacity(path.len() + 1);
     argv.push(binary_name.to_owned());
-    argv.extend(command.path.iter().cloned());
+    argv.extend(path.iter().cloned());
 
     CommandCandidate {
-        id: command_id(binary_name, &command.path),
-        path: command.path.clone(),
+        id: command_id(binary_name, &path),
+        path,
         argv,
-        summary: command.summary.clone(),
-        confidence: command.belief.probability(),
-        runtime_confirmed: command.runtime_confirmed,
-        evidence: command.evidence.clone(),
+        summary: command.summary().map(str::to_owned),
+        confidence: command.confidence(),
+        runtime_confirmed: command.runtime_confirmed(),
+        evidence: command.evidence().to_vec(),
     }
 }
 
-fn flag_candidate(flag: &FlagAccumulator) -> FlagCandidate {
+fn flag_candidate(flag: &FlagClaim) -> FlagCandidate {
     FlagCandidate {
-        command_path: flag.command_path.clone(),
-        name: flag.name.clone(),
-        short: flag.short.clone(),
-        summary: flag.summary.clone(),
-        confidence: flag.belief.probability(),
-        evidence: flag.evidence.clone(),
+        command_path: flag.command_path().to_vec(),
+        name: flag.name().to_owned(),
+        short: flag.short().map(str::to_owned),
+        summary: flag.summary().map(str::to_owned),
+        confidence: flag.confidence(),
+        evidence: flag.evidence().to_vec(),
     }
 }
 
-fn gap_items<'a>(commands: impl Iterator<Item = &'a CommandAccumulator>) -> Vec<Gap> {
+fn gap_items<'a>(commands: impl Iterator<Item = &'a CommandClaim>) -> Vec<Gap> {
     let mut gaps = Vec::new();
 
     for command in commands {
-        if command.belief.probability() < 0.80 {
+        if command.confidence() < 0.80 {
             gaps.push(Gap {
                 kind: GapKind::ExistenceUnconfirmed,
-                command_path: command.path.clone(),
+                command_path: command.path().to_vec(),
                 reason: "candidate has not accumulated enough confirming runtime evidence"
                     .to_owned(),
-                evidence: command.evidence.clone(),
+                evidence: command.evidence().to_vec(),
             });
         }
-        if command.help_unavailable {
+        if command.help_unavailable() {
             gaps.push(Gap {
                 kind: GapKind::HelpUnavailable,
-                command_path: command.path.clone(),
+                command_path: command.path().to_vec(),
                 reason: "safe help probe did not produce help-like output".to_owned(),
-                evidence: command.evidence.clone(),
+                evidence: command.evidence().to_vec(),
             });
         }
-        if command.runtime_confirmed {
+        if command.runtime_confirmed() {
             gaps.push(Gap {
                 kind: GapKind::FlagsUnknown,
-                command_path: command.path.clone(),
+                command_path: command.path().to_vec(),
                 reason: "flag arity and value domains are not confirmed yet".to_owned(),
-                evidence: command.evidence.clone(),
+                evidence: command.evidence().to_vec(),
+            });
+            gaps.push(Gap {
+                kind: GapKind::ArgumentArityUnknown,
+                command_path: command.path().to_vec(),
+                reason: "positional argument arity is not confirmed yet".to_owned(),
+                evidence: command.evidence().to_vec(),
+            });
+        }
+        if command.runtime_confirmed()
+            && command.has_child_candidates()
+            && !command.invalid_child_rejected()
+        {
+            gaps.push(Gap {
+                kind: GapKind::InvalidChildDiagnosticsUnknown,
+                command_path: command.path().to_vec(),
+                reason: "safe invalid-child probe has not observed command diagnostics".to_owned(),
+                evidence: command.evidence().to_vec(),
+            });
+        }
+        if command.runtime_confirmed() && !command.invalid_flag_rejected() {
+            gaps.push(Gap {
+                kind: GapKind::InvalidFlagDiagnosticsUnknown,
+                command_path: command.path().to_vec(),
+                reason: "safe invalid-flag probe has not observed flag diagnostics".to_owned(),
+                evidence: command.evidence().to_vec(),
             });
         }
     }
@@ -365,9 +210,10 @@ fn command_id(binary_name: &str, path: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ShapeObservation, discover_command_paths, infer_shape};
+    use super::infer_shape;
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::fingerprint::TargetFingerprint;
+    use crate::observation::ShapeObservation;
     use crate::process::OutputCapture;
 
     #[test]
@@ -375,6 +221,7 @@ mod tests {
         let target = target();
         let root = observation(
             "e_000003",
+            ProbeIntent::Help,
             vec![],
             "Commands:\n  measure  Run probes\n\nOptions:\n  -h, --help     Print help\n",
             Some(0),
@@ -398,12 +245,14 @@ mod tests {
         let target = target();
         let root = observation(
             "e_000003",
+            ProbeIntent::Help,
             vec![],
             "Commands:\n  measure  Run probes\n",
             Some(0),
         );
         let measure_help = observation(
             "e_000005",
+            ProbeIntent::Help,
             vec!["measure".to_owned()],
             "Usage: cliare measure <TARGET>\n\nOptions:\n  --out <DIR>  Output directory\n",
             Some(0),
@@ -421,21 +270,11 @@ mod tests {
     }
 
     #[test]
-    fn discovery_absolutizes_nested_candidates() {
-        let paths = discover_command_paths(
-            "Commands:\n  search  Search flows\n",
-            "cliare",
-            &["flow".to_owned()],
-        );
-
-        assert_eq!(paths, vec![vec!["flow".to_owned(), "search".to_owned()]]);
-    }
-
-    #[test]
     fn shape_keeps_nested_candidates_from_child_help() {
         let target = target();
         let flow_help = observation(
             "e_000003",
+            ProbeIntent::Help,
             vec!["flow".to_owned()],
             "Commands:\n  search  Search flows\n",
             Some(0),
@@ -451,6 +290,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn diagnostic_probes_close_diagnostic_gaps() {
+        let target = target();
+        let observations = vec![
+            observation(
+                "e_000005",
+                ProbeIntent::Help,
+                vec!["measure".to_owned()],
+                "Usage: cliare measure <TARGET>\n\nCommands:\n  nested  Nested command\n\nOptions:\n  --out <DIR>  Output directory\n",
+                Some(0),
+            ),
+            observation(
+                "e_000007",
+                ProbeIntent::InvalidChild,
+                vec!["measure".to_owned()],
+                "error: unexpected argument",
+                Some(2),
+            ),
+            observation(
+                "e_000009",
+                ProbeIntent::InvalidFlag,
+                vec!["measure".to_owned()],
+                "error: unexpected argument",
+                Some(2),
+            ),
+        ];
+
+        let shape = infer_shape(target, &observations);
+        let measure = shape
+            .commands
+            .iter()
+            .find(|command| command.path == ["measure"])
+            .expect("measure command exists");
+
+        assert!(measure.runtime_confirmed);
+        assert!(!shape.gaps.iter().any(|gap| {
+            gap.command_path == ["measure"]
+                && matches!(
+                    gap.kind,
+                    super::GapKind::InvalidChildDiagnosticsUnknown
+                        | super::GapKind::InvalidFlagDiagnosticsUnknown
+                )
+        }));
+    }
+
     fn target() -> TargetFingerprint {
         TargetFingerprint {
             requested: "cliare".into(),
@@ -462,13 +346,14 @@ mod tests {
 
     fn observation(
         evidence_id: &str,
+        intent: ProbeIntent,
         path: Vec<String>,
         stdout: &str,
         exit_code: Option<i32>,
     ) -> ShapeObservation {
         ShapeObservation {
             evidence_id: evidence_id.to_owned(),
-            intent: ProbeIntent::Help,
+            intent,
             path,
             process: ProcessCompleted {
                 probe_id: "p_000001".to_owned(),

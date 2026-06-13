@@ -56,6 +56,26 @@ impl ProbeSpec {
         }
     }
 
+    pub fn invalid_child(path: Vec<String>, token: String) -> Self {
+        let mut args = path.clone();
+        args.push(token);
+        Self {
+            args,
+            path,
+            intent: ProbeIntent::InvalidChild,
+        }
+    }
+
+    pub fn invalid_flag(path: Vec<String>, flag: String) -> Self {
+        let mut args = path.clone();
+        args.push(flag);
+        Self {
+            args,
+            path,
+            intent: ProbeIntent::InvalidFlag,
+        }
+    }
+
     pub fn argv(&self, target: &Path) -> Vec<String> {
         let mut argv = Vec::with_capacity(self.args.len() + 1);
         argv.push(target.display().to_string());
