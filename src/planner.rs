@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
 
-use crate::claims::{ClaimSet, CommandClaim};
+use crate::claims::{ClaimSet, CommandClaim, OutputContractClaim};
+use crate::evidence::ProbeIntent;
+use crate::output::OutputMode;
 use crate::process::ProbeSpec;
 
 pub trait ProbePlanner {
@@ -136,6 +138,29 @@ impl DeterministicPlanner {
         plans
     }
 
+    fn output_probe_plans_for(&mut self, claim: &OutputContractClaim) -> Vec<ProbePlan> {
+        if claim.command_path().len() > self.max_depth {
+            self.depth_skipped_paths
+                .insert(claim.command_path().to_vec());
+            return Vec::new();
+        }
+        if claim.probed() {
+            return Vec::new();
+        }
+
+        let Some(intent) = output_intent(claim.mode()) else {
+            return Vec::new();
+        };
+        vec![ProbePlan::new(
+            ProbeSpec::output_mode_help(
+                claim.command_path().to_vec(),
+                claim.argv_fragment().to_vec(),
+                intent,
+            ),
+            PlannerRank::for_output_probe(claim),
+        )]
+    }
+
     fn invalid_child_token(&self, path: &[String]) -> String {
         let suffix = path.join("_").replace('-', "_");
         format!(
@@ -164,6 +189,9 @@ impl ProbePlanner for DeterministicPlanner {
         let mut plans = Vec::new();
         for claim in claims.commands() {
             plans.extend(self.probe_plans_for(claim));
+        }
+        for claim in claims.output_contracts() {
+            plans.extend(self.output_probe_plans_for(claim));
         }
         self.schedule_ranked(plans);
     }
@@ -268,6 +296,17 @@ impl PlannerRank {
             intent_order,
         }
     }
+
+    fn for_output_probe(claim: &OutputContractClaim) -> Self {
+        Self {
+            category: 2,
+            expected_value: output_expected_value(claim.mode()),
+            uncertainty: if claim.probed() { 0 } else { 700 },
+            confidence: if claim.advertised() { 800 } else { 200 },
+            depth: claim.command_path().len() as u16,
+            intent_order: output_intent_order(claim.mode()),
+        }
+    }
 }
 
 impl Ord for PlannerRank {
@@ -302,6 +341,33 @@ fn help_expected_value(confidence: u16, uncertainty: u16) -> u16 {
 
 fn diagnostic_expected_value(confidence: u16) -> u16 {
     200_u16.saturating_add(confidence / 2).min(1_000)
+}
+
+fn output_expected_value(mode: OutputMode) -> u16 {
+    match mode {
+        OutputMode::Json => 700,
+        OutputMode::Yaml => 550,
+        OutputMode::Table => 250,
+        OutputMode::Plain => 150,
+    }
+}
+
+fn output_intent(mode: OutputMode) -> Option<ProbeIntent> {
+    match mode {
+        OutputMode::Json => Some(ProbeIntent::OutputJson),
+        OutputMode::Yaml => Some(ProbeIntent::OutputYaml),
+        OutputMode::Table => Some(ProbeIntent::OutputTable),
+        OutputMode::Plain => Some(ProbeIntent::OutputPlain),
+    }
+}
+
+fn output_intent_order(mode: OutputMode) -> u8 {
+    match mode {
+        OutputMode::Json => 0,
+        OutputMode::Yaml => 1,
+        OutputMode::Table => 2,
+        OutputMode::Plain => 3,
+    }
 }
 
 pub fn bootstrap_invalid_command_token(target_name: &str) -> String {

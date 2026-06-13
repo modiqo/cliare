@@ -3,10 +3,13 @@ use std::path::Path;
 use serde::Serialize;
 use tokio::fs;
 
-use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind, PositionalClaim};
+use crate::claims::{
+    ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, PositionalClaim,
+};
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
+use crate::output::{ObservedOutputKind, OutputMode};
 
 const SCHEMA_VERSION: &str = "cliare.command-shape.v1";
 const INFERENCE_MODEL: &str = "cliare-generic-claims-v0";
@@ -17,6 +20,7 @@ pub struct CommandShape {
     target: TargetFingerprint,
     commands: Vec<CommandCandidate>,
     flags: Vec<FlagCandidate>,
+    output_contracts: Vec<OutputContractCandidate>,
     gaps: Vec<Gap>,
     model: InferenceModel,
 }
@@ -57,6 +61,20 @@ pub struct PositionalArgument {
     evidence: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct OutputContractCandidate {
+    command_path: Vec<String>,
+    mode: OutputMode,
+    flag_name: String,
+    argv_fragment: Vec<String>,
+    advertised: bool,
+    probed: bool,
+    parse_success: bool,
+    observed_kind: Option<ObservedOutputKind>,
+    diagnostic: Option<String>,
+    evidence: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlagValueKindShape {
@@ -82,6 +100,8 @@ pub enum GapKind {
     ArgumentArityUnknown,
     InvalidChildDiagnosticsUnknown,
     InvalidFlagDiagnosticsUnknown,
+    OutputModeUnprobed,
+    OutputModeParseFailed,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,13 +131,18 @@ pub fn infer_shape(target: TargetFingerprint, observations: &[ShapeObservation])
         .map(|command| command_candidate(&binary_name, command))
         .collect::<Vec<_>>();
     let flags = claims.flags().map(flag_candidate).collect::<Vec<_>>();
-    let gaps = gap_items(claims.commands(), &flags);
+    let output_contracts = claims
+        .output_contracts()
+        .map(output_contract_candidate)
+        .collect::<Vec<_>>();
+    let gaps = gap_items(claims.commands(), &flags, &output_contracts);
 
     CommandShape {
         schema_version: SCHEMA_VERSION,
         target,
         commands,
         flags,
+        output_contracts,
         gaps,
         model: InferenceModel {
             name: INFERENCE_MODEL,
@@ -179,6 +204,21 @@ fn positional_argument(argument: &PositionalClaim) -> PositionalArgument {
     }
 }
 
+fn output_contract_candidate(contract: &OutputContractClaim) -> OutputContractCandidate {
+    OutputContractCandidate {
+        command_path: contract.command_path().to_vec(),
+        mode: contract.mode(),
+        flag_name: contract.flag_name().to_owned(),
+        argv_fragment: contract.argv_fragment().to_vec(),
+        advertised: contract.advertised(),
+        probed: contract.probed(),
+        parse_success: contract.parse_success(),
+        observed_kind: contract.observed_kind(),
+        diagnostic: contract.diagnostic().map(str::to_owned),
+        evidence: contract.evidence().to_vec(),
+    }
+}
+
 fn flag_value_kind(kind: FlagValueKind) -> FlagValueKindShape {
     match kind {
         FlagValueKind::Boolean => FlagValueKindShape::Boolean,
@@ -190,6 +230,7 @@ fn flag_value_kind(kind: FlagValueKind) -> FlagValueKindShape {
 fn gap_items<'a>(
     commands: impl Iterator<Item = &'a CommandClaim>,
     flags: &[FlagCandidate],
+    output_contracts: &[OutputContractCandidate],
 ) -> Vec<Gap> {
     let mut gaps = Vec::new();
 
@@ -245,6 +286,26 @@ fn gap_items<'a>(
                 command_path: command.path().to_vec(),
                 reason: "safe invalid-flag probe has not observed flag diagnostics".to_owned(),
                 evidence: command.evidence().to_vec(),
+            });
+        }
+    }
+
+    for contract in output_contracts {
+        if !contract.probed {
+            gaps.push(Gap {
+                kind: GapKind::OutputModeUnprobed,
+                command_path: contract.command_path.clone(),
+                reason: "advertised output mode has not been runtime-probed".to_owned(),
+                evidence: contract.evidence.clone(),
+            });
+        } else if !contract.parse_success {
+            gaps.push(Gap {
+                kind: GapKind::OutputModeParseFailed,
+                command_path: contract.command_path.clone(),
+                reason:
+                    "advertised output mode did not produce parseable output during a safe probe"
+                        .to_owned(),
+                evidence: contract.evidence.clone(),
             });
         }
     }

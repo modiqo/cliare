@@ -141,6 +141,10 @@ pub enum ProbeIntent {
     InvalidCommand,
     InvalidChild,
     InvalidFlag,
+    OutputJson,
+    OutputYaml,
+    OutputTable,
+    OutputPlain,
 }
 
 #[derive(Debug, Clone, Serialize)]

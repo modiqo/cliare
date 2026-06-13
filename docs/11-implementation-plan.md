@@ -198,10 +198,12 @@ The current implementation has local probing, evidence, and the first generic cl
 - `process` executes probes with bounded stdout/stderr, timeouts, null stdin, and sandbox cwd/env.
 - `evidence` records run-level sandbox metadata and per-probe cwd/env policy.
 - `claims` converts observations into command and flag beliefs.
-- `planner` ranks confirmation and diagnostic probes deterministically.
+- `claims` also records advertised output contracts and parser results for safe output-mode probes.
+- `planner` ranks confirmation, diagnostic, and output-mode probes deterministically.
 - `shape` emits the catalog from claims rather than from a framework parser.
 - Invalid-child probes are gated on evidence of nested commands so leaf commands with positionals are not misclassified as command trees.
-- Fixture CLI integration tests cover custom help, aliases, noisy help, runtime false-positive rejection, cache reuse, score guards, and sandbox HOME/PWD isolation.
+- Output-mode probes combine the documented output flag with `--help` so CLIARE can validate machine-readable behavior without running a command body.
+- Fixture CLI integration tests cover custom help, aliases, noisy help, runtime false-positive rejection, cache reuse, score guards, sandbox HOME/PWD isolation, parseable JSON output, and malformed JSON output.
 
 ---
 
@@ -239,10 +241,12 @@ Compute initial CLIARE score and produce human report.
 
 The current implementation emits experimental partial `scorecard.json` and `report.md` artifacts from `measure`.
 
-- Discovery, grammar, execution, and recovery are scored from current evidence.
-- Output and safety are present as `not_measured` dimensions until dedicated probes exist.
+- Discovery, grammar, execution, recovery, and output are scored from current evidence.
+- Output scoring credits advertised JSON/YAML contracts and safe parse-probe success; CLIs with no machine-readable mode now receive output findings.
+- Safety is present as a `not_measured` dimension until side-effect observation exists.
 - Fixture tests verify that a clearer CLI scores higher than a poor CLI.
-- The Markdown report explains the partial score, measured coverage, and findings.
+- Fixture tests verify that parseable JSON output improves the output subscore and malformed JSON records a parse gap.
+- The Markdown report explains the score, measured coverage, output coverage, and findings.
 - The CLI prints a terminal summary with score, probe count, finding count, and artifact paths.
 
 ---

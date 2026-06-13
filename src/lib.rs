@@ -8,6 +8,7 @@ pub mod guard;
 pub mod layout;
 pub mod measure;
 pub mod observation;
+pub mod output;
 pub mod planner;
 pub mod process;
 pub mod sandbox;

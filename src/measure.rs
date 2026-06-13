@@ -43,6 +43,10 @@ pub struct MeasurementSummary {
     pub score_model: String,
     pub score_status: String,
     pub findings: usize,
+    pub output_contracts_discovered: usize,
+    pub machine_readable_output_contracts: usize,
+    pub output_mode_probes_completed: usize,
+    pub output_mode_parse_successes: usize,
     pub observed_max_depth: usize,
     pub traversal_profile: String,
     pub max_depth: usize,
@@ -66,7 +70,7 @@ impl MeasurementSummary {
             format!("target: {}", self.target.requested.display()),
             format!("resolved: {}", self.target.resolved.display()),
             format!(
-                "score: {:.1}/100 ({}, measured {:.1}/{:.1}, model {})",
+                "score: {:.1}/100 ({}, measured {:.2}/{:.2}, model {})",
                 self.score_total,
                 self.score_status,
                 self.score_measured_weight,
@@ -76,6 +80,14 @@ impl MeasurementSummary {
             format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
+            "output contracts:".to_owned(),
+            format!("  discovered: {}", self.output_contracts_discovered),
+            format!(
+                "  machine-readable: {}",
+                self.machine_readable_output_contracts
+            ),
+            format!("  probes completed: {}", self.output_mode_probes_completed),
+            format!("  parse successes: {}", self.output_mode_parse_successes),
             "runtime isolation:".to_owned(),
             format!("  sandbox profile: {}", self.sandbox_profile),
             format!("  env policy: {}", self.sandbox_env_policy),
@@ -242,6 +254,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         score_model: score_artifacts.model.to_owned(),
         score_status: score_artifacts.status.to_owned(),
         findings: score_artifacts.findings,
+        output_contracts_discovered: score_artifacts.output_contracts_discovered,
+        machine_readable_output_contracts: score_artifacts.machine_readable_output_contracts,
+        output_mode_probes_completed: score_artifacts.output_mode_probes_completed,
+        output_mode_parse_successes: score_artifacts.output_mode_parse_successes,
         observed_max_depth: score_artifacts.observed_max_depth,
         traversal_profile: score_artifacts.traversal_profile.to_owned(),
         max_depth: score_artifacts.max_depth,
@@ -317,6 +333,10 @@ struct CachedMeasurementSummary {
     sandbox_workdir: PathBuf,
     sandbox_env_policy: String,
     findings: usize,
+    output_contracts_discovered: usize,
+    machine_readable_output_contracts: usize,
+    output_mode_probes_completed: usize,
+    output_mode_parse_successes: usize,
     observed_max_depth: usize,
     traversal_profile: String,
     max_depth: usize,
@@ -386,6 +406,10 @@ impl MeasurementCacheManifest {
             sandbox_workdir: self.summary.sandbox_workdir,
             sandbox_env_policy: self.summary.sandbox_env_policy,
             findings: self.summary.findings,
+            output_contracts_discovered: self.summary.output_contracts_discovered,
+            machine_readable_output_contracts: self.summary.machine_readable_output_contracts,
+            output_mode_probes_completed: self.summary.output_mode_probes_completed,
+            output_mode_parse_successes: self.summary.output_mode_parse_successes,
             observed_max_depth: self.summary.observed_max_depth,
             traversal_profile: self.summary.traversal_profile,
             max_depth: self.summary.max_depth,
@@ -449,6 +473,10 @@ async fn write_cache_manifest(
             sandbox_workdir: summary.sandbox_workdir.clone(),
             sandbox_env_policy: summary.sandbox_env_policy.to_owned(),
             findings: summary.findings,
+            output_contracts_discovered: summary.output_contracts_discovered,
+            machine_readable_output_contracts: summary.machine_readable_output_contracts,
+            output_mode_probes_completed: summary.output_mode_probes_completed,
+            output_mode_parse_successes: summary.output_mode_parse_successes,
             observed_max_depth: summary.observed_max_depth,
             traversal_profile: summary.traversal_profile.to_owned(),
             max_depth: summary.max_depth,
@@ -562,6 +590,10 @@ mod tests {
             score_model: "cliare-score-v0".to_owned(),
             score_status: "experimental partial".to_owned(),
             findings: 2,
+            output_contracts_discovered: 1,
+            machine_readable_output_contracts: 1,
+            output_mode_probes_completed: 1,
+            output_mode_parse_successes: 1,
             observed_max_depth: 1,
             traversal_profile: "standard".to_owned(),
             max_depth: 5,
@@ -583,6 +615,8 @@ mod tests {
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
         assert!(text.contains("cache: miss"));
+        assert!(text.contains("output contracts:"));
+        assert!(text.contains("machine-readable: 1"));
         assert!(text.contains("sandbox profile: isolated"));
         assert!(text.contains("env policy: cleared_with_allowlist"));
         assert!(text.contains("depth: observed 1 / budget 5"));

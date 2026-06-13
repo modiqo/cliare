@@ -4,6 +4,7 @@ use crate::belief::Belief;
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::layout;
 use crate::observation::ShapeObservation;
+use crate::output::{self, ObservedOutputKind, OutputMode};
 
 const COMMAND_PRIOR: f64 = 0.08;
 const FLAG_PRIOR: f64 = 0.12;
@@ -37,6 +38,7 @@ impl CommandPath {
 pub struct ClaimSet {
     commands: BTreeMap<CommandPath, CommandClaim>,
     flags: BTreeMap<(CommandPath, String), FlagClaim>,
+    outputs: BTreeMap<OutputContractKey, OutputContractClaim>,
 }
 
 impl ClaimSet {
@@ -44,6 +46,7 @@ impl ClaimSet {
         let mut claims = Self {
             commands: BTreeMap::new(),
             flags: BTreeMap::new(),
+            outputs: BTreeMap::new(),
         };
 
         for observation in observations {
@@ -61,11 +64,19 @@ impl ClaimSet {
         self.flags.values()
     }
 
+    pub fn output_contracts(&self) -> impl Iterator<Item = &OutputContractClaim> {
+        self.outputs.values()
+    }
+
     fn apply_observation(&mut self, binary_name: &str, observation: &ShapeObservation) {
         match observation.intent {
             ProbeIntent::Help => self.apply_help_observation(binary_name, observation),
             ProbeIntent::InvalidChild => self.apply_invalid_child_observation(observation),
             ProbeIntent::InvalidFlag => self.apply_invalid_flag_observation(observation),
+            ProbeIntent::OutputJson
+            | ProbeIntent::OutputYaml
+            | ProbeIntent::OutputTable
+            | ProbeIntent::OutputPlain => self.apply_output_mode_observation(observation),
             ProbeIntent::Version | ProbeIntent::InvalidCommand => {}
         }
     }
@@ -120,6 +131,25 @@ impl ClaimSet {
                 .or_insert_with(|| FlagClaim::new(current_path.clone(), candidate.name.clone()))
                 .apply_layout_candidate(candidate, &observation.evidence_id);
         }
+
+        for candidate in layout::output_mode_candidates(text) {
+            let key = OutputContractKey {
+                command_path: current_path.clone(),
+                mode: candidate.mode,
+                argv_fragment: candidate.argv_fragment.clone(),
+            };
+            self.outputs
+                .entry(key)
+                .or_insert_with(|| {
+                    OutputContractClaim::new(
+                        current_path.clone(),
+                        candidate.mode,
+                        candidate.flag_name.clone(),
+                        candidate.argv_fragment.clone(),
+                    )
+                })
+                .apply_advertised(&observation.evidence_id, &candidate.evidence_detail);
+        }
     }
 
     fn apply_invalid_child_observation(&mut self, observation: &ShapeObservation) {
@@ -142,11 +172,63 @@ impl ClaimSet {
             .apply_invalid_flag(&observation.evidence_id, rejected_by_runtime(observation));
     }
 
+    fn apply_output_mode_observation(&mut self, observation: &ShapeObservation) {
+        let Some(mode) = output_mode_for_intent(observation.intent) else {
+            return;
+        };
+        let path = CommandPath::new(observation.path.clone());
+        let classification = output::classify(
+            mode,
+            &observation.process.status,
+            observation.process.stdout.text.as_deref(),
+        );
+        let argv_fragment = output_probe_fragment(observation, path.as_slice());
+
+        let matching_keys = self
+            .outputs
+            .keys()
+            .filter(|key| {
+                key.command_path == path
+                    && key.mode == mode
+                    && argv_contains_fragment(&argv_fragment, &key.argv_fragment)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if matching_keys.is_empty() {
+            let key = OutputContractKey {
+                command_path: path.clone(),
+                mode,
+                argv_fragment: argv_fragment.clone(),
+            };
+            self.outputs
+                .entry(key)
+                .or_insert_with(|| {
+                    OutputContractClaim::new(path, mode, mode.label().to_owned(), argv_fragment)
+                })
+                .apply_probe(&observation.evidence_id, classification);
+            return;
+        }
+
+        for key in matching_keys {
+            if let Some(claim) = self.outputs.get_mut(&key) {
+                claim.apply_probe(&observation.evidence_id, classification.clone());
+            }
+        }
+    }
+
     fn command_mut(&mut self, path: CommandPath) -> &mut CommandClaim {
         self.commands
             .entry(path.clone())
             .or_insert_with(|| CommandClaim::new(path))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct OutputContractKey {
+    command_path: CommandPath,
+    mode: OutputMode,
+    argv_fragment: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -348,6 +430,97 @@ pub struct FlagClaim {
     evidence: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct OutputContractClaim {
+    command_path: CommandPath,
+    mode: OutputMode,
+    flag_name: String,
+    argv_fragment: Vec<String>,
+    advertised: bool,
+    probed: bool,
+    parse_success: bool,
+    observed_kind: Option<ObservedOutputKind>,
+    diagnostic: Option<String>,
+    evidence: Vec<String>,
+}
+
+impl OutputContractClaim {
+    fn new(
+        command_path: CommandPath,
+        mode: OutputMode,
+        flag_name: String,
+        argv_fragment: Vec<String>,
+    ) -> Self {
+        Self {
+            command_path,
+            mode,
+            flag_name,
+            argv_fragment,
+            advertised: false,
+            probed: false,
+            parse_success: false,
+            observed_kind: None,
+            diagnostic: None,
+            evidence: Vec::new(),
+        }
+    }
+
+    fn apply_advertised(&mut self, evidence_id: &str, evidence_detail: &str) {
+        self.advertised = true;
+        self.evidence
+            .push(format!("{evidence_id}:output mode {evidence_detail}"));
+    }
+
+    fn apply_probe(&mut self, evidence_id: &str, classification: output::OutputClassification) {
+        self.probed = true;
+        self.parse_success |= classification.parse_success;
+        self.observed_kind = Some(classification.observed_kind);
+        self.diagnostic = Some(classification.detail);
+        self.evidence
+            .push(format!("{evidence_id}:output mode probe"));
+    }
+
+    pub fn command_path(&self) -> &CommandPath {
+        &self.command_path
+    }
+
+    pub fn mode(&self) -> OutputMode {
+        self.mode
+    }
+
+    pub fn flag_name(&self) -> &str {
+        &self.flag_name
+    }
+
+    pub fn argv_fragment(&self) -> &[String] {
+        &self.argv_fragment
+    }
+
+    pub fn advertised(&self) -> bool {
+        self.advertised
+    }
+
+    pub fn probed(&self) -> bool {
+        self.probed
+    }
+
+    pub fn parse_success(&self) -> bool {
+        self.parse_success
+    }
+
+    pub fn observed_kind(&self) -> Option<ObservedOutputKind> {
+        self.observed_kind
+    }
+
+    pub fn diagnostic(&self) -> Option<&str> {
+        self.diagnostic.as_deref()
+    }
+
+    pub fn evidence(&self) -> &[String] {
+        &self.evidence
+    }
+}
+
 impl FlagClaim {
     fn new(command_path: CommandPath, name: String) -> Self {
         Self {
@@ -461,6 +634,42 @@ fn rejected_by_runtime(observation: &ShapeObservation) -> bool {
         &observation.process.status,
         ProcessStatus::Exited { code: Some(code) } if *code != 0
     )
+}
+
+fn output_mode_for_intent(intent: ProbeIntent) -> Option<OutputMode> {
+    match intent {
+        ProbeIntent::OutputJson => Some(OutputMode::Json),
+        ProbeIntent::OutputYaml => Some(OutputMode::Yaml),
+        ProbeIntent::OutputTable => Some(OutputMode::Table),
+        ProbeIntent::OutputPlain => Some(OutputMode::Plain),
+        _ => None,
+    }
+}
+
+fn output_probe_fragment(observation: &ShapeObservation, path: &[String]) -> Vec<String> {
+    let mut args = observation
+        .process
+        .argv
+        .iter()
+        .skip(1)
+        .cloned()
+        .collect::<Vec<_>>();
+    if args.starts_with(path) {
+        args.drain(..path.len());
+    }
+    if args.last().is_some_and(|arg| arg == "--help") {
+        args.pop();
+    }
+    args
+}
+
+fn argv_contains_fragment(argv_fragment: &[String], expected: &[String]) -> bool {
+    if expected.is_empty() {
+        return true;
+    }
+    argv_fragment
+        .windows(expected.len())
+        .any(|window| window == expected)
 }
 
 fn absolutize_candidate_path(current_path: &[String], candidate: Vec<String>) -> Vec<String> {

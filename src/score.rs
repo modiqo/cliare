@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tokio::fs;
 
-use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind};
+use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim};
 use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
@@ -77,6 +77,10 @@ pub struct Coverage {
     commands_runtime_confirmed: usize,
     command_confirmation_rate: f64,
     flags_discovered: usize,
+    output_contracts_discovered: usize,
+    machine_readable_output_contracts: usize,
+    output_mode_probes_completed: usize,
+    output_mode_parse_successes: usize,
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
     observed_max_depth: usize,
@@ -140,6 +144,10 @@ pub struct ScoreArtifactSummary {
     pub model: &'static str,
     pub status: &'static str,
     pub findings: usize,
+    pub output_contracts_discovered: usize,
+    pub machine_readable_output_contracts: usize,
+    pub output_mode_probes_completed: usize,
+    pub output_mode_parse_successes: usize,
     pub observed_max_depth: usize,
     pub traversal_profile: &'static str,
     pub max_depth: usize,
@@ -213,6 +221,10 @@ pub async fn write_score_artifacts(
         model: scorecard.score.model,
         status: score_status_label(&scorecard.score.status),
         findings: scorecard.findings.len(),
+        output_contracts_discovered: scorecard.coverage.output_contracts_discovered,
+        machine_readable_output_contracts: scorecard.coverage.machine_readable_output_contracts,
+        output_mode_probes_completed: scorecard.coverage.output_mode_probes_completed,
+        output_mode_parse_successes: scorecard.coverage.output_mode_parse_successes,
         observed_max_depth: scorecard.coverage.observed_max_depth,
         traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
@@ -333,10 +345,10 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Output,
         DimensionScore {
-            score: None,
+            score: Some(round_score(output_score(metrics))),
             weight: 0.05,
-            status: DimensionStatus::NotMeasured,
-            rationale: "machine-readable output probes are not implemented in score v0".to_owned(),
+            status: DimensionStatus::Measured,
+            rationale: "advertised machine-readable output modes and safe parse probes".to_owned(),
         },
     );
     subscores.insert(
@@ -374,8 +386,8 @@ fn total_score(subscores: &BTreeMap<Dimension, DimensionScore>) -> ScoreSummary 
 
     ScoreSummary {
         total: round_score(total),
-        measured_weight: round_score(measured_weight),
-        max_weight: round_score(max_weight),
+        measured_weight: round_weight(measured_weight),
+        max_weight: round_weight(max_weight),
         model: SCORE_MODEL,
         status: ScoreStatus::ExperimentalPartial,
     }
@@ -477,6 +489,33 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
         });
     }
 
+    if metrics.coverage.machine_readable_output_contracts == 0 {
+        findings.push(Finding {
+            id: "finding.output.no_machine_readable_mode",
+            dimension: Dimension::Output,
+            severity: Severity::Medium,
+            title: "No machine-readable output mode was discovered",
+            detail: "No JSON or YAML output contract was found in runtime help evidence."
+                .to_owned(),
+            recommendation: "Advertise a stable JSON or YAML output mode in command help.",
+        });
+    } else if metrics.coverage.output_mode_parse_successes
+        < metrics.coverage.output_mode_probes_completed
+    {
+        findings.push(Finding {
+            id: "finding.output.unparseable_mode",
+            dimension: Dimension::Output,
+            severity: Severity::High,
+            title: "Some advertised output modes did not parse",
+            detail: format!(
+                "{} of {} output-mode probes parsed successfully.",
+                metrics.coverage.output_mode_parse_successes,
+                metrics.coverage.output_mode_probes_completed
+            ),
+            recommendation: "Ensure documented machine-readable modes produce valid output for safe help or diagnostic probes.",
+        });
+    }
+
     findings
 }
 
@@ -562,6 +601,22 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Flags discovered: `{}`\n",
         scorecard.coverage.flags_discovered
+    ));
+    report.push_str(&format!(
+        "- Output contracts discovered: `{}`\n",
+        scorecard.coverage.output_contracts_discovered
+    ));
+    report.push_str(&format!(
+        "- Machine-readable output contracts: `{}`\n",
+        scorecard.coverage.machine_readable_output_contracts
+    ));
+    report.push_str(&format!(
+        "- Output-mode probes completed: `{}`\n",
+        scorecard.coverage.output_mode_probes_completed
+    ));
+    report.push_str(&format!(
+        "- Output-mode parse successes: `{}`\n",
+        scorecard.coverage.output_mode_parse_successes
     ));
     report.push_str(&format!(
         "- Average command confidence: `{:.3}`\n",
@@ -722,6 +777,9 @@ struct Metrics {
     coverage: Coverage,
     grammar_gap_count: usize,
     flags_with_known_grammar: usize,
+    machine_readable_output_contracts: usize,
+    output_mode_probe_count: usize,
+    output_mode_parse_successes: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -734,6 +792,7 @@ impl Metrics {
     ) -> Self {
         let commands = claims.commands().collect::<Vec<_>>();
         let flags = claims.flags().collect::<Vec<_>>();
+        let outputs = claims.output_contracts().collect::<Vec<_>>();
         let commands_discovered = commands.len();
         let commands_runtime_confirmed = commands
             .iter()
@@ -747,6 +806,16 @@ impl Metrics {
             .map(|command| grammar_gaps_for(command))
             .sum();
         let flags_with_known_grammar = flags.iter().filter(|flag| flag_grammar_known(flag)).count();
+        let output_contracts_discovered = outputs.len();
+        let machine_readable_output_contracts = outputs
+            .iter()
+            .filter(|contract| machine_readable_output_contract(contract))
+            .count();
+        let output_mode_probe_count = outputs.iter().filter(|contract| contract.probed()).count();
+        let output_mode_parse_successes = outputs
+            .iter()
+            .filter(|contract| contract.parse_success())
+            .count();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
         let probes_skipped_by_budget =
@@ -773,6 +842,10 @@ impl Metrics {
                 commands_runtime_confirmed,
                 command_confirmation_rate: ratio(commands_runtime_confirmed, commands_discovered),
                 flags_discovered: flags.len(),
+                output_contracts_discovered,
+                machine_readable_output_contracts,
+                output_mode_probes_completed: output_mode_probe_count,
+                output_mode_parse_successes,
                 avg_command_confidence,
                 avg_flag_confidence,
                 observed_max_depth: observed_max_depth(&commands),
@@ -797,6 +870,9 @@ impl Metrics {
             },
             grammar_gap_count,
             flags_with_known_grammar,
+            machine_readable_output_contracts,
+            output_mode_probe_count,
+            output_mode_parse_successes,
             invalid_probe_count: process_metrics.invalid_probe_count,
             invalid_probe_rejections: process_metrics.invalid_probe_rejections,
         }
@@ -813,6 +889,25 @@ impl Metrics {
             self.coverage.flags_discovered,
         )
     }
+}
+
+fn output_score(metrics: &Metrics) -> f64 {
+    if metrics.machine_readable_output_contracts == 0 {
+        return 0.0;
+    }
+
+    let advertised_score = 40.0;
+    let denominator = metrics
+        .machine_readable_output_contracts
+        .max(metrics.output_mode_probe_count);
+    advertised_score + 60.0 * ratio(metrics.output_mode_parse_successes, denominator)
+}
+
+fn machine_readable_output_contract(contract: &OutputContractClaim) -> bool {
+    matches!(
+        contract.mode(),
+        crate::output::OutputMode::Json | crate::output::OutputMode::Yaml
+    )
 }
 
 fn traversal_stop_reason(
@@ -920,6 +1015,10 @@ fn round_score(score: f64) -> f64 {
     (score * 10.0).round() / 10.0
 }
 
+fn round_weight(weight: f64) -> f64 {
+    (weight * 100.0).round() / 100.0
+}
+
 fn target_binary_name(target: &TargetFingerprint) -> String {
     target
         .resolved
@@ -1025,8 +1124,9 @@ mod tests {
         let report = render_report(&scorecard);
 
         assert!(report.contains("# CLIARE Report"));
-        assert!(report.contains("| output | not measured |"));
+        assert!(report.contains("| output | 0.0 | 0.05 | measured |"));
         assert!(report.contains("experimental partial"));
+        assert!(report.contains("- Output contracts discovered: `0`"));
         assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
         assert!(report.contains("- Minimum expected probe value: `150`"));

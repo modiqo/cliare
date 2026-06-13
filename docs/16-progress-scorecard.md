@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `feat: isolate probe sandbox runtime`
+> Last updated: after checkpoint `feat: classify machine-readable output modes`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -13,22 +13,22 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | Repository and package foundation | 100% | Rust project, license, README, design docs, private GitHub repo |
 | CLI surface | 55% | `measure`, `guard`, traversal profiles, cache bypass; baseline/publish/certify still planned |
 | Runtime probing | 60% | Safe bootstrap, bounded output, timeouts, recursive probes, isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env |
-| Generic inference | 50% | Layout claims, runtime confirmation, Bayesian confidence, usage positionals, aliases, and flag grammar exist; value domains still planned |
-| Command shape artifact | 60% | Commands, aliases, positionals, flags, flag arity, gaps, confidence, and evidence references exist; richer value domains still planned |
-| Scoring | 42% | v0 dimensions for discovery, grammar, execution, recovery; scorecards now disclose runtime isolation; output, safety, determinism still planned |
+| Generic inference | 58% | Layout claims, runtime confirmation, Bayesian confidence, usage positionals, aliases, flag grammar, and output-mode claims exist; value domains still planned |
+| Command shape artifact | 68% | Commands, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
+| Scoring | 50% | v0 dimensions for discovery, grammar, execution, recovery, and output; safety and determinism still planned |
 | CI guard | 40% | Baseline comparison exists; policy files, SARIF/JUnit, GitHub Action still planned |
 | Cache and fingerprinting | 60% | Binary/profile/version/sandbox-profile cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 65% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, and pressure reporting exist; async parallel traversal still planned |
-| QA and calibration | 25% | Synthetic fixture tests exist; real CLI corpus and calibration metrics still planned |
+| QA and calibration | 30% | Synthetic fixture tests cover command inference, cache, guard, sandbox isolation, parseable JSON, and malformed JSON; real CLI corpus still planned |
 | Public publishing | 5% | Designed but not implemented |
 
 ## MVP Completion
 
-Estimated MVP completion: **62%**
+Estimated MVP completion: **68%**
 
-Estimated MVP work remaining: **38%**
+Estimated MVP work remaining: **32%**
 
-The current implementation is useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: output classification, CI packaging, side-effect scoring, calibration, and async traversal scale.
+The current implementation is useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: side-effect scoring, CI packaging, calibration, and async traversal scale.
 
 ---
 
@@ -45,35 +45,36 @@ The current implementation is useful for local measurement and early CI regressi
 9. Adaptive traversal convergence with expected-value scheduling and typed stop reasons.
 10. Richer grammar extraction for aliases, usage positionals, flag arity, required flags, optional values, and repeated values.
 11. Sandbox isolation profile with sanitized env, isolated HOME/PWD/XDG config-cache-data/TMP, evidence metadata, scorecard metadata, cache profile matching, and fixture tests proving probe writes land inside the sandbox.
+12. Output classification and machine-readable mode detection with generic output-mode claims, safe `--help` output probes, shape output contracts, measured output subscore, and fixtures for parseable and malformed JSON.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 12: Output Classification and Machine-Readable Mode Detection
+### Checkpoint 13: Side-Effect Observation and Initial Safety Scoring
 
-Goal: classify output contracts from runtime evidence so CLIARE can score whether agents can request and parse stable machine-readable results.
+Goal: observe filesystem side effects inside the sandbox and turn the `safety` dimension into a measured score without executing known-destructive workflows.
 
 Acceptance criteria:
 
-- Detect advertised JSON/YAML/table/plain modes from help, usage, and diagnostics.
-- Probe safe output-mode flags such as `--json`, `--format json`, and documented equivalents when they appear in evidence.
-- Add posterior output-kind claims with evidence references.
-- Add scorecard/report fields for machine-readable availability, parse success, and ambiguity.
-- Keep probing generic; no framework-specific assumptions.
-- Add fixtures for CLIs with JSON support, table-only output, misleading format flags, and malformed JSON.
+- Snapshot sandbox HOME/cwd/XDG/TMP before and after each safe probe.
+- Record created, modified, and deleted files by sandbox region.
+- Treat writes during help/version/diagnostic probes as safety evidence.
+- Add safety coverage fields and an initial measured safety subscore.
+- Add findings for unexpected writes, credential-looking files, and writes outside expected runtime dirs.
+- Add fixtures for clean CLIs, cache-writing CLIs, config-writing CLIs, and destructive-looking commands that are not executed.
 
 Why this is next:
 
-- Discovery and grammar are now useful, but agents also need stable parseable outputs.
-- Output classification unlocks the currently unmeasured `output` dimension.
-- The sandbox milestone makes safe output-mode probing more credible.
+- The sandbox exists; the next value is measuring what probes actually changed.
+- Side-effect evidence unlocks the currently unmeasured `safety` dimension.
+- Local-first OSS adoption depends on proving CLIARE can report surprising writes without needing cloud execution.
 
 ---
 
 ## Near-Term Order
 
-1. Output classification and machine-readable mode detection.
-2. Side-effect observation inside the sandbox and initial safety scoring.
-3. CI output formats and GitHub Action wrapper.
+1. Side-effect observation inside the sandbox and initial safety scoring.
+2. CI output formats and GitHub Action wrapper.
+3. Async traversal execution with bounded parallelism and deterministic convergence.
 4. Real CLI benchmark corpus and calibration metrics.

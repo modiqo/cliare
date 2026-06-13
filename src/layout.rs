@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::output::OutputMode;
+
 #[derive(Debug, Clone)]
 pub struct HelpDocument {
     lines: Vec<LayoutLine>,
@@ -153,6 +155,26 @@ pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
     candidates.into_values().collect()
 }
 
+pub fn output_mode_candidates(text: &str) -> Vec<CandidateOutputMode> {
+    let mut candidates = BTreeMap::<(OutputMode, Vec<String>), CandidateOutputMode>::new();
+
+    for flag in flag_candidates(text) {
+        for mode in output_modes_for_flag(&flag) {
+            let argv_fragment = output_mode_argv_fragment(&flag, mode);
+            candidates
+                .entry((mode, argv_fragment.clone()))
+                .or_insert_with(|| CandidateOutputMode {
+                    mode,
+                    flag_name: flag.name.clone(),
+                    argv_fragment,
+                    evidence_detail: flag.evidence_detail.clone(),
+                });
+        }
+    }
+
+    candidates.into_values().collect()
+}
+
 pub fn usage_arguments(
     text: &str,
     binary_name: &str,
@@ -221,6 +243,14 @@ pub struct CandidateFlag {
     pub value_name: Option<String>,
     pub required: bool,
     pub repeatable: bool,
+    pub evidence_detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateOutputMode {
+    pub mode: OutputMode,
+    pub flag_name: String,
+    pub argv_fragment: Vec<String>,
     pub evidence_detail: String,
 }
 
@@ -420,6 +450,42 @@ fn is_generic_usage_placeholder(name: &str) -> bool {
     )
 }
 
+fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
+    let mut modes = Vec::new();
+    let flag_name = flag.name.trim_start_matches("--").replace(['-', '_'], " ");
+    let value_name = flag.value_name.as_deref().unwrap_or("").replace('_', " ");
+    let summary = flag.summary.as_deref().unwrap_or("");
+    let haystack = format!("{flag_name} {value_name} {summary}").to_ascii_lowercase();
+
+    for (needle, mode) in [
+        ("json", OutputMode::Json),
+        ("yaml", OutputMode::Yaml),
+        ("yml", OutputMode::Yaml),
+        ("table", OutputMode::Table),
+        ("plain", OutputMode::Plain),
+        ("text", OutputMode::Plain),
+    ] {
+        if contains_word(&haystack, needle) && !modes.contains(&mode) {
+            modes.push(mode);
+        }
+    }
+
+    modes
+}
+
+fn output_mode_argv_fragment(flag: &CandidateFlag, mode: OutputMode) -> Vec<String> {
+    if flag.value_kind == CandidateFlagValueKind::Boolean {
+        vec![flag.name.clone()]
+    } else {
+        vec![flag.name.clone(), mode.label().to_owned()]
+    }
+}
+
+fn contains_word(text: &str, word: &str) -> bool {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|token| token == word)
+}
+
 fn dedup_arguments(arguments: Vec<CandidateArgument>) -> Vec<CandidateArgument> {
     let mut deduped = BTreeMap::<String, CandidateArgument>::new();
     for argument in arguments {
@@ -470,8 +536,10 @@ fn split_columns(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like, usage_arguments,
+        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like,
+        output_mode_candidates, usage_arguments,
     };
+    use crate::output::OutputMode;
 
     #[test]
     fn extracts_commands_from_generic_aligned_rows() {
@@ -592,5 +660,26 @@ mod tests {
             .find(|flag| flag.name == "--dry-run")
             .expect("dry-run flag");
         assert_eq!(dry_run.value_kind, CandidateFlagValueKind::Boolean);
+    }
+
+    #[test]
+    fn extracts_output_mode_candidates_from_structured_flags() {
+        let text = "Options:\n  --json             Emit JSON\n  --format <KIND>    Output format: json or table\n  --output <FILE>    Output file\n";
+        let candidates = output_mode_candidates(text);
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Json && candidate.argv_fragment == ["--json"]
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Json && candidate.argv_fragment == ["--format", "json"]
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Table && candidate.argv_fragment == ["--format", "table"]
+        }));
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.flag_name == "--output")
+        );
     }
 }

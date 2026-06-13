@@ -77,6 +77,17 @@ impl ProbeSpec {
         }
     }
 
+    pub fn output_mode_help(
+        path: Vec<String>,
+        argv_fragment: Vec<String>,
+        intent: ProbeIntent,
+    ) -> Self {
+        let mut args = path.clone();
+        args.extend(argv_fragment);
+        args.push("--help".to_owned());
+        Self { args, path, intent }
+    }
+
     pub fn argv(&self, target: &Path) -> Vec<String> {
         let mut argv = Vec::with_capacity(self.args.len() + 1);
         argv.push(target.display().to_string());

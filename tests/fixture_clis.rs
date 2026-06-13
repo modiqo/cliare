@@ -154,6 +154,66 @@ async fn clearer_cli_scores_higher_than_poor_cli() {
 }
 
 #[tokio::test]
+async fn output_mode_probe_confirms_parseable_json_contract() {
+    let artifacts = measure_fixture(
+        "output_mode_probe_confirms_parseable_json_contract",
+        json_output_script(),
+        64,
+    )
+    .await;
+
+    let contract = output_contract(&artifacts.shape, &["inspect"], "json");
+    assert_eq!(contract["flag_name"].as_str(), Some("--format"));
+    assert_eq!(contract["argv_fragment"][0].as_str(), Some("--format"));
+    assert_eq!(contract["argv_fragment"][1].as_str(), Some("json"));
+    assert_eq!(contract["probed"].as_bool(), Some(true));
+    assert_eq!(contract["parse_success"].as_bool(), Some(true));
+    assert_eq!(contract["observed_kind"].as_str(), Some("json"));
+
+    assert!(artifacts.evidence.contains("\"intent\":\"output_json\""));
+    assert_eq!(
+        artifacts.scorecard["coverage"]["machine_readable_output_contracts"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["output_mode_parse_successes"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(
+        artifacts.scorecard["subscores"]["output"]["score"].as_f64(),
+        Some(100.0)
+    );
+}
+
+#[tokio::test]
+async fn malformed_output_mode_records_parse_gap_and_finding() {
+    let artifacts = measure_fixture(
+        "malformed_output_mode_records_parse_gap_and_finding",
+        malformed_json_output_script(),
+        64,
+    )
+    .await;
+
+    let contract = output_contract(&artifacts.shape, &["inspect"], "json");
+    assert_eq!(contract["probed"].as_bool(), Some(true));
+    assert_eq!(contract["parse_success"].as_bool(), Some(false));
+    assert!(has_gap(
+        &artifacts.shape,
+        &["inspect"],
+        "output_mode_parse_failed"
+    ));
+    assert!(
+        artifacts
+            .report
+            .contains("Some advertised output modes did not parse")
+    );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["output_mode_parse_successes"].as_u64(),
+        Some(0)
+    );
+}
+
+#[tokio::test]
 async fn measure_reuses_matching_cache_until_refresh_is_requested() {
     let workspace = TempWorkspace::new("measure_reuses_matching_cache_until_refresh_is_requested");
     let target = workspace.write_executable("fixture-cli", noisy_help_script());
@@ -388,6 +448,18 @@ fn flag<'a>(shape: &'a Value, command_path: &[&str], name: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("flag not found for {command_path:?}: {name}"))
 }
 
+fn output_contract<'a>(shape: &'a Value, command_path: &[&str], mode: &str) -> &'a Value {
+    shape["output_contracts"]
+        .as_array()
+        .expect("shape output_contracts is an array")
+        .iter()
+        .find(|contract| {
+            path_matches(&contract["command_path"], command_path)
+                && contract["mode"].as_str() == Some(mode)
+        })
+        .unwrap_or_else(|| panic!("output contract not found for {command_path:?}: {mode}"))
+}
+
 fn has_gap(shape: &Value, command_path: &[&str], kind: &str) -> bool {
     shape["gaps"]
         .as_array()
@@ -595,6 +667,158 @@ EOF
   "--version"|"version")
     echo "fixture-cli 1.0.0"
     exit 0
+    ;;
+  *)
+    echo "unknown command: $1" >&2
+    exit 2
+    ;;
+esac
+"#
+}
+
+fn json_output_script() -> &'static str {
+    r#"#!/bin/sh
+
+root_help() {
+  cat <<'EOF'
+Commands:
+  inspect  Inspect the workspace
+
+Options:
+  --help  Show help
+EOF
+}
+
+inspect_help() {
+  cat <<'EOF'
+Usage: fixture-cli inspect [OPTIONS]
+
+Options:
+  --format <KIND>  Output format: json
+  --help           Show help
+EOF
+}
+
+case "$1" in
+  ""|"--help"|"-h"|"help")
+    case "$2" in
+      "inspect")
+        inspect_help
+        exit 0
+        ;;
+      *)
+        root_help
+        exit 0
+        ;;
+    esac
+    ;;
+  "inspect")
+    case "$2 $3" in
+      "--format json")
+        case "$4" in
+          "--help")
+            printf '{"usage":"fixture-cli inspect","format":"json"}\n'
+            exit 0
+            ;;
+        esac
+        ;;
+    esac
+    case "$2" in
+      ""|"--help")
+        inspect_help
+        exit 0
+        ;;
+      --__cliare_unknown_*)
+        echo "unknown option: $2" >&2
+        exit 2
+        ;;
+      *)
+        echo "unexpected argument: $2" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  "--version"|"version")
+    echo "fixture-cli 1.0.0"
+    exit 0
+    ;;
+  --__cliare_unknown_*|__cliare_unknown_*)
+    echo "unknown input" >&2
+    exit 2
+    ;;
+  *)
+    echo "unknown command: $1" >&2
+    exit 2
+    ;;
+esac
+"#
+}
+
+fn malformed_json_output_script() -> &'static str {
+    r#"#!/bin/sh
+
+root_help() {
+  cat <<'EOF'
+Commands:
+  inspect  Inspect the workspace
+
+Options:
+  --help  Show help
+EOF
+}
+
+inspect_help() {
+  cat <<'EOF'
+Usage: fixture-cli inspect [OPTIONS]
+
+Options:
+  --json  Emit JSON
+  --help  Show help
+EOF
+}
+
+case "$1" in
+  ""|"--help"|"-h"|"help")
+    case "$2" in
+      "inspect")
+        inspect_help
+        exit 0
+        ;;
+      *)
+        root_help
+        exit 0
+        ;;
+    esac
+    ;;
+  "inspect")
+    case "$2 $3" in
+      "--json --help")
+        printf '{not-json\n'
+        exit 0
+        ;;
+    esac
+    case "$2" in
+      ""|"--help")
+        inspect_help
+        exit 0
+        ;;
+      --__cliare_unknown_*)
+        echo "unknown option: $2" >&2
+        exit 2
+        ;;
+      *)
+        echo "unexpected argument: $2" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  "--version"|"version")
+    echo "fixture-cli 1.0.0"
+    exit 0
+    ;;
+  --__cliare_unknown_*|__cliare_unknown_*)
+    echo "unknown input" >&2
+    exit 2
     ;;
   *)
     echo "unknown command: $1" >&2
