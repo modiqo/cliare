@@ -9,6 +9,7 @@ use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
+use crate::sandbox::SandboxMetadata;
 
 const SCHEMA_VERSION: &str = "cliare.scorecard.v1";
 const SCORE_MODEL: &str = "cliare-score-v0";
@@ -67,6 +68,11 @@ pub enum DimensionStatus {
 
 #[derive(Debug, Serialize)]
 pub struct Coverage {
+    sandbox_profile: &'static str,
+    sandbox_root: PathBuf,
+    sandbox_home: PathBuf,
+    sandbox_workdir: PathBuf,
+    sandbox_env_policy: &'static str,
     commands_discovered: usize,
     commands_runtime_confirmed: usize,
     command_confirmation_rate: f64,
@@ -147,9 +153,14 @@ pub struct ScoreArtifactSummary {
     pub budget_exhausted: bool,
     pub traversal_stop_reason: &'static str,
     pub traversal_complete: bool,
+    pub sandbox_profile: &'static str,
+    pub sandbox_root: PathBuf,
+    pub sandbox_home: PathBuf,
+    pub sandbox_workdir: PathBuf,
+    pub sandbox_env_policy: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ScoreRunContext {
     pub traversal_profile: &'static str,
     pub max_depth: usize,
@@ -159,6 +170,28 @@ pub struct ScoreRunContext {
     pub highest_pending_expected_value: Option<u16>,
     pub candidates_skipped_by_depth: usize,
     pub candidates_skipped_by_convergence: usize,
+    pub sandbox: SandboxScoreContext,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SandboxScoreContext {
+    pub profile: &'static str,
+    pub root: PathBuf,
+    pub home: PathBuf,
+    pub workdir: PathBuf,
+    pub env_policy: &'static str,
+}
+
+impl From<&SandboxMetadata> for SandboxScoreContext {
+    fn from(metadata: &SandboxMetadata) -> Self {
+        Self {
+            profile: metadata.profile.label(),
+            root: metadata.root.clone(),
+            home: metadata.home.clone(),
+            workdir: metadata.workdir.clone(),
+            env_policy: env_policy_label(metadata.env_policy),
+        }
+    }
 }
 
 pub async fn write_score_artifacts(
@@ -195,6 +228,11 @@ pub async fn write_score_artifacts(
             scorecard.coverage.traversal_stop_reason,
         ),
         traversal_complete: scorecard.coverage.traversal_complete,
+        sandbox_profile: scorecard.coverage.sandbox_profile,
+        sandbox_root: scorecard.coverage.sandbox_root.clone(),
+        sandbox_home: scorecard.coverage.sandbox_home.clone(),
+        sandbox_workdir: scorecard.coverage.sandbox_workdir.clone(),
+        sandbox_env_policy: scorecard.coverage.sandbox_env_policy,
     })
 }
 
@@ -471,6 +509,28 @@ fn render_report(scorecard: &Scorecard) -> String {
     ));
     report.push_str(&format!("- Model: `{}`\n\n", scorecard.model.name));
 
+    report.push_str("## Runtime Isolation\n\n");
+    report.push_str(&format!(
+        "- Sandbox profile: `{}`\n",
+        scorecard.coverage.sandbox_profile
+    ));
+    report.push_str(&format!(
+        "- Environment policy: `{}`\n",
+        scorecard.coverage.sandbox_env_policy
+    ));
+    report.push_str(&format!(
+        "- Sandbox root: `{}`\n",
+        scorecard.coverage.sandbox_root.display()
+    ));
+    report.push_str(&format!(
+        "- Sandbox home: `{}`\n",
+        scorecard.coverage.sandbox_home.display()
+    ));
+    report.push_str(&format!(
+        "- Sandbox workdir: `{}`\n\n",
+        scorecard.coverage.sandbox_workdir.display()
+    ));
+
     report.push_str("## Subscores\n\n");
     report.push_str("| Dimension | Score | Weight | Status | Rationale |\n");
     report.push_str("| --- | ---: | ---: | --- | --- |\n");
@@ -647,6 +707,12 @@ fn traversal_stop_reason_label(reason: TraversalStopReason) -> &'static str {
     }
 }
 
+fn env_policy_label(policy: crate::sandbox::EnvPolicy) -> &'static str {
+    match policy {
+        crate::sandbox::EnvPolicy::ClearedWithAllowlist => "cleared_with_allowlist",
+    }
+}
+
 fn escape_table_cell(value: &str) -> String {
     value.replace('|', "\\|")
 }
@@ -698,6 +764,11 @@ impl Metrics {
 
         Self {
             coverage: Coverage {
+                sandbox_profile: run_context.sandbox.profile,
+                sandbox_root: run_context.sandbox.root,
+                sandbox_home: run_context.sandbox.home,
+                sandbox_workdir: run_context.sandbox.workdir,
+                sandbox_env_policy: run_context.sandbox.env_policy,
                 commands_discovered,
                 commands_runtime_confirmed,
                 command_confirmation_rate: ratio(commands_runtime_confirmed, commands_discovered),
@@ -860,7 +931,7 @@ fn target_binary_name(target: &TargetFingerprint) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Dimension, ScoreRunContext, render_report, scorecard};
+    use super::{Dimension, SandboxScoreContext, ScoreRunContext, render_report, scorecard};
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::fingerprint::TargetFingerprint;
     use crate::observation::ShapeObservation;
@@ -947,6 +1018,7 @@ mod tests {
                 highest_pending_expected_value: None,
                 candidates_skipped_by_depth: 0,
                 candidates_skipped_by_convergence: 0,
+                sandbox: test_sandbox(),
             },
         );
 
@@ -958,6 +1030,8 @@ mod tests {
         assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
         assert!(report.contains("- Minimum expected probe value: `150`"));
+        assert!(report.contains("- Sandbox profile: `isolated`"));
+        assert!(report.contains("- Environment policy: `cleared_with_allowlist`"));
         assert!(report.contains("- Budget exhausted: `false`"));
         assert!(report.contains("- Traversal stop reason: `converged`"));
         assert!(report.contains("- Traversal complete: `true`"));
@@ -994,6 +1068,7 @@ mod tests {
                 highest_pending_expected_value: Some(400),
                 candidates_skipped_by_depth: 1,
                 candidates_skipped_by_convergence: 2,
+                ..ScoreRunContext::default()
             },
         );
 
@@ -1035,6 +1110,7 @@ mod tests {
                 highest_pending_expected_value: None,
                 candidates_skipped_by_depth: 2,
                 candidates_skipped_by_convergence: 0,
+                ..ScoreRunContext::default()
             },
         );
 
@@ -1059,6 +1135,7 @@ mod tests {
                 highest_pending_expected_value: None,
                 candidates_skipped_by_depth: 0,
                 candidates_skipped_by_convergence: 0,
+                ..ScoreRunContext::default()
             },
         );
 
@@ -1081,6 +1158,16 @@ mod tests {
             resolved: "/tmp/cliare".into(),
             binary_sha256: "abc".to_owned(),
             size_bytes: 1,
+        }
+    }
+
+    fn test_sandbox() -> SandboxScoreContext {
+        SandboxScoreContext {
+            profile: "isolated",
+            root: "/tmp/cliare/sandbox".into(),
+            home: "/tmp/cliare/sandbox/home".into(),
+            workdir: "/tmp/cliare/sandbox/cwd".into(),
+            env_policy: "cleared_with_allowlist",
         }
     }
 

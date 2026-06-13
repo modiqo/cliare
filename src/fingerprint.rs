@@ -41,7 +41,7 @@ pub async fn fingerprint_target(requested: &Path) -> Result<TargetFingerprint> {
 
 fn resolve_target(requested: &Path) -> Result<PathBuf> {
     if requested.components().count() > 1 || requested.is_absolute() {
-        return Ok(requested.to_path_buf());
+        return canonicalize_target(requested, requested);
     }
 
     let Some(path_var) = env::var_os("PATH") else {
@@ -51,11 +51,24 @@ fn resolve_target(requested: &Path) -> Result<PathBuf> {
     for dir in env::split_paths(&path_var) {
         let candidate = dir.join(requested);
         if candidate.is_file() {
-            return Ok(candidate);
+            return canonicalize_target(&candidate, requested);
         }
     }
 
     Err(CliareError::TargetNotFound(requested.to_path_buf()))
+}
+
+fn canonicalize_target(path: &Path, requested: &Path) -> Result<PathBuf> {
+    std::fs::canonicalize(path).map_err(|source| {
+        if source.kind() == std::io::ErrorKind::NotFound {
+            CliareError::TargetNotFound(requested.to_path_buf())
+        } else {
+            CliareError::ResolveTarget {
+                path: path.to_path_buf(),
+                source,
+            }
+        }
+    })
 }
 
 async fn sha256_file(path: &Path) -> Result<String> {

@@ -10,6 +10,7 @@ use tokio::time;
 
 use crate::error::{CliareError, Result};
 use crate::evidence::ProbeIntent;
+use crate::sandbox::ProcessSandbox;
 
 #[derive(Debug, Clone)]
 pub struct ProbeSpec {
@@ -89,30 +90,38 @@ pub struct TargetProcess {
     target: PathBuf,
     timeout: Duration,
     output_limit_bytes: usize,
+    sandbox: ProcessSandbox,
 }
 
 impl TargetProcess {
-    pub fn new(target: PathBuf, timeout: Duration, output_limit_bytes: usize) -> Self {
+    pub fn new(
+        target: PathBuf,
+        timeout: Duration,
+        output_limit_bytes: usize,
+        sandbox: ProcessSandbox,
+    ) -> Self {
         Self {
             target,
             timeout,
             output_limit_bytes,
+            sandbox,
         }
     }
 
     pub async fn run(&self, probe: &ProbeSpec) -> Result<ProbeOutcome> {
         let started = Instant::now();
         let argv = self.argv(probe);
-        let mut child = Command::new(&self.target)
+        let mut command = Command::new(&self.target);
+        command
             .args(&probe.args)
-            .env("CI", "1")
-            .env("NO_COLOR", "1")
-            .env("TERM", "dumb")
+            .current_dir(&self.sandbox.cwd)
+            .env_clear()
+            .envs(&self.sandbox.env)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(CliareError::Spawn)?;
+            .stderr(Stdio::piped());
+
+        let mut child = command.spawn().map_err(CliareError::Spawn)?;
 
         let stdout = child
             .stdout

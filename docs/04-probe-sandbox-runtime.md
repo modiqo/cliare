@@ -562,16 +562,23 @@ status attempted outbound network during safe profile with no user-provided cred
 
 ## MVP Sandbox
 
-The MVP sandbox should implement:
+The implemented MVP sandbox currently provides:
 
-- temp HOME/cwd/XDG
+- temp HOME/cwd/XDG config-cache-data
 - env deny-by-default
 - no shell interpolation
 - timeout
 - output limit
-- file diffing inside sandbox
-- cleanup
 - evidence recording
+- scorecard/report/cache metadata
+
+The current executor creates a deterministic sandbox under the artifact directory, clears inherited environment variables, restores only a small allowlist needed for portable execution, sets `CLIARE=1`, and runs probes from the sandbox cwd. It records sandbox metadata in `evidence.jsonl`, `scorecard.json`, `report.md`, and `measure-cache.json`.
+
+Still planned:
+
+- file diffing inside sandbox
+- cleanup policy controls
+- network blocking
+- syscall or native sandbox tracing
 
 Network blocking and syscall tracing can come later, but the schema should have fields for them from the beginning.
-

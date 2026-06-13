@@ -8,6 +8,13 @@ pub enum CliareError {
     #[error("target path is not a file: {0}")]
     TargetNotFile(PathBuf),
 
+    #[error("failed to resolve target path {path}")]
+    ResolveTarget {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to fingerprint target {path}")]
     Fingerprint {
         path: PathBuf,
@@ -17,6 +24,13 @@ pub enum CliareError {
 
     #[error("failed to create artifact directory {path}")]
     CreateArtifactDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to create sandbox directory {path}")]
+    CreateSandboxDir {
         path: PathBuf,
         #[source]
         source: std::io::Error,

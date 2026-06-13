@@ -9,6 +9,7 @@ use tokio::io::AsyncWriteExt;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::process::{OutputCapture, ProbeOutcome};
+use crate::sandbox::{ProbeSandboxEvidence, SandboxMetadata};
 
 const SCHEMA_VERSION: &str = "cliare.evidence.v1";
 
@@ -105,6 +106,7 @@ pub enum EvidenceKind {
 pub struct RunStarted {
     pub target: TargetFingerprint,
     pub artifact_dir: PathBuf,
+    pub sandbox: SandboxMetadata,
 }
 
 #[derive(Debug, Serialize)]
@@ -113,6 +115,7 @@ pub struct ProbeScheduled {
     pub argv: Vec<String>,
     pub path: Vec<String>,
     pub intent: ProbeIntent,
+    pub sandbox: ProbeSandboxEvidence,
 }
 
 #[derive(Debug, Clone, Serialize)]

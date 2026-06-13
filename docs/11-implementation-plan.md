@@ -191,13 +191,17 @@ Infer candidate commands and flags from safe evidence without assuming a specifi
 
 ### Current Checkpoint
 
-The current implementation has the first generic claim pipeline in place:
+The current implementation has local probing, evidence, and the first generic claim pipeline in place:
 
+- `fingerprint` resolves explicit and PATH targets to absolute binaries and hashes them.
+- `sandbox` creates an isolated runtime root under the artifact directory with deterministic HOME, PWD, XDG config/cache/data, temp dirs, and a cleared allowlisted environment.
+- `process` executes probes with bounded stdout/stderr, timeouts, null stdin, and sandbox cwd/env.
+- `evidence` records run-level sandbox metadata and per-probe cwd/env policy.
 - `claims` converts observations into command and flag beliefs.
 - `planner` ranks confirmation and diagnostic probes deterministically.
 - `shape` emits the catalog from claims rather than from a framework parser.
 - Invalid-child probes are gated on evidence of nested commands so leaf commands with positionals are not misclassified as command trees.
-- Fixture CLI integration tests cover custom help, aliases, noisy help, and runtime false-positive rejection.
+- Fixture CLI integration tests cover custom help, aliases, noisy help, runtime false-positive rejection, cache reuse, score guards, and sandbox HOME/PWD isolation.
 
 ---
 

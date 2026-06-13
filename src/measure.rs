@@ -17,6 +17,7 @@ use crate::planner::{
     bootstrap_invalid_flag_token,
 };
 use crate::process::{ProbeSpec, TargetProcess};
+use crate::sandbox::Sandbox;
 use crate::score::{self, ScoreRunContext};
 use crate::shape;
 
@@ -31,6 +32,11 @@ pub struct MeasurementSummary {
     pub shape_path: PathBuf,
     pub scorecard_path: PathBuf,
     pub report_path: PathBuf,
+    pub sandbox_profile: String,
+    pub sandbox_root: PathBuf,
+    pub sandbox_home: PathBuf,
+    pub sandbox_workdir: PathBuf,
+    pub sandbox_env_policy: String,
     pub score_total: f64,
     pub score_measured_weight: f64,
     pub score_max_weight: f64,
@@ -70,6 +76,12 @@ impl MeasurementSummary {
             format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
+            "runtime isolation:".to_owned(),
+            format!("  sandbox profile: {}", self.sandbox_profile),
+            format!("  env policy: {}", self.sandbox_env_policy),
+            format!("  sandbox root: {}", self.sandbox_root.display()),
+            format!("  sandbox home: {}", self.sandbox_home.display()),
+            format!("  sandbox workdir: {}", self.sandbox_workdir.display()),
             "coverage pressure:".to_owned(),
             format!("  profile: {}", self.traversal_profile),
             format!(
@@ -115,7 +127,13 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let max_depth = args.resolved_max_depth();
     let max_probes = args.resolved_max_probes();
     let min_expected_value = args.resolved_min_expected_value();
-    let profile = ProbeProfile::from_args(&args, max_depth, max_probes, min_expected_value);
+    let profile = ProbeProfile::from_args(
+        &args,
+        max_depth,
+        max_probes,
+        min_expected_value,
+        crate::sandbox::SandboxProfile::Isolated.label(),
+    );
 
     if !args.refresh
         && let Some(summary) = cached_summary(&args.out, &target, &profile).await?
@@ -123,12 +141,14 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         return Ok(summary);
     }
 
+    let sandbox = Sandbox::create(&args.out).await?;
     let mut evidence = EvidenceWriter::create(&args.out).await?;
 
     evidence
         .append(EvidenceKind::RunStarted(RunStarted {
             target: target.clone(),
             artifact_dir: args.out.clone(),
+            sandbox: sandbox.metadata().clone(),
         }))
         .await?;
 
@@ -143,6 +163,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         target.resolved.clone(),
         args.timeout(),
         args.output_limit_bytes,
+        sandbox.execution(),
     );
     let mut observations = Vec::new();
     let mut probes_completed = 0_usize;
@@ -160,6 +181,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
                 argv: probe.argv(&target.resolved),
                 path: probe.path.clone(),
                 intent: probe.intent,
+                sandbox: sandbox.probe_evidence(),
             }))
             .await?;
 
@@ -197,6 +219,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         highest_pending_expected_value: planner_stats.highest_pending_expected_value,
         candidates_skipped_by_depth: planner_stats.candidates_skipped_by_depth,
         candidates_skipped_by_convergence: planner_stats.candidates_skipped_by_convergence,
+        sandbox: score::SandboxScoreContext::from(sandbox.metadata()),
     };
     let score_artifacts =
         score::write_score_artifacts(&args.out, target.clone(), &observations, run_context).await?;
@@ -208,6 +231,11 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         shape_path: args.out.join("shape.json"),
         scorecard_path: score_artifacts.scorecard_path,
         report_path: score_artifacts.report_path,
+        sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
+        sandbox_root: score_artifacts.sandbox_root,
+        sandbox_home: score_artifacts.sandbox_home,
+        sandbox_workdir: score_artifacts.sandbox_workdir,
+        sandbox_env_policy: score_artifacts.sandbox_env_policy.to_owned(),
         score_total: score_artifacts.total,
         score_measured_weight: score_artifacts.measured_weight,
         score_max_weight: score_artifacts.max_weight,
@@ -237,6 +265,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct ProbeProfile {
     traversal_profile: crate::cli::TraversalProfile,
+    sandbox_profile: String,
     timeout_ms: u64,
     output_limit_bytes: usize,
     max_depth: usize,
@@ -250,9 +279,11 @@ impl ProbeProfile {
         max_depth: usize,
         max_probes: usize,
         min_expected_value: u16,
+        sandbox_profile: &str,
     ) -> Self {
         Self {
             traversal_profile: args.profile,
+            sandbox_profile: sandbox_profile.to_owned(),
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
             max_depth,
@@ -280,6 +311,11 @@ struct CachedMeasurementSummary {
     score_max_weight: f64,
     score_model: String,
     score_status: String,
+    sandbox_profile: String,
+    sandbox_root: PathBuf,
+    sandbox_home: PathBuf,
+    sandbox_workdir: PathBuf,
+    sandbox_env_policy: String,
     findings: usize,
     observed_max_depth: usize,
     traversal_profile: String,
@@ -344,6 +380,11 @@ impl MeasurementCacheManifest {
             score_max_weight: self.summary.score_max_weight,
             score_model: self.summary.score_model,
             score_status: self.summary.score_status,
+            sandbox_profile: self.summary.sandbox_profile,
+            sandbox_root: self.summary.sandbox_root,
+            sandbox_home: self.summary.sandbox_home,
+            sandbox_workdir: self.summary.sandbox_workdir,
+            sandbox_env_policy: self.summary.sandbox_env_policy,
             findings: self.summary.findings,
             observed_max_depth: self.summary.observed_max_depth,
             traversal_profile: self.summary.traversal_profile,
@@ -402,6 +443,11 @@ async fn write_cache_manifest(
             score_max_weight: summary.score_max_weight,
             score_model: summary.score_model.to_owned(),
             score_status: summary.score_status.to_owned(),
+            sandbox_profile: summary.sandbox_profile.to_owned(),
+            sandbox_root: summary.sandbox_root.clone(),
+            sandbox_home: summary.sandbox_home.clone(),
+            sandbox_workdir: summary.sandbox_workdir.clone(),
+            sandbox_env_policy: summary.sandbox_env_policy.to_owned(),
             findings: summary.findings,
             observed_max_depth: summary.observed_max_depth,
             traversal_profile: summary.traversal_profile.to_owned(),
@@ -460,8 +506,11 @@ fn invalid_token_seed(binary_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::cli::{MeasureArgs, TraversalProfile};
     use crate::evidence::ProbeIntent;
     use crate::fingerprint::TargetFingerprint;
 
@@ -502,6 +551,11 @@ mod tests {
             shape_path: PathBuf::from(".cliare/shape.json"),
             scorecard_path: PathBuf::from(".cliare/scorecard.json"),
             report_path: PathBuf::from(".cliare/report.md"),
+            sandbox_profile: "isolated".to_owned(),
+            sandbox_root: PathBuf::from(".cliare/sandbox"),
+            sandbox_home: PathBuf::from(".cliare/sandbox/home"),
+            sandbox_workdir: PathBuf::from(".cliare/sandbox/cwd"),
+            sandbox_env_policy: "cleared_with_allowlist".to_owned(),
             score_total: 82.4,
             score_measured_weight: 0.9,
             score_max_weight: 1.0,
@@ -529,10 +583,85 @@ mod tests {
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
         assert!(text.contains("cache: miss"));
+        assert!(text.contains("sandbox profile: isolated"));
+        assert!(text.contains("env policy: cleared_with_allowlist"));
         assert!(text.contains("depth: observed 1 / budget 5"));
         assert!(text.contains("min expected value: 150"));
         assert!(text.contains("stop reason: converged"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
         assert!(text.contains("  report: .cliare/report.md"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn measure_runs_probes_inside_isolated_sandbox() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = unique_test_dir("sandbox-measure");
+        let bin_dir = root.join("bin");
+        let out_dir = root.join("out");
+        fs::create_dir_all(&bin_dir).expect("creates fixture bin dir");
+
+        let target = bin_dir.join("writes-home");
+        fs::write(
+            &target,
+            r#"#!/bin/sh
+case "$HOME" in
+  */sandbox/home) ;;
+  *) echo "unexpected HOME: $HOME" >&2; exit 99 ;;
+esac
+case "$PWD" in
+  */sandbox/cwd) ;;
+  *) echo "unexpected PWD: $PWD" >&2; exit 98 ;;
+esac
+printf ok > "$HOME/home-marker"
+printf ok > "$PWD/cwd-marker"
+cat <<'EOF'
+Usage: writes-home [COMMAND]
+
+Commands:
+  alpha  Sample command
+
+Options:
+  --help  Print help
+EOF
+"#,
+        )
+        .expect("writes fixture cli");
+        let mut permissions = fs::metadata(&target)
+            .expect("reads fixture metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&target, permissions).expect("marks fixture executable");
+
+        let summary = super::measure(MeasureArgs {
+            target,
+            out: out_dir.clone(),
+            timeout_ms: 1_000,
+            output_limit_bytes: 16 * 1024,
+            profile: TraversalProfile::Quick,
+            max_depth: Some(1),
+            max_probes: Some(1),
+            min_expected_value: Some(1),
+            refresh: true,
+        })
+        .await
+        .expect("measurement succeeds");
+
+        assert_eq!(summary.sandbox_profile, "isolated");
+        assert_eq!(summary.sandbox_env_policy, "cleared_with_allowlist");
+        assert!(out_dir.join("sandbox/home/home-marker").is_file());
+        assert!(out_dir.join("sandbox/cwd/cwd-marker").is_file());
+        assert!(!root.join("home-marker").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("cliare-{name}-{}-{nonce}", std::process::id()))
     }
 }

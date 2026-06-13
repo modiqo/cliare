@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `feat: extract command grammar`
+> Last updated: after checkpoint `feat: isolate probe sandbox runtime`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -12,23 +12,23 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 |---|---:|---|
 | Repository and package foundation | 100% | Rust project, license, README, design docs, private GitHub repo |
 | CLI surface | 55% | `measure`, `guard`, traversal profiles, cache bypass; baseline/publish/certify still planned |
-| Runtime probing | 45% | Safe bootstrap, bounded output, timeouts, recursive probes; sandbox isolation still planned |
+| Runtime probing | 60% | Safe bootstrap, bounded output, timeouts, recursive probes, isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env |
 | Generic inference | 50% | Layout claims, runtime confirmation, Bayesian confidence, usage positionals, aliases, and flag grammar exist; value domains still planned |
 | Command shape artifact | 60% | Commands, aliases, positionals, flags, flag arity, gaps, confidence, and evidence references exist; richer value domains still planned |
-| Scoring | 40% | v0 dimensions for discovery, grammar, execution, recovery; grammar now credits extracted usage and flag arity; output, safety, determinism still planned |
+| Scoring | 42% | v0 dimensions for discovery, grammar, execution, recovery; scorecards now disclose runtime isolation; output, safety, determinism still planned |
 | CI guard | 40% | Baseline comparison exists; policy files, SARIF/JUnit, GitHub Action still planned |
-| Cache and fingerprinting | 55% | Binary/profile/version cache reuse exists; replay/resume checkpoints still planned |
+| Cache and fingerprinting | 60% | Binary/profile/version/sandbox-profile cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 65% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, and pressure reporting exist; async parallel traversal still planned |
 | QA and calibration | 25% | Synthetic fixture tests exist; real CLI corpus and calibration metrics still planned |
 | Public publishing | 5% | Designed but not implemented |
 
 ## MVP Completion
 
-Estimated MVP completion: **55%**
+Estimated MVP completion: **62%**
 
-Estimated MVP work remaining: **45%**
+Estimated MVP work remaining: **38%**
 
-The current implementation is already useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: sandbox isolation, output classification, CI packaging, side-effect scoring, and calibration.
+The current implementation is useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: output classification, CI packaging, side-effect scoring, calibration, and async traversal scale.
 
 ---
 
@@ -44,35 +44,36 @@ The current implementation is already useful for local measurement and early CI 
 8. Named traversal profiles: `quick`, `standard`, `deep`.
 9. Adaptive traversal convergence with expected-value scheduling and typed stop reasons.
 10. Richer grammar extraction for aliases, usage positionals, flag arity, required flags, optional values, and repeated values.
+11. Sandbox isolation profile with sanitized env, isolated HOME/PWD/XDG config-cache-data/TMP, evidence metadata, scorecard metadata, cache profile matching, and fixture tests proving probe writes land inside the sandbox.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 11: Sandbox Isolation Profile
+### Checkpoint 12: Output Classification and Machine-Readable Mode Detection
 
-Goal: make runtime probing safer and more reproducible by isolating process environment, home directories, and working directories.
+Goal: classify output contracts from runtime evidence so CLIARE can score whether agents can request and parse stable machine-readable results.
 
 Acceptance criteria:
 
-- Each measurement run uses an explicit sandbox root under the artifact directory or temp directory.
-- Probes receive deterministic `HOME`, `PWD`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, and `CLIARE=1` environment values.
-- Scorecards record sandbox profile metadata.
-- Evidence records each probe's sandbox-relevant cwd/env policy.
-- Tests prove probes do not write into the real home directory for fixture CLIs.
-- The default path is safe; a bypass flag should wait until the threat model is explicit.
+- Detect advertised JSON/YAML/table/plain modes from help, usage, and diagnostics.
+- Probe safe output-mode flags such as `--json`, `--format json`, and documented equivalents when they appear in evidence.
+- Add posterior output-kind claims with evidence references.
+- Add scorecard/report fields for machine-readable availability, parse success, and ambiguity.
+- Keep probing generic; no framework-specific assumptions.
+- Add fixtures for CLIs with JSON support, table-only output, misleading format flags, and malformed JSON.
 
 Why this is next:
 
-- CLIARE is intentionally a runtime exerciser of untrusted or semi-trusted binaries.
-- Public OSS adoption depends on a credible local safety story.
-- Sandboxing creates the foundation for later side-effect detection and safety scoring.
+- Discovery and grammar are now useful, but agents also need stable parseable outputs.
+- Output classification unlocks the currently unmeasured `output` dimension.
+- The sandbox milestone makes safe output-mode probing more credible.
 
 ---
 
 ## Near-Term Order
 
-1. Sandbox profile for temp HOME/cwd/env isolation.
-2. Output classification and machine-readable mode detection.
+1. Output classification and machine-readable mode detection.
+2. Side-effect observation inside the sandbox and initial safety scoring.
 3. CI output formats and GitHub Action wrapper.
 4. Real CLI benchmark corpus and calibration metrics.
