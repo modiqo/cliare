@@ -1,4 +1,4 @@
-name: Dogfood
+name: CLIARE on CLIARE
 
 on:
   pull_request:
@@ -25,8 +25,8 @@ permissions:
   contents: read
 
 jobs:
-  dogfood:
-    name: Measure CLIARE with CLIARE
+  cliare-on-cliare:
+    name: CLIARE on CLIARE
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -80,29 +80,29 @@ jobs:
       - name: Build CLIARE
         run: cargo build --locked --bin cliare
 
-      - name: Measure dogfood target
-        id: dogfood
+      - name: Measure CLIARE
+        id: measure
         uses: ./
         with:
           target: ./target/debug/cliare
           cliare-command: ./target/debug/cliare
-          out: .cliare/dogfood
+          out: .cliare/cliare-on-cliare
           profile: ${{ steps.profile.outputs.profile }}
           concurrency: ${{ steps.profile.outputs.concurrency }}
           extra-args: --refresh
-          artifact-name: cliare-dogfood-${{ steps.profile.outputs.profile }}
+          artifact-name: cliare-on-cliare-${{ steps.profile.outputs.profile }}
 
-      - name: Print dogfood score
+      - name: Print CLIARE score
         shell: bash
         run: |
           set -euo pipefail
 
           node <<'NODE'
           const fs = require("fs");
-          const scorecard = JSON.parse(fs.readFileSync(".cliare/dogfood/scorecard.json", "utf8"));
+          const scorecard = JSON.parse(fs.readFileSync(".cliare/cliare-on-cliare/scorecard.json", "utf8"));
           const lines = [
             "",
-            "## CLIARE Dogfood Score",
+            "## CLIARE on CLIARE",
             "",
             "| Field | Value |",
             "| --- | ---: |",

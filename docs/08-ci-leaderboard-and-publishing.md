@@ -1,6 +1,6 @@
-# 08 - CI, Leaderboard, and GTM
+# 08 - CI, Leaderboard, and Publishing
 
-> **Scope:** How CLIARE runs in CI, how scorecards are published, how the leaderboard works, and how this supports modiqo GTM.
+> **Scope:** How CLIARE runs in CI, how scorecards are published, and how verified leaderboard entries are produced.
 > **Status:** Draft
 
 ---
@@ -307,7 +307,7 @@ The hosted product should not be necessary for initial adoption.
 
 ---
 
-## GTM Motion
+## Adoption Path
 
 ### Phase 1: Developer Utility
 
@@ -455,4 +455,3 @@ MVP should ship:
 - no hosted dependency
 
 Hosted leaderboard can follow once the score model is stable enough.
-

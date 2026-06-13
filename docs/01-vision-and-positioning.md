@@ -1,23 +1,23 @@
 # 01 - Vision and Positioning
 
-> **Scope:** Why CLIARE should exist, how it should be positioned, and how it supports modiqo awareness without compromising OSS trust.
+> **Scope:** Why CLIARE should exist, how it should be positioned, and how stewardship can support ecosystem adoption without compromising independence.
 > **Status:** Draft
 
 ---
 
 ## Summary
 
-CLIARE is an open-source standard and reference implementation for measuring CLI readiness for agents and automation.
+CLIARE is a standard and reference implementation for measuring CLI readiness for agents, harnesses, CI systems, and automation.
 
-The project should feel independent, rigorous, and useful even to teams that never become modiqo customers. That is the strategic point. The more credible the standard, the more modiqo benefits from stewarding it.
+The project should stand on technical merit. It must remain useful to teams that never become modiqo customers; that independence is what makes the standard durable.
 
-The public promise:
+Public positioning:
 
-> CLIARE tells you how ready your CLI is for agents, CI, and automation, and shows exactly how to improve it.
+> CLIARE measures how ready a CLI is for agents, CI, and automation, then produces the evidence needed to improve it.
 
-The private strategic value:
+Stewardship value:
 
-> modiqo becomes associated with the serious measurement layer for agent-ready tools.
+> modiqo becomes associated with rigorous measurement infrastructure for agent-ready command surfaces.
 
 ---
 
@@ -69,8 +69,8 @@ The working name is **CLIARE**.
 
 Expansion:
 
-```
-CLI for Agent Readiness
+```text
+CLI Agent Readiness Evaluation
 ```
 
 Pronunciation:
@@ -81,9 +81,9 @@ clear
 
 Why it works:
 
-- It contains CLI without being a pun that weakens credibility.
+- It contains CLI without reducing the project to a shell or terminal pun.
 - It points at clarity, which is the central quality being measured.
-- It is brandable for OSS, a badge, a CI action, and a hosted leaderboard.
+- It works as the name of a tool, a scorecard format, a CI action, and a hosted leaderboard.
 - It can stand for both the tool and the standard.
 
 Suggested surfaces:
@@ -192,9 +192,9 @@ This avoids the false binary of "trusted" vs "untrusted."
 
 ---
 
-## Why It Is A GTM Wedge
+## Ecosystem Adoption
 
-CLIARE can drive modiqo awareness because it gives developers immediate value:
+CLIARE should be adopted because it gives maintainers immediate engineering value. A run should answer:
 
 - "How agent-ready is our CLI?"
 - "Why did the score drop?"
@@ -202,7 +202,7 @@ CLIARE can drive modiqo awareness because it gives developers immediate value:
 - "Can we put a badge in our README?"
 - "How do we compare to other CLIs?"
 
-The best GTM motion is not gated behind a sales call. The open-source project should let any maintainer run:
+The open-source project should let any maintainer run:
 
 ```sh
 cliare certify ./dist/mycli
@@ -210,14 +210,14 @@ cliare certify ./dist/mycli
 
 and get a useful report.
 
-modiqo benefits when people share:
+The ecosystem benefits when projects can publish a concise, evidence-backed signal:
 
 ```text
 CLIARE Score: 84
 Agent-ready CLI
 ```
 
-The hosted leaderboard becomes the social object. The improvement report becomes the engineering reason to care.
+The hosted leaderboard is the discovery surface. The improvement report is the engineering artifact that makes the score actionable.
 
 ---
 
@@ -293,7 +293,7 @@ modiqo cloud should receive scorecards, not binaries, by default.
 
 ### 6. Improvement Must Be Measurable
 
-The point is not just to rank. The point is to improve.
+The primary objective is improvement, not ranking alone.
 
 A maintainer should be able to make a change such as:
 
@@ -329,22 +329,21 @@ Suggested badge:
 Suggested comparison:
 
 ```text
-Think of CLIARE like test coverage plus a compiler warning pass for CLI usability:
-it does not prove your CLI is perfect, but it tells you what agents can reliably
+CLIARE is analogous to test coverage plus compiler diagnostics for CLI usability:
+it does not prove a CLI is perfect, but it shows what agents can reliably
 discover, execute, parse, and recover from.
 ```
 
 ---
 
-## What Would Make It Famous
+## Success Criteria
 
-The project becomes notable if it does three things very well:
+The project succeeds if it does three things well:
 
 1. It gives maintainers a score they want to improve.
-2. It gives agents a catalog they can trust.
+2. It gives agents a catalog grounded in runtime evidence.
 3. It gives the ecosystem a shared language for CLI readiness.
 
-The score itself is the growth mechanism.
+A useful score creates its own adoption pressure: maintainers can improve it, agent builders can consume the resulting catalogs, platform teams can gate on it, and security teams can review the evidence behind it.
 
-Developers like measurable improvement. Maintainers like badges. Agent builders need safer tools. Platform teams need gates. Security teams need evidence. CLIARE can serve all of them if it stays rigorous.
-
+CLIARE can serve each of those audiences only if the measurement remains rigorous, reproducible, and transparent.

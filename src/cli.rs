@@ -38,6 +38,35 @@ pub enum Command {
     Guard(GuardArgs),
     /// Run a benchmark corpus and produce calibration reports.
     Benchmark(BenchmarkArgs),
+    /// Print CLIARE implementation metadata.
+    Metadata(MetadataArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(disable_help_flag = true)]
+pub struct MetadataArgs {
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = MetadataFormat::Text)]
+    pub format: MetadataFormat,
+
+    /// Print help. With --format json, emit a parseable metadata contract.
+    #[arg(long)]
+    pub help: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MetadataFormat {
+    Text,
+    Json,
+}
+
+impl MetadataFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -297,6 +326,7 @@ mod tests {
         assert!(help.contains("measure"));
         assert!(help.contains("guard"));
         assert!(help.contains("benchmark"));
+        assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
     }
 
@@ -318,8 +348,9 @@ mod tests {
                 );
                 assert_eq!(args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
-            Command::Guard(_) => panic!("expected measure command"),
-            Command::Benchmark(_) => panic!("expected measure command"),
+            Command::Guard(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+                panic!("expected measure command")
+            }
         }
 
         match guard.command {
@@ -334,8 +365,9 @@ mod tests {
                 );
                 assert_eq!(measure_args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
-            Command::Measure(_) => panic!("expected guard command"),
-            Command::Benchmark(_) => panic!("expected guard command"),
+            Command::Measure(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+                panic!("expected guard command")
+            }
         }
     }
 
@@ -353,7 +385,30 @@ mod tests {
                 assert_eq!(args.target_concurrency, None);
                 assert!(!args.refresh);
             }
-            Command::Measure(_) | Command::Guard(_) => panic!("expected benchmark command"),
+            Command::Measure(_) | Command::Guard(_) | Command::Metadata(_) => {
+                panic!("expected benchmark command")
+            }
+        }
+    }
+
+    #[test]
+    fn metadata_exposes_parseable_output_mode() {
+        let mut command = Cli::command();
+        let help = command.render_long_help().to_string();
+
+        assert!(help.contains("metadata"));
+
+        let cli = Cli::try_parse_from(["cliare", "metadata", "--format", "json", "--help"])
+            .expect("valid metadata command");
+
+        match cli.command {
+            Command::Metadata(args) => {
+                assert_eq!(args.format, super::MetadataFormat::Json);
+                assert!(args.help);
+            }
+            Command::Measure(_) | Command::Guard(_) | Command::Benchmark(_) => {
+                panic!("expected metadata command")
+            }
         }
     }
 
@@ -415,8 +470,9 @@ mod tests {
                 assert_eq!(args.resolved_min_expected_value(), min_expected_value);
                 assert_eq!(args.resolved_concurrency(), concurrency);
             }
-            Command::Guard(_) => panic!("expected measure command"),
-            Command::Benchmark(_) => panic!("expected measure command"),
+            Command::Guard(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+                panic!("expected measure command")
+            }
         }
     }
 }

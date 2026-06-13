@@ -347,7 +347,7 @@ Grammar extraction is now implemented for the current command-shape model:
 
 ### Goal
 
-Make the math credible.
+Harden the scoring model.
 
 ### Tasks
 
@@ -425,7 +425,7 @@ Allow projects to publish scorecards without uploading binaries.
 
 ### Goal
 
-Create the public GTM loop.
+Create the public publishing loop.
 
 ### Tasks
 
@@ -525,4 +525,4 @@ But do not compromise on:
 4. Write schemas first.
 5. Implement portable sandbox.
 6. Build three synthetic fixture CLIs.
-7. Ship first internal dogfood score.
+7. Ship first CLIARE-on-CLIARE score.

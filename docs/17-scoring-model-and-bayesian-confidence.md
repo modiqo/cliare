@@ -1,43 +1,30 @@
 # 17 - Scoring Model and Bayesian Confidence
 
-> **Scope:** What CLIARE's current score means, what is Bayesian today, why the model is credible, and what remains before the public standard score is frozen.
+> **Scope:** Implemented scoring semantics, Bayesian claim confidence, calibration boundaries, and the path from `cliare-score-v0` to a certified public score.
 > **Status:** Reference implementation note
 
 ---
 
-## Short Answer
+## Model Status
 
-Yes, CLIARE has a credible scoring model for the current implementation stage.
+`cliare-score-v0` is an evidence-derived readiness score for local measurement, CI regression checks, and release-to-release improvement tracking. It is deterministic for a fixed evidence set and decomposes the result into six measured dimensions: discovery, grammar, execution, recovery, output, and safety.
 
-It is credible because it is:
+The model is intentionally versioned. Public leaderboard certification requires an additional calibration layer: truth-set evaluation, calibrated likelihood weights, confidence intervals, repeated-run stability, and published metrics for proper scoring rules and safety error rates.
 
-- evidence backed: every score comes from runtime observations
-- replayable: evidence, shape, and scorecard artifacts are deterministic outputs
-- probabilistic at the claim layer: command and flag confidence use Bayesian log-odds updates
-- decomposed: the total score is a weighted utility over named dimensions
-- improvement oriented: obvious CLI improvements move the relevant subscore up
-- honest about maturity: the model is published as `cliare-score-v0` with status `experimental_partial`
+The distinction is operational:
 
-It is not yet a frozen public leaderboard model.
-
-Before CLIARE should claim a certified universal score, it still needs calibrated likelihood weights, human-verified truth sets, confidence intervals, repeated-run stability reports, and published calibration metrics such as Brier score, log loss, expected calibration error, and false-safe rate.
-
-That distinction matters. The current score is already useful for local CI, regression tracking, and iterative CLI quality improvement. The future v1 score is the standard-worthy model for public certification and leaderboard ranking.
+```text
+cliare-score-v0  local CI and engineering feedback
+cliare-score-v1  calibrated certification and public leaderboard ranking
+```
 
 ---
 
-## Design Principle
+## Formal Interpretation
 
-CLIARE should never be a black-box opinion about whether a CLI is "good."
+CLIARE scores are intended to approximate posterior expected utility for an agent operating a CLI from runtime evidence.
 
-The score is designed as:
-
-```text
-CLIARE Score = posterior expected utility of an agent using a CLI,
-               given observed runtime evidence
-```
-
-In formal shorthand:
+The target model is:
 
 ```text
 Score = 100 * E[U(G, T) | E]
@@ -50,15 +37,13 @@ Where:
 - `E` is the evidence collected from probes.
 - `U` is an agent-readiness utility function.
 
-The implementation does not yet estimate the full posterior over `G` and `T`. Instead, v0 implements an evidence-only approximation over directly measured dimensions and keeps model status explicit. That gives us a stable engineering loop now without pretending calibration is done.
+The v0 implementation does not estimate the full posterior over `G` and `T`. It implements a deterministic approximation over directly measured dimensions, while preserving the evidence and model-version metadata needed for later rescore and calibration.
 
 ---
 
-## What Is Bayesian Today
+## Bayesian Claim Layer
 
-The current Bayesian layer is the claim-confidence model.
-
-CLIARE does not parse help text into truth. It turns runtime observations into candidate claims and updates belief as more evidence arrives.
+The implemented Bayesian layer is the claim-confidence model. CLIARE does not treat help text as truth. It transforms runtime observations into candidate claims and updates belief as additional evidence arrives.
 
 Examples of claims:
 
@@ -108,11 +93,11 @@ Current flag evidence weights:
 |---|---:|---|
 | Structural flag row in help/layout | `+1.0` | Positive flag evidence |
 
-This is intentionally lightweight. It gives CLIARE explainable confidence values now while leaving room for calibrated Beta-Bernoulli and Dirichlet-Categorical posteriors in v1.
+This log-odds model is deliberately compact: it is explainable, replayable from evidence, and compatible with calibrated Beta-Bernoulli and Dirichlet-Categorical posteriors in a later model version.
 
 ---
 
-## Why This Is Not Regex Scoring
+## Framework-Agnostic Inference
 
 CLIARE's generic processor does not say:
 
@@ -120,7 +105,7 @@ CLIARE's generic processor does not say:
 if section_title == "Commands" then parse every row as a command
 ```
 
-That would be brittle and would overfit to a few frameworks.
+That rule would overfit to a few frameworks and would not survive poor help text, manpage output, localization, plugin systems, or custom parsers.
 
 The current inference pipeline uses evidence layers:
 
@@ -137,11 +122,11 @@ The current inference pipeline uses evidence layers:
 
 Help text is only one weak evidence source. Runtime behavior has higher weight. Auth-required output is not treated as command absence; it becomes `runtime_state: precondition_blocked` with `auth_required`.
 
-That matters for real CLIs such as `rote`, where some command-specific help is intentionally auth-gated in a clean environment. CLIARE should represent that accurately instead of scoring the command as nonexistent or broken.
+This distinction matters for real CLIs whose command-specific help can be gated by authentication, profile state, current working directory, or installed plugins. A high-precision precondition diagnostic is command recognition evidence, not command absence.
 
 ---
 
-## Current Score v0 Formula
+## Score v0 Formula
 
 Score v0 computes six measured subscores:
 
@@ -330,9 +315,9 @@ Safety improves when:
 
 ---
 
-## Why The Model Is Credible For CI
+## CI Semantics
 
-The score is credible for CI because it satisfies the properties maintainers need:
+`cliare-score-v0` is suitable for CI because it satisfies the properties maintainers need for regression control:
 
 1. It is deterministic for a fixed binary, profile, sandbox policy, and evidence set.
 2. It is evidence-replayable because the score is derived from observations.
@@ -352,34 +337,25 @@ This is enough to support:
 
 ---
 
-## Why The Model Is Not Yet Frozen For Public Ranking
+## Certification Boundary
 
-The current score should not yet be marketed as a final universal ranking of all CLIs.
-
-Missing v1 requirements:
+Public ranking requires calibration beyond the current deterministic score. The v1 certification boundary includes:
 
 - calibrated evidence weights
-- public truth sets for synthetic and real CLIs
+- human-reviewed truth sets for synthetic and real CLIs
 - posterior confidence intervals
 - repeated-run stability measurements
-- Brier score and log loss for binary/categorical claims
+- Brier score and log loss for binary and categorical claims
 - expected calibration error for confidence values
 - false-safe rate for safety classification
 - profile normalization for quick, standard, deep, and certified runs
 - score governance for model changes
 
-The correct public posture is:
-
-```text
-v0: experimental partial score for local CI and improvement tracking
-v1: calibrated public standard score for certification and leaderboard use
-```
-
 ---
 
 ## Calibration Plan
 
-The calibration path is straightforward:
+The calibration path is:
 
 1. Maintain a synthetic fixture corpus with known ground truth.
 2. Maintain a real CLI corpus with human-reviewed truth sets.
@@ -418,13 +394,3 @@ Whole-surface scores can still move down when a CLI adds many poorly documented 
 
 - known-surface score for comparable previously discovered commands
 - whole-surface score for the current CLI as shipped
-
----
-
-## What To Tell Users
-
-The honest description is:
-
-> CLIARE's current score is an evidence-backed experimental readiness score. It uses Bayesian confidence updates for inferred command and flag claims, deterministic weighted subscores for directly measured dimensions, and explicit coverage/pressure reporting. It is strong enough for CI regression gates and iterative CLI quality improvement. Public certification and leaderboard ranking should wait for the calibrated v1 score model.
-
-That is credible, defensible, and aligned with the implementation.

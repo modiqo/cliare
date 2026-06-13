@@ -275,7 +275,7 @@ These are priors, not truth. Runtime evidence can override them.
 
 ## Discovery Coverage
 
-A hard problem: how do we score discovery when the total command set is unknown?
+Discovery scoring is difficult when the total command set is unknown.
 
 Use a capture-recapture estimate from multiple discovery channels.
 
@@ -300,7 +300,7 @@ Coverage:
 S_discovery = observed_command_mass / estimated_command_mass
 ```
 
-Command mass can be weighted by importance, not just count.
+Command mass can be weighted by importance rather than count alone.
 
 Important caveat:
 
@@ -367,7 +367,7 @@ Where:
 - `Safe(c)` = safety readiness
 - `R(c)` = recovery quality
 
-The multiplicative form is useful because a command that is totally unsafe or undiscoverable should not receive a high utility just because other dimensions are good.
+The multiplicative form is useful because a command that is totally unsafe or undiscoverable should not receive a high utility because other dimensions are strong.
 
 For CLI-level score:
 

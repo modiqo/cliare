@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `ci: dogfood cliare in github actions`
+> Last updated: after checkpoint `ci: CLIARE on CLIARE score and documentation hardening`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -11,22 +11,22 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | Area | Status | Notes |
 |---|---:|---|
 | Repository and package foundation | 100% | Rust project, license, README, design docs, private GitHub repo |
-| CLI surface | 74% | `measure`, `guard`, `benchmark`, traversal profiles, cache bypass, CI artifacts, and policy files; baseline/publish/certify still planned |
+| CLI surface | 76% | `measure`, `guard`, `benchmark`, `metadata`, traversal profiles, cache bypass, CI artifacts, and policy files; baseline/publish/certify still planned |
 | Runtime probing | 82% | Safe bootstrap, bounded output, timeouts, recursive probes, per-probe isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env, per-probe filesystem diffs, transient-file-safe snapshots, and inherited pipe drain protection |
-| Generic inference | 67% | Layout claims, runtime confirmation, precondition-blocked runtime state, Bayesian confidence, usage positionals, aliases, flag grammar, output-mode claims, structural command-row extraction, and manpage false-positive suppression exist; value domains still planned |
-| Command shape artifact | 71% | Commands, runtime states, auth preconditions, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
+| Generic inference | 69% | Layout claims, runtime confirmation, precondition-blocked runtime state, Bayesian confidence, usage positionals, aliases, flag grammar, output-mode claims, format-context output filtering, structural command-row extraction, and manpage false-positive suppression exist; value domains still planned |
+| Command shape artifact | 72% | Commands, runtime states, auth preconditions, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
 | Scoring | 62% | v0 dimensions for discovery, grammar, execution, recovery, output, and initial safety; Bayesian claim confidence and implemented formulas are now documented; full calibration and confidence intervals still planned |
-| CI guard | 88% | Baseline comparison, policy evaluation, SARIF, JUnit, Markdown CI summary, GitHub Action wrapper, and self-dogfood workflow exist; richer policy ergonomics still planned |
+| CI guard | 90% | Baseline comparison, policy evaluation, SARIF, JUnit, Markdown CI summary, GitHub Action wrapper, and CLIARE-on-CLIARE workflow exist; richer policy ergonomics still planned |
 | Cache and fingerprinting | 65% | Binary/profile/version/sandbox-profile/concurrency/artifact-set cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 86% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, pressure reporting, bounded async probe rounds, and corpus-level target parallelism exist; richer cancellation policy still planned |
-| QA and calibration | 76% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally; public authority plan now defines truth sets, calibration metrics, certified profiles, and false-safe-rate requirements |
+| QA and calibration | 77% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally; public authority plan now defines truth sets, calibration metrics, certified profiles, and false-safe-rate requirements |
 | Public publishing | 5% | Designed but not implemented |
 
 ## MVP Completion
 
-Estimated MVP completion: **96%**
+Estimated MVP completion: **97%**
 
-Estimated MVP work remaining: **4%**
+Estimated MVP work remaining: **3%**
 
 The current implementation is useful for local measurement, CI regression checks, and real CLI corpus calibration. The remaining MVP work is mostly hardening public command surfaces and replay/resume support for long deep-profile runs.
 
@@ -53,15 +53,16 @@ The current implementation is useful for local measurement, CI regression checks
 17. Real CLI benchmark corpus with `cliare.benchmark-corpus.v1` manifests, target-level parallelism, expected score bands, runtime caps, streaming JSON/Markdown reports, single-writer atomic aggregate writes, output-directory locking, per-target artifacts, and a deep local corpus covering `cliare`, `rote`, `git`, `supabase`, `gh`, `cargo`, `npm`, `docker`, and `deno`.
 18. Structural command-row extraction hardening that avoids semantic section-title allowlists, rejects wrapped prose and numeric menu rows, suppresses non-root manpage child-command false positives, and keeps command discovery rooted in layout morphology plus runtime confirmation.
 19. Precondition-blocked runtime state with auth-required diagnostic classification, command shape `runtime_state: precondition_blocked`, precondition gaps, scorecard/report coverage counts, recovery accounting that excludes auth-blocked invalid probes, and benchmark precondition totals.
-20. Scoring model documentation that explains the current `cliare-score-v0` formulas, Bayesian log-odds claim confidence, the credibility boundary between CI-ready scoring and public leaderboard certification, and the calibration path to `cliare-score-v1`.
+20. Scoring model documentation that explains the current `cliare-score-v0` formulas, Bayesian log-odds claim confidence, the calibration boundary between CI-ready scoring and public leaderboard certification, and the path to `cliare-score-v1`.
 21. Calibration authority documentation that defines truth corpus layers, human-reviewed labels, proper scoring metrics, false-safe-rate reporting, repeated-run stability, confidence intervals, certified profiles, provenance, verification levels, anti-gaming fixtures, `calibrate` artifacts, and `cliare-score-v1` freeze criteria.
-22. GitHub Actions dogfood workflow that builds CLIARE, measures the freshly built binary with the local composite action, publishes a clean job-summary score, uploads CLIARE artifacts, runs `quick` on pull requests, `standard` on `main`, and `deep` on the weekly schedule.
+22. GitHub Actions CLIARE-on-CLIARE workflow that builds the project, measures the freshly built binary with the local composite action, publishes a job-summary score, uploads CLIARE artifacts, runs `quick` on pull requests, `standard` on `main`, and `deep` on the weekly schedule.
+23. Public documentation and CLIARE-on-CLIARE score hardening with mature README/docs language, renamed CI workflow/artifacts, an explicit parseable `metadata --format json` contract, stricter output-contract inference that rejects file defaults and unrelated help text, and a standard-profile CLIARE-on-CLIARE score of 97.4/100 with zero findings, one machine-readable output contract, one successful output parse, zero side effects, and complete traversal.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 23: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 24: Baseline Accept, Rescore, Certify, and Replay
 
 Goal: turn the current measurement and benchmark core into a complete user-facing MVP flow for maintainers and CI.
 
@@ -80,6 +81,20 @@ Why this is next:
 - Certification should be a composition of measured evidence, policy, and provenance rather than a separate scoring path.
 
 ## Latest Benchmark Snapshot
+
+CLIARE on CLIARE standard-profile run:
+
+```sh
+cliare measure ./target/debug/cliare --out /tmp/cliare-on-cliare-polish2 --profile standard --concurrency 4 --refresh
+```
+
+Result:
+
+| Score | Probes | Output contracts | Parse successes | Findings | Side effects | Traversal complete |
+|---:|---:|---:|---:|---:|---:|---|
+| 97.4 | 23 | 1 | 1 | 0 | 0 | true |
+
+Local deep corpus run:
 
 Run:
 

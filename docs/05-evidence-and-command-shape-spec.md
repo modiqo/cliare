@@ -26,13 +26,13 @@ The evidence log is analogous to source code. The shape catalog is analogous to 
 
 ## Design Rule
 
-Every nontrivial shape field must answer:
+Every nontrivial shape field must carry enough context to establish provenance:
 
 ```text
-How do you know?
-How confident are you?
-Which observations support or contradict it?
-Which model produced this claim?
+source evidence
+confidence
+supporting and contradicting observations
+model version
 ```
 
 Without that, black-box CLI inference becomes brittle.

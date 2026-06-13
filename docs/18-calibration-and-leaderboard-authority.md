@@ -807,4 +807,4 @@ CLIARE becomes standard-worthy when:
 6. Public leaderboard entries are separated by profile, model, and verification level.
 7. Model changes are governed, versioned, and reproducible.
 
-That is the point where CLIARE is no longer just a good open-source tool. It becomes infrastructure for the CLI-agent ecosystem.
+At that point, CLIARE becomes infrastructure for the CLI-agent ecosystem rather than only a local measurement tool.

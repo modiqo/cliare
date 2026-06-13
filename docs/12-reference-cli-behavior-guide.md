@@ -7,11 +7,9 @@
 
 ## Summary
 
-This guide describes what an agent-ready CLI looks like. It is not only a scoring guide. It should become the public reference for maintainers who ask:
+This guide describes what an agent-ready CLI looks like. It is not only a scoring guide; it is a reference for maintainers who want their command surfaces to work reliably under agents, harnesses, CI systems, and automation.
 
-> How do I make my CLI better for agents and automation?
-
-The answer is not "add AI." The answer is to make the CLI discoverable, typed, deterministic, parseable, safe, and recoverable.
+Agent readiness does not come from AI-specific labels alone. It comes from making the CLI discoverable, typed, deterministic, parseable, safe, and recoverable.
 
 ---
 
@@ -459,4 +457,3 @@ Anything that fails should fail with enough structure to recover.
 ```
 
 That is agent-ready CLI design.
-

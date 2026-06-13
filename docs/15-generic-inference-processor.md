@@ -10,7 +10,7 @@
 
 CLIARE must not assume that a target CLI uses Clap, Cobra, Click, argparse, oclif, or any other specific framework.
 
-CLIARE itself may use Clap for its own CLI because that gives the project a clean, dogfoodable command surface. But when CLIARE measures CLIARE, the measurement path must treat CLIARE as an unknown black-box CLI. Clap may influence a framework-likelihood prior only after evidence suggests it; it must not select a hard-coded parser or bypass the generic processor.
+CLIARE itself may use Clap for its own CLI because that gives the project a clean command surface. When CLIARE measures CLIARE, the measurement path must still treat CLIARE as an unknown black-box CLI. Clap may influence a framework-likelihood prior only after evidence suggests it; it must not select a hard-coded parser or bypass the generic processor.
 
 The generic processor is:
 
@@ -213,9 +213,9 @@ The model must remain explainable and replayable from evidence.
 
 ---
 
-## Dogfood Requirement
+## CLIARE On CLIARE
 
-CLIARE should dogfood itself like any other unknown CLI:
+CLIARE should measure its own executable like any other unknown CLI:
 
 ```sh
 cliare measure ./target/debug/cliare

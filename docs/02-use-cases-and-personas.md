@@ -16,7 +16,7 @@ The design should explicitly serve multiple personas without diluting the core p
 3. Platform engineering teams
 4. Security and governance teams
 5. Open-source project maintainers
-6. Developer relations and GTM teams
+6. Developer relations and ecosystem teams
 7. Benchmark and research users
 
 ---
@@ -286,11 +286,11 @@ CLIARE 86 | Agent-ready CLI | CI-attested
 
 ---
 
-## Persona 6: Developer Relations and GTM Team
+## Persona 6: Developer Relations and Ecosystem Team
 
 ### Situation
 
-A company ships a developer platform and wants its CLI to be visible as agent-ready. It wants a public leaderboard and a benchmark story.
+A company ships a developer platform and wants its CLI to be visible as agent-ready. It wants a public scorecard, a leaderboard entry, and a benchmark narrative that is supported by evidence.
 
 ### Jobs
 
@@ -307,7 +307,7 @@ CLIARE becomes part of launch messaging:
 Our CLI is CLIARE-certified with a 91 agent-readiness score.
 ```
 
-This is the GTM bridge for modiqo. The standard creates a vocabulary companies want to use publicly.
+The standard creates a vocabulary companies can use publicly without inventing their own readiness claims.
 
 ---
 
@@ -347,7 +347,7 @@ Researchers can cite CLIARE as a measurement substrate, not just a tool.
 | Agent tool generation | Agent harness | shape catalog, safe subset export |
 | Security review | Security team | sandbox traces, side-effect classification |
 | Public badge | OSS maintainer | scorecard, publish, verification level |
-| Leaderboard | DevRel/GTM | hosted scorecard registry |
+| Leaderboard | Developer relations | hosted scorecard registry |
 | Research benchmark | Researchers | ground truth, calibration, replayable evidence |
 | Regression analysis | Platform team | historical score trend |
 | Vendor evaluation | Enterprise buyer | comparable public scorecards |
@@ -431,4 +431,3 @@ CLIARE should not randomly run destructive commands. It should use profiles, sid
 ### Cloud Binary Execution By Default
 
 Cloud execution of arbitrary binaries should not be the primary path. It is expensive, risky, and unnecessary for adoption.
-

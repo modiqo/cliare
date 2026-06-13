@@ -1,7 +1,7 @@
 use clap::Parser;
 use miette::IntoDiagnostic;
 
-use cliare::cli::{Cli, Command};
+use cliare::cli::{Cli, Command, MetadataArgs, MetadataFormat};
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
@@ -37,5 +37,36 @@ async fn main() -> miette::Result<()> {
                 Err(miette::miette!("guard failed: policy checks failed"))
             }
         }
+        Command::Metadata(args) => print_metadata(args),
     }
+}
+
+fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
+    match args.format {
+        MetadataFormat::Json => {
+            let value = serde_json::json!({
+                "schema_version": "cliare.metadata.v1",
+                "name": "cliare",
+                "version": env!("CARGO_PKG_VERSION"),
+                "formats": ["text", "json"],
+                "commands": ["measure", "guard", "benchmark", "metadata"],
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).into_diagnostic()?
+            );
+        }
+        MetadataFormat::Text => {
+            if args.help {
+                print!("{}", metadata_help());
+            } else {
+                println!("cliare {}", env!("CARGO_PKG_VERSION"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn metadata_help() -> &'static str {
+    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
 }

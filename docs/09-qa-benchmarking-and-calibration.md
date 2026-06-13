@@ -1,6 +1,6 @@
 # 09 - QA, Benchmarking, and Calibration
 
-> **Scope:** How CLIARE itself is tested, how the inference model is calibrated, and how benchmark results become credible.
+> **Scope:** How CLIARE itself is tested, how the inference model is calibrated, and how benchmark results become suitable for publication.
 > **Status:** Draft
 
 ---
@@ -91,7 +91,7 @@ Current local corpus implementation:
 
 - `benchmarks/local-corpus.json` uses schema `cliare.benchmark-corpus.v1`.
 - The corpus exercises `cliare`, `rote`, `git`, `supabase`, `gh`, `cargo`, `npm`, `docker`, and `deno` when available locally.
-- Targets carry tags such as `dogfood`, `deep-subcommands`, `sparse-help`, `json-friendly`, and `side-effect-prone`.
+- Targets carry tags such as `self-measurement`, `deep-subcommands`, `sparse-help`, `json-friendly`, and `side-effect-prone`.
 - Required targets must run successfully; optional targets are skipped only when the binary is not found.
 - Each target can override profile, depth, probe budget, expected-value threshold, per-probe concurrency, timeout, output limit, expected score band, and runtime cap.
 - Expected score bands are deliberately ranges, not exact score snapshots. They catch scoring regressions and runtime blowups without overfitting to harmless model movement.
@@ -118,7 +118,7 @@ Target scores from that run:
 
 | Target | Score | Duration ms | Probes | Notes |
 |---|---:|---:|---:|---|
-| cliare | 94.4 | 843 | 20 | Dogfood target through generic inference |
+| cliare | 94.4 | 843 | 20 | CLIARE on CLIARE through generic inference |
 | rote | 62.9 | 106110 | 768 | Deep local test case with side-effect observation |
 | git | 92.2 | 45266 | 73 | Manpage-heavy CLI after structural extractor hardening |
 | supabase | 93.6 | 120855 | 409 | Large command surface |

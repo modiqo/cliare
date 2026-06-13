@@ -328,7 +328,7 @@ Recommended:
 
 ## Partial Results
 
-CLIARE should be honest about partial results.
+CLIARE should represent partial results explicitly.
 
 Report:
 
@@ -418,4 +418,3 @@ MVP can skip:
 - advanced cache eviction
 - partial artifact uploads
 - long-term hosted evidence storage
-

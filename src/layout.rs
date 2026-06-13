@@ -572,10 +572,6 @@ fn is_generic_usage_placeholder(name: &str) -> bool {
 
 fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
     let mut modes = Vec::new();
-    let flag_name = flag.name.trim_start_matches("--").replace(['-', '_'], " ");
-    let value_name = flag.value_name.as_deref().unwrap_or("").replace('_', " ");
-    let summary = flag.summary.as_deref().unwrap_or("");
-    let haystack = format!("{flag_name} {value_name} {summary}").to_ascii_lowercase();
 
     for (needle, mode) in [
         ("json", OutputMode::Json),
@@ -583,14 +579,37 @@ fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
         ("yml", OutputMode::Yaml),
         ("table", OutputMode::Table),
         ("plain", OutputMode::Plain),
-        ("text", OutputMode::Plain),
     ] {
-        if contains_word(&haystack, needle) && !modes.contains(&mode) {
+        if flag_advertises_output_mode(flag, needle) && !modes.contains(&mode) {
             modes.push(mode);
         }
     }
 
     modes
+}
+
+fn flag_advertises_output_mode(flag: &CandidateFlag, mode_word: &str) -> bool {
+    let flag_name = flag.name.trim_start_matches("--").replace(['-', '_'], " ");
+    let value_name = flag.value_name.as_deref().unwrap_or("").replace('_', " ");
+    let summary = flag.summary.as_deref().unwrap_or("").to_ascii_lowercase();
+
+    if contains_word(&flag_name, mode_word) {
+        return true;
+    }
+
+    if !contains_word(&summary, mode_word) {
+        return false;
+    }
+
+    contains_word(&flag_name, "format")
+        || contains_word(&value_name, "format")
+        || contains_word(&value_name, "mode")
+        || contains_word(&value_name, "kind")
+        || summary.contains("output format")
+        || summary.contains("format:")
+        || summary.contains("format as")
+        || summary.contains(&format!("emit {mode_word}"))
+        || summary.contains("machine-readable")
 }
 
 fn output_mode_argv_fragment(flag: &CandidateFlag, mode: OutputMode) -> Vec<String> {
@@ -840,6 +859,34 @@ mod tests {
             !candidates
                 .iter()
                 .any(|candidate| candidate.flag_name == "--output")
+        );
+    }
+
+    #[test]
+    fn ignores_json_file_defaults_as_output_modes() {
+        let text = "Options:\n  --manifest <FILE>  Benchmark corpus manifest [default: benchmarks/local-corpus.json]\n  --output <FILE>    Output file [default: report.json]\n";
+        let candidates = output_mode_candidates(text);
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn ignores_help_text_that_mentions_another_output_flag() {
+        let text = "Options:\n  --format <FORMAT>  Output format [default: text] [possible values: text, json]\n  --help             Print help. With --format json, emit a parseable metadata contract\n";
+        let candidates = output_mode_candidates(text);
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Json && candidate.argv_fragment == ["--format", "json"]
+        }));
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.flag_name == "--help")
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.argv_fragment == ["--format", "plain"])
         );
     }
 }

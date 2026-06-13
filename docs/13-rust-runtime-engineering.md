@@ -1,6 +1,6 @@
 # 13 - Rust Runtime Engineering
 
-> **Scope:** Rust implementation strategy for async recursive probing, bounded parallelism, divergence/convergence, memory discipline, deterministic scoring, and world-class error handling.
+> **Scope:** Rust implementation strategy for async recursive probing, bounded parallelism, divergence/convergence, memory discipline, deterministic scoring, and robust error handling.
 > **Status:** Draft
 
 ---
@@ -137,7 +137,7 @@ The split matters:
 
 Do not let process execution directly mutate final score state.
 
-The inference portion of this pipeline must stay generic. A framework-specific recognizer may emit evidence annotations or priors, but the core runtime should operate on layout blocks, candidate claims, belief updates, and confirmation probes. CLIARE's own use of Clap is a dogfood target, not an internal shortcut.
+The inference portion of this pipeline must stay generic. A framework-specific recognizer may emit evidence annotations or priors, but the core runtime should operate on layout blocks, candidate claims, belief updates, and confirmation probes. CLIARE's own use of Clap is a self-measurement target, not an internal shortcut.
 
 ---
 
@@ -664,7 +664,7 @@ Keep traits narrow. Avoid a single giant runtime trait.
 
 ## Recommended Libraries
 
-Use mature, boring libraries where they map directly to the problem:
+Use well-maintained libraries where they map directly to the problem:
 
 | Need | Recommendation |
 |------|----------------|
