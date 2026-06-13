@@ -392,6 +392,8 @@ The calibration path is straightforward:
 
 The current benchmark runner already provides the operational substrate: corpus manifests, per-target artifacts, expected score bands, runtime caps, target-level parallelism, and aggregate reports. The next layer is truth-set comparison and proper probabilistic calibration.
 
+The detailed authority plan for truth sets, metrics, certified profiles, verification levels, anti-gaming, and the future `calibrate` command lives in [Calibration and Leaderboard Authority](18-calibration-and-leaderboard-authority.md).
+
 ---
 
 ## Improvement Monotonicity

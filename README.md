@@ -99,6 +99,7 @@ Start here:
 - [Design index](docs/00-index.md)
 - [Mathematical model](docs/06-mathematical-model.md)
 - [Scoring model and Bayesian confidence](docs/17-scoring-model-and-bayesian-confidence.md)
+- [Calibration and leaderboard authority](docs/18-calibration-and-leaderboard-authority.md)
 - [Rust runtime engineering](docs/13-rust-runtime-engineering.md)
 - [Operational contracts](docs/14-operational-contracts.md)
 

@@ -428,6 +428,8 @@ It produces:
 
 This is not yet full probabilistic calibration. Brier score, log loss, expected calibration error, and human-verified truth-set comparisons remain part of the next calibration layer. The current runner is still valuable because it makes score movement and runtime blowups visible on real CLIs before the standard publishes public leaderboard claims.
 
+For the full public-authority bar, including truth corpus design, calibration metrics, certified profiles, provenance, verification levels, anti-gaming fixtures, and the proposed `calibrate` command, see [Calibration and Leaderboard Authority](18-calibration-and-leaderboard-authority.md).
+
 ---
 
 ## QA Matrix

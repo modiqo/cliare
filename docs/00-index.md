@@ -77,6 +77,7 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **15** | [Generic Inference Processor](15-generic-inference-processor.md) | Corrected framework-agnostic inference design: layout observations, candidate claims, Bayesian updates, confirmation probes | Clap is dogfood only, not an inference assumption |
 | **16** | [Progress Scorecard](16-progress-scorecard.md) | Project delivery scorecard, MVP progress, next checkpoint | Current MVP estimate: 96% complete, 4% remaining |
 | **17** | [Scoring Model and Bayesian Confidence](17-scoring-model-and-bayesian-confidence.md) | Current score v0 formulas, Bayesian claim confidence, credibility boundary, and calibration path | v0 is credible for CI and improvement tracking; v1 needs public calibration before leaderboard certification |
+| **18** | [Calibration and Leaderboard Authority](18-calibration-and-leaderboard-authority.md) | Truth corpus, calibration metrics, certified profiles, provenance, anti-gaming, and leaderboard authority requirements | Public ranking requires calibrated models, stability reports, verification levels, and reproducible certified profiles |
 
 ---
 

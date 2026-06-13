@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `docs: explain scoring model`
+> Last updated: after checkpoint `docs: define calibration authority`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -19,7 +19,7 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | CI guard | 86% | Baseline comparison, policy evaluation, SARIF, JUnit, Markdown CI summary, and GitHub Action wrapper exist; richer policy ergonomics still planned |
 | Cache and fingerprinting | 65% | Binary/profile/version/sandbox-profile/concurrency/artifact-set cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 86% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, pressure reporting, bounded async probe rounds, and corpus-level target parallelism exist; richer cancellation policy still planned |
-| QA and calibration | 74% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally |
+| QA and calibration | 76% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally; public authority plan now defines truth sets, calibration metrics, certified profiles, and false-safe-rate requirements |
 | Public publishing | 5% | Designed but not implemented |
 
 ## MVP Completion
@@ -54,12 +54,13 @@ The current implementation is useful for local measurement, CI regression checks
 18. Structural command-row extraction hardening that avoids semantic section-title allowlists, rejects wrapped prose and numeric menu rows, suppresses non-root manpage child-command false positives, and keeps command discovery rooted in layout morphology plus runtime confirmation.
 19. Precondition-blocked runtime state with auth-required diagnostic classification, command shape `runtime_state: precondition_blocked`, precondition gaps, scorecard/report coverage counts, recovery accounting that excludes auth-blocked invalid probes, and benchmark precondition totals.
 20. Scoring model documentation that explains the current `cliare-score-v0` formulas, Bayesian log-odds claim confidence, the credibility boundary between CI-ready scoring and public leaderboard certification, and the calibration path to `cliare-score-v1`.
+21. Calibration authority documentation that defines truth corpus layers, human-reviewed labels, proper scoring metrics, false-safe-rate reporting, repeated-run stability, confidence intervals, certified profiles, provenance, verification levels, anti-gaming fixtures, `calibrate` artifacts, and `cliare-score-v1` freeze criteria.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 21: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 22: Baseline Accept, Rescore, Certify, and Replay
 
 Goal: turn the current measurement and benchmark core into a complete user-facing MVP flow for maintainers and CI.
 
