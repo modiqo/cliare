@@ -21,6 +21,14 @@ impl HelpDocument {
             .filter(|line| line.is_row_like() && !line.is_continuation_like())
     }
 
+    pub fn usage_lines(&self) -> impl Iterator<Item = &LayoutLine> {
+        self.lines.iter().filter(|line| {
+            line.text
+                .split_once(':')
+                .is_some_and(|(prefix, _)| prefix.eq_ignore_ascii_case("usage"))
+        })
+    }
+
     pub fn is_help_like(&self) -> bool {
         let row_count = self.rows().count();
         let header_count = self
@@ -93,9 +101,21 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
         let Some(first_column) = row.columns.first() else {
             continue;
         };
-        for path in command_paths_from_cell(first_column, binary_name) {
+        let paths = command_paths_from_cell(first_column, binary_name);
+        for path in &paths {
+            let aliases = paths
+                .iter()
+                .filter_map(|other| {
+                    if other == path || other.len() != 1 {
+                        None
+                    } else {
+                        other.first().cloned()
+                    }
+                })
+                .collect::<Vec<_>>();
             candidates.entry(path.clone()).or_insert(CandidateCommand {
-                path,
+                path: path.clone(),
+                aliases,
                 summary: row.columns.get(1).cloned(),
                 evidence_detail: format!("layout row {}", row.index),
             });
@@ -112,19 +132,18 @@ pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
     for row in document.rows() {
         for column in &row.columns {
             for token in column.split_whitespace() {
-                let cleaned = clean_token(token);
-                if !cleaned.starts_with('-') {
-                    continue;
-                }
-                let name = if cleaned.starts_with("--") {
-                    cleaned.to_owned()
-                } else {
+                let Some(name) = long_flag_name(token) else {
                     continue;
                 };
+                let grammar = flag_grammar_in(column, row.columns.get(1).map(String::as_str));
                 candidates.entry(name.clone()).or_insert(CandidateFlag {
                     name,
                     short: short_flag_in(column),
                     summary: row.columns.get(1).cloned(),
+                    value_kind: grammar.value_kind,
+                    value_name: grammar.value_name,
+                    required: grammar.required,
+                    repeatable: grammar.repeatable,
                     evidence_detail: format!("layout row {}", row.index),
                 });
             }
@@ -134,6 +153,53 @@ pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
     candidates.into_values().collect()
 }
 
+pub fn usage_arguments(
+    text: &str,
+    binary_name: &str,
+    current_path: &[String],
+) -> Vec<CandidateArgument> {
+    let document = HelpDocument::parse(text);
+    let mut arguments = Vec::new();
+
+    for line in document.usage_lines() {
+        let Some((_, usage)) = line.text.split_once(':') else {
+            continue;
+        };
+        let mut tokens = usage.split_whitespace().map(clean_token).peekable();
+        if tokens.peek().is_some_and(|token| *token == binary_name) {
+            tokens.next();
+        }
+        for segment in current_path {
+            if tokens.peek().is_some_and(|token| *token == segment) {
+                tokens.next();
+            }
+        }
+
+        let tokens = tokens.collect::<Vec<_>>();
+        let mut index = 0_usize;
+        while index < tokens.len() {
+            let token = tokens[index];
+            if token.starts_with('-') || token.contains("--") {
+                if tokens
+                    .get(index + 1)
+                    .is_some_and(|next| value_name_from_token(next).is_some())
+                {
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            if let Some(argument) = usage_argument_from_token(token, line.index) {
+                arguments.push(argument);
+            }
+            index += 1;
+        }
+    }
+
+    dedup_arguments(arguments)
+}
+
 pub fn is_help_like(text: &str) -> bool {
     HelpDocument::parse(text).is_help_like()
 }
@@ -141,6 +207,7 @@ pub fn is_help_like(text: &str) -> bool {
 #[derive(Debug, Clone)]
 pub struct CandidateCommand {
     pub path: Vec<String>,
+    pub aliases: Vec<String>,
     pub summary: Option<String>,
     pub evidence_detail: String,
 }
@@ -150,6 +217,25 @@ pub struct CandidateFlag {
     pub name: String,
     pub short: Option<String>,
     pub summary: Option<String>,
+    pub value_kind: CandidateFlagValueKind,
+    pub value_name: Option<String>,
+    pub required: bool,
+    pub repeatable: bool,
+    pub evidence_detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateFlagValueKind {
+    Boolean,
+    Required,
+    Optional,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateArgument {
+    pub name: String,
+    pub required: bool,
+    pub variadic: bool,
     pub evidence_detail: String,
 }
 
@@ -212,6 +298,142 @@ fn short_flag_in(text: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn long_flag_name(token: &str) -> Option<String> {
+    let cleaned = clean_token(token);
+    if !cleaned.starts_with("--") {
+        return None;
+    }
+    let end = cleaned.find(['=', '[', '<']).unwrap_or(cleaned.len());
+    let name = &cleaned[..end];
+    if name.len() > 2 {
+        Some(name.to_owned())
+    } else {
+        None
+    }
+}
+
+#[derive(Debug)]
+struct CandidateFlagGrammar {
+    value_kind: CandidateFlagValueKind,
+    value_name: Option<String>,
+    required: bool,
+    repeatable: bool,
+}
+
+fn flag_grammar_in(invocation: &str, summary: Option<&str>) -> CandidateFlagGrammar {
+    let tokens = invocation
+        .split_whitespace()
+        .map(clean_token)
+        .collect::<Vec<_>>();
+    let mut value_kind = CandidateFlagValueKind::Boolean;
+    let mut value_name = None;
+    let mut repeatable = invocation.contains("...");
+
+    for (index, token) in tokens.iter().enumerate() {
+        if !token.starts_with("--") {
+            continue;
+        }
+        if token.contains("[=<") || token.contains("[=") {
+            value_kind = CandidateFlagValueKind::Optional;
+            value_name = value_name_from_token(token);
+        } else if token.contains("=<") || token.contains('=') || token.contains('<') {
+            value_kind = CandidateFlagValueKind::Required;
+            value_name = value_name_from_token(token);
+        } else if let Some(next) = tokens.get(index + 1) {
+            if next.starts_with("[<") {
+                value_kind = CandidateFlagValueKind::Optional;
+                value_name = value_name_from_token(next);
+                repeatable |= next.contains("...");
+            } else if next.starts_with('<') {
+                value_kind = CandidateFlagValueKind::Required;
+                value_name = value_name_from_token(next);
+                repeatable |= next.contains("...");
+            }
+        }
+    }
+
+    let required = summary.is_some_and(|text| {
+        text.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .any(|word| word.eq_ignore_ascii_case("required"))
+    });
+    repeatable |= summary.is_some_and(|text| {
+        text.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .any(|word| {
+                word.eq_ignore_ascii_case("repeatable")
+                    || word.eq_ignore_ascii_case("multiple")
+                    || word.eq_ignore_ascii_case("many")
+            })
+    });
+
+    CandidateFlagGrammar {
+        value_kind,
+        value_name,
+        required,
+        repeatable,
+    }
+}
+
+fn usage_argument_from_token(token: &str, line_index: usize) -> Option<CandidateArgument> {
+    if token.starts_with('-')
+        || token.contains("--")
+        || !token.contains('<') && !token.contains('[')
+    {
+        return None;
+    }
+    let name = value_name_from_token(token)?;
+    if is_generic_usage_placeholder(&name) {
+        return None;
+    }
+
+    Some(CandidateArgument {
+        name,
+        required: !token.starts_with('['),
+        variadic: token.contains("..."),
+        evidence_detail: format!("usage line {}", line_index),
+    })
+}
+
+fn value_name_from_token(token: &str) -> Option<String> {
+    let start = token.find('<').or_else(|| token.find('['))?;
+    let mut value = token[start..].trim_matches(|ch: char| {
+        matches!(
+            ch,
+            '<' | '>' | '[' | ']' | '=' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '.'
+        )
+    });
+    if let Some(stripped) = value.strip_prefix('=') {
+        value = stripped;
+    }
+    let end = value.find(['>', ']', '.', '=', ',']).unwrap_or(value.len());
+    let name = value[..end].trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_ascii_lowercase().replace('-', "_"))
+    }
+}
+
+fn is_generic_usage_placeholder(name: &str) -> bool {
+    matches!(
+        name,
+        "options" | "option" | "command" | "commands" | "subcommand" | "subcommands" | "args"
+    )
+}
+
+fn dedup_arguments(arguments: Vec<CandidateArgument>) -> Vec<CandidateArgument> {
+    let mut deduped = BTreeMap::<String, CandidateArgument>::new();
+    for argument in arguments {
+        deduped
+            .entry(argument.name.clone())
+            .and_modify(|existing| {
+                existing.required |= argument.required;
+                existing.variadic |= argument.variadic;
+            })
+            .or_insert(argument);
+    }
+    deduped.into_values().collect()
+}
+
 fn clean_token(token: &str) -> &str {
     token.trim_matches(|ch: char| matches!(ch, ',' | ':' | ';' | '(' | ')' | '{' | '}'))
 }
@@ -247,7 +469,9 @@ fn split_columns(line: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_candidates, flag_candidates, is_help_like};
+    use super::{
+        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like, usage_arguments,
+    };
 
     #[test]
     fn extracts_commands_from_generic_aligned_rows() {
@@ -291,5 +515,82 @@ mod tests {
         assert!(candidates.iter().any(|item| item.path == ["rm"]));
         assert!(candidates.iter().any(|item| item.path == ["remove"]));
         assert!(!candidates.iter().any(|item| item.path == ["rm", "remove"]));
+        assert!(
+            candidates
+                .iter()
+                .any(|item| item.path == ["rm"] && item.aliases == ["remove"])
+        );
+    }
+
+    #[test]
+    fn extracts_usage_positionals_from_current_command() {
+        let text = "Usage: tool project deploy <PROJECT> [ENV] [FILES]...\n";
+        let current_path = vec!["project".to_owned(), "deploy".to_owned()];
+        let arguments = usage_arguments(text, "tool", &current_path);
+
+        assert!(
+            arguments
+                .iter()
+                .any(|arg| arg.name == "project" && arg.required)
+        );
+        assert!(
+            arguments
+                .iter()
+                .any(|arg| arg.name == "env" && !arg.required)
+        );
+        assert!(
+            arguments
+                .iter()
+                .any(|arg| arg.name == "files" && arg.variadic)
+        );
+    }
+
+    #[test]
+    fn usage_positionals_skip_flag_value_placeholders() {
+        let text = "Usage: tool guard --baseline <FILE> <TARGET> [--format <KIND>]\n";
+        let current_path = vec!["guard".to_owned()];
+        let arguments = usage_arguments(text, "tool", &current_path);
+
+        assert!(arguments.iter().any(|arg| arg.name == "target"));
+        assert!(!arguments.iter().any(|arg| arg.name == "file"));
+        assert!(!arguments.iter().any(|arg| arg.name == "kind"));
+    }
+
+    #[test]
+    fn extracts_flag_value_kind_requiredness_and_repeatability() {
+        let text = "Options:\n  -f, --format <KIND>       Output format\n  --color[=<WHEN>]          Optional color mode\n  --tag <TAG>...            Repeatable tag\n  --token <TOKEN>           Required authentication token\n  --dry-run                 Do not write changes\n";
+        let flags = flag_candidates(text);
+
+        let format = flags
+            .iter()
+            .find(|flag| flag.name == "--format")
+            .expect("format flag");
+        assert_eq!(format.short.as_deref(), Some("-f"));
+        assert_eq!(format.value_kind, CandidateFlagValueKind::Required);
+        assert_eq!(format.value_name.as_deref(), Some("kind"));
+
+        let color = flags
+            .iter()
+            .find(|flag| flag.name == "--color")
+            .expect("color flag");
+        assert_eq!(color.value_kind, CandidateFlagValueKind::Optional);
+
+        let tag = flags
+            .iter()
+            .find(|flag| flag.name == "--tag")
+            .expect("tag flag");
+        assert!(tag.repeatable);
+
+        let token = flags
+            .iter()
+            .find(|flag| flag.name == "--token")
+            .expect("token flag");
+        assert!(token.required);
+
+        let dry_run = flags
+            .iter()
+            .find(|flag| flag.name == "--dry-run")
+            .expect("dry-run flag");
+        assert_eq!(dry_run.value_kind, CandidateFlagValueKind::Boolean);
     }
 }

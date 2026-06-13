@@ -311,6 +311,15 @@ Measurement cache reuse is now implemented:
 - terminal summaries print `cache: hit` or `cache: miss`
 - `--refresh` bypasses cache reuse for both `measure` and `guard`
 
+Grammar extraction is now implemented for the current command-shape model:
+
+- `shape.json` command entries include `aliases`, `positionals`, and `usage_observed`
+- positional arguments are extracted from usage lines and include `name`, `required`, `variadic`, and evidence
+- flag entries include `value_kind`, `value_name`, `required`, and `repeatable`
+- supported flag value kinds are `boolean`, `required`, and `optional`
+- usage parsing skips flag value placeholders so `--baseline <FILE> <TARGET>` does not misclassify `FILE` as a positional argument
+- grammar scoring now credits extracted usage syntax and known flag arity instead of treating every confirmed command as arity-unknown
+
 ---
 
 ## Phase 5: Benchmark and Calibration

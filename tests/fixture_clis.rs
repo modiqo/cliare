@@ -20,12 +20,24 @@ async fn custom_help_tree_confirms_nested_commands_and_aliases() {
     let project_list = command(&artifacts.shape, &["project", "list"]);
     assert!(project_list["runtime_confirmed"].as_bool().unwrap_or(false));
     assert!(project_list["confidence"].as_f64().unwrap_or(0.0) > 0.90);
-    assert!(has_flag(&artifacts.shape, &["project", "list"], "--format"));
+    let format = flag(&artifacts.shape, &["project", "list"], "--format");
+    assert_eq!(format["value_kind"].as_str(), Some("required"));
+    assert_eq!(format["value_name"].as_str(), Some("kind"));
 
     let rm = command(&artifacts.shape, &["rm"]);
     assert!(rm["runtime_confirmed"].as_bool().unwrap_or(false));
+    assert!(
+        rm["aliases"]
+            .as_array()
+            .is_some_and(|aliases| aliases.iter().any(|alias| alias.as_str() == Some("remove")))
+    );
     let remove = command(&artifacts.shape, &["remove"]);
     assert!(remove["runtime_confirmed"].as_bool().unwrap_or(false));
+    assert!(remove["positionals"].as_array().is_some_and(|arguments| {
+        arguments.iter().any(|argument| {
+            argument["name"].as_str() == Some("id") && argument["required"].as_bool() == Some(true)
+        })
+    }));
 
     assert!(artifacts.evidence.contains("\"intent\":\"invalid_flag\""));
 }
@@ -365,14 +377,15 @@ fn command<'a>(shape: &'a Value, path: &[&str]) -> &'a Value {
         .unwrap_or_else(|| panic!("command path not found: {path:?}"))
 }
 
-fn has_flag(shape: &Value, command_path: &[&str], name: &str) -> bool {
+fn flag<'a>(shape: &'a Value, command_path: &[&str], name: &str) -> &'a Value {
     shape["flags"]
         .as_array()
         .expect("shape flags is an array")
         .iter()
-        .any(|flag| {
+        .find(|flag| {
             path_matches(&flag["command_path"], command_path) && flag["name"].as_str() == Some(name)
         })
+        .unwrap_or_else(|| panic!("flag not found for {command_path:?}: {name}"))
 }
 
 fn has_gap(shape: &Value, command_path: &[&str], kind: &str) -> bool {

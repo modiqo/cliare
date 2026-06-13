@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 use tokio::fs;
 
-use crate::claims::{ClaimSet, CommandClaim, FlagClaim};
+use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind, PositionalClaim};
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
@@ -27,6 +27,9 @@ pub struct CommandCandidate {
     path: Vec<String>,
     argv: Vec<String>,
     summary: Option<String>,
+    aliases: Vec<String>,
+    positionals: Vec<PositionalArgument>,
+    usage_observed: bool,
     confidence: f64,
     runtime_confirmed: bool,
     evidence: Vec<String>,
@@ -38,8 +41,28 @@ pub struct FlagCandidate {
     name: String,
     short: Option<String>,
     summary: Option<String>,
+    value_kind: FlagValueKindShape,
+    value_name: Option<String>,
+    required: bool,
+    repeatable: bool,
     confidence: f64,
     evidence: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PositionalArgument {
+    name: String,
+    required: bool,
+    variadic: bool,
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlagValueKindShape {
+    Boolean,
+    Required,
+    Optional,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,7 +111,7 @@ pub fn infer_shape(target: TargetFingerprint, observations: &[ShapeObservation])
         .map(|command| command_candidate(&binary_name, command))
         .collect::<Vec<_>>();
     let flags = claims.flags().map(flag_candidate).collect::<Vec<_>>();
-    let gaps = gap_items(claims.commands());
+    let gaps = gap_items(claims.commands(), &flags);
 
     CommandShape {
         schema_version: SCHEMA_VERSION,
@@ -123,6 +146,9 @@ fn command_candidate(binary_name: &str, command: &CommandClaim) -> CommandCandid
         path,
         argv,
         summary: command.summary().map(str::to_owned),
+        aliases: command.aliases().cloned().collect(),
+        positionals: command.positionals().map(positional_argument).collect(),
+        usage_observed: command.usage_observed(),
         confidence: command.confidence(),
         runtime_confirmed: command.runtime_confirmed(),
         evidence: command.evidence().to_vec(),
@@ -135,12 +161,36 @@ fn flag_candidate(flag: &FlagClaim) -> FlagCandidate {
         name: flag.name().to_owned(),
         short: flag.short().map(str::to_owned),
         summary: flag.summary().map(str::to_owned),
+        value_kind: flag_value_kind(flag.value_kind()),
+        value_name: flag.value_name().map(str::to_owned),
+        required: flag.required(),
+        repeatable: flag.repeatable(),
         confidence: flag.confidence(),
         evidence: flag.evidence().to_vec(),
     }
 }
 
-fn gap_items<'a>(commands: impl Iterator<Item = &'a CommandClaim>) -> Vec<Gap> {
+fn positional_argument(argument: &PositionalClaim) -> PositionalArgument {
+    PositionalArgument {
+        name: argument.name().to_owned(),
+        required: argument.required(),
+        variadic: argument.variadic(),
+        evidence: argument.evidence().to_vec(),
+    }
+}
+
+fn flag_value_kind(kind: FlagValueKind) -> FlagValueKindShape {
+    match kind {
+        FlagValueKind::Boolean => FlagValueKindShape::Boolean,
+        FlagValueKind::Required => FlagValueKindShape::Required,
+        FlagValueKind::Optional => FlagValueKindShape::Optional,
+    }
+}
+
+fn gap_items<'a>(
+    commands: impl Iterator<Item = &'a CommandClaim>,
+    flags: &[FlagCandidate],
+) -> Vec<Gap> {
     let mut gaps = Vec::new();
 
     for command in commands {
@@ -161,17 +211,20 @@ fn gap_items<'a>(commands: impl Iterator<Item = &'a CommandClaim>) -> Vec<Gap> {
                 evidence: command.evidence().to_vec(),
             });
         }
-        if command.runtime_confirmed() {
+        if command.runtime_confirmed() && has_unknown_flag_grammar(flags, command.path().as_slice())
+        {
             gaps.push(Gap {
                 kind: GapKind::FlagsUnknown,
                 command_path: command.path().to_vec(),
-                reason: "flag arity and value domains are not confirmed yet".to_owned(),
+                reason: "some discovered flags still lack value grammar".to_owned(),
                 evidence: command.evidence().to_vec(),
             });
+        }
+        if command.runtime_confirmed() && !command.usage_observed() {
             gaps.push(Gap {
                 kind: GapKind::ArgumentArityUnknown,
                 command_path: command.path().to_vec(),
-                reason: "positional argument arity is not confirmed yet".to_owned(),
+                reason: "usage syntax has not confirmed positional arguments".to_owned(),
                 evidence: command.evidence().to_vec(),
             });
         }
@@ -197,6 +250,15 @@ fn gap_items<'a>(commands: impl Iterator<Item = &'a CommandClaim>) -> Vec<Gap> {
     }
 
     gaps
+}
+
+fn has_unknown_flag_grammar(flags: &[FlagCandidate], command_path: &[String]) -> bool {
+    flags
+        .iter()
+        .filter(|flag| flag.command_path == command_path)
+        .any(|flag| {
+            !matches!(flag.value_kind, FlagValueKindShape::Boolean) && flag.value_name.is_none()
+        })
 }
 
 fn command_id(binary_name: &str, path: &[String]) -> String {
@@ -267,6 +329,78 @@ mod tests {
             .expect("measure candidate exists");
         assert!(measure.runtime_confirmed);
         assert!(measure.confidence > 0.90);
+    }
+
+    #[test]
+    fn shape_includes_usage_positionals_and_flag_grammar() {
+        let target = target();
+        let deploy_help = observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["project".to_owned(), "deploy".to_owned()],
+            "Usage: cliare project deploy <PROJECT> [ENV] [FILES]...\n\nOptions:\n  -f, --format <KIND>       Output format\n  --color[=<WHEN>]          Optional color mode\n  --tag <TAG>...            Repeatable tag\n  --token <TOKEN>           Required authentication token\n  --dry-run                 Do not write changes\n",
+            Some(0),
+        );
+
+        let shape = infer_shape(target, &[deploy_help]);
+        let deploy = shape
+            .commands
+            .iter()
+            .find(|command| command.path == ["project", "deploy"])
+            .expect("deploy command exists");
+
+        assert!(deploy.usage_observed);
+        assert!(deploy.positionals.iter().any(|argument| {
+            argument.name == "project" && argument.required && !argument.variadic
+        }));
+        assert!(
+            deploy
+                .positionals
+                .iter()
+                .any(|argument| argument.name == "env" && !argument.required)
+        );
+        assert!(
+            deploy
+                .positionals
+                .iter()
+                .any(|argument| argument.name == "files" && argument.variadic)
+        );
+
+        let format = shape
+            .flags
+            .iter()
+            .find(|flag| flag.name == "--format")
+            .expect("format flag exists");
+        assert!(matches!(
+            format.value_kind,
+            super::FlagValueKindShape::Required
+        ));
+        assert_eq!(format.value_name.as_deref(), Some("kind"));
+        assert_eq!(format.short.as_deref(), Some("-f"));
+
+        let color = shape
+            .flags
+            .iter()
+            .find(|flag| flag.name == "--color")
+            .expect("color flag exists");
+        assert!(matches!(
+            color.value_kind,
+            super::FlagValueKindShape::Optional
+        ));
+
+        let tag = shape
+            .flags
+            .iter()
+            .find(|flag| flag.name == "--tag")
+            .expect("tag flag exists");
+        assert!(tag.repeatable);
+
+        let token = shape
+            .flags
+            .iter()
+            .find(|flag| flag.name == "--token")
+            .expect("token flag exists");
+        assert!(token.required);
     }
 
     #[test]

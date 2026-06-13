@@ -286,9 +286,17 @@ Top-level:
     "probability": 0.98,
     "evidence": ["e_000001", "e_000004", "e_000020"]
   },
-  "aliases": [],
+  "aliases": ["ls"],
   "flags": [],
-  "positionals": [],
+  "positionals": [
+    {
+      "name": "project_id",
+      "required": true,
+      "variadic": false,
+      "evidence": ["e_000004:usage line 2"]
+    }
+  ],
+  "usage_observed": true,
   "stdin": {},
   "stdout": {},
   "stderr": {},
@@ -321,6 +329,8 @@ Top-level:
     "probability": 0.94,
     "evidence": ["e_000004", "e_000033"]
   },
+  "value_kind": "required",
+  "value_name": "kind",
   "value_schema": {
     "schema": {
       "type": "string",
@@ -329,16 +339,8 @@ Top-level:
     "confidence": 0.87,
     "evidence": ["e_000034", "e_000035"]
   },
-  "required": {
-    "value": false,
-    "probability": 0.88,
-    "evidence": ["e_000036"]
-  },
-  "repeatable": {
-    "value": false,
-    "probability": 0.76,
-    "evidence": ["e_000037"]
-  },
+  "required": false,
+  "repeatable": false,
   "placement": {
     "supports_equals": true,
     "supports_space": true,
@@ -346,6 +348,17 @@ Top-level:
   }
 }
 ```
+
+The MVP shape emitted by the current reference implementation uses compact flag grammar fields:
+
+| Field | Meaning |
+|---|---|
+| `value_kind` | `boolean`, `required`, or `optional` |
+| `value_name` | normalized placeholder such as `file`, `kind`, or `target` |
+| `required` | true when help text marks the flag as required |
+| `repeatable` | true when help text marks repeated values with `...`, "repeatable", or similar wording |
+
+The richer probabilistic `arity`, `value_schema`, `required`, `repeatable`, and placement objects remain the target standard form. The compact fields are the MVP bridge from black-box help text to useful agent call contracts.
 
 ---
 
@@ -694,4 +707,3 @@ The MVP command shape can support:
 - score references
 
 Do not delay MVP for perfect schema coverage. But do require evidence references and confidence from day one.
-

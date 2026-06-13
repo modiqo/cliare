@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tokio::fs;
 
-use crate::claims::{ClaimSet, CommandClaim};
+use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind};
 use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
@@ -356,8 +356,9 @@ fn grammar_score(metrics: &Metrics) -> f64 {
     let grammar_gap_rate = metrics.grammar_gap_rate();
 
     30.0 * flag_presence
-        + 40.0 * metrics.coverage.avg_flag_confidence
-        + 30.0 * (1.0 - grammar_gap_rate)
+        + 25.0 * metrics.coverage.avg_flag_confidence
+        + 20.0 * metrics.flag_grammar_rate()
+        + 25.0 * (1.0 - grammar_gap_rate)
 }
 
 fn execution_score(metrics: &Metrics) -> f64 {
@@ -654,6 +655,7 @@ fn escape_table_cell(value: &str) -> String {
 struct Metrics {
     coverage: Coverage,
     grammar_gap_count: usize,
+    flags_with_known_grammar: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -678,6 +680,7 @@ impl Metrics {
             .filter(|command| command.runtime_confirmed())
             .map(|command| grammar_gaps_for(command))
             .sum();
+        let flags_with_known_grammar = flags.iter().filter(|flag| flag_grammar_known(flag)).count();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
         let probes_skipped_by_budget =
@@ -722,6 +725,7 @@ impl Metrics {
                 ),
             },
             grammar_gap_count,
+            flags_with_known_grammar,
             invalid_probe_count: process_metrics.invalid_probe_count,
             invalid_probe_rejections: process_metrics.invalid_probe_rejections,
         }
@@ -730,6 +734,13 @@ impl Metrics {
     fn grammar_gap_rate(&self) -> f64 {
         let possible = self.coverage.commands_runtime_confirmed.saturating_mul(2);
         ratio(self.grammar_gap_count, possible)
+    }
+
+    fn flag_grammar_rate(&self) -> f64 {
+        ratio(
+            self.flags_with_known_grammar,
+            self.coverage.flags_discovered,
+        )
     }
 }
 
@@ -797,10 +808,17 @@ fn grammar_gaps_for(command: &CommandClaim) -> usize {
     if command.invalid_flag_rejected() {
         gaps = gaps.saturating_sub(1);
     }
-    if !command.has_child_candidates() || command.invalid_child_rejected() {
+    if command.usage_observed()
+        || !command.has_child_candidates()
+        || command.invalid_child_rejected()
+    {
         gaps = gaps.saturating_sub(1);
     }
     gaps
+}
+
+fn flag_grammar_known(flag: &FlagClaim) -> bool {
+    matches!(flag.value_kind(), FlagValueKind::Boolean) || flag.value_name().is_some()
 }
 
 fn exited_nonzero(status: &ProcessStatus) -> bool {

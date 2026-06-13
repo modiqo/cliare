@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::belief::Belief;
 use crate::evidence::{ProbeIntent, ProcessStatus};
@@ -86,6 +86,12 @@ impl ClaimSet {
             return;
         }
 
+        if !current_path.is_empty() {
+            let arguments = layout::usage_arguments(text, binary_name, current_path.as_slice());
+            self.command_mut(current_path.clone())
+                .apply_usage_arguments(arguments, &observation.evidence_id);
+        }
+
         for candidate in layout::command_candidates(text, binary_name) {
             let path = CommandPath::new(absolutize_candidate_path(
                 current_path.as_slice(),
@@ -101,6 +107,7 @@ impl ClaimSet {
 
             self.command_mut(path).apply_layout_candidate(
                 candidate.summary,
+                candidate.aliases,
                 &observation.evidence_id,
                 &candidate.evidence_detail,
             );
@@ -111,12 +118,7 @@ impl ClaimSet {
             self.flags
                 .entry(key)
                 .or_insert_with(|| FlagClaim::new(current_path.clone(), candidate.name.clone()))
-                .apply_layout_candidate(
-                    candidate.short,
-                    candidate.summary,
-                    &observation.evidence_id,
-                    &candidate.evidence_detail,
-                );
+                .apply_layout_candidate(candidate, &observation.evidence_id);
         }
     }
 
@@ -151,6 +153,9 @@ impl ClaimSet {
 pub struct CommandClaim {
     path: CommandPath,
     summary: Option<String>,
+    aliases: BTreeSet<String>,
+    positionals: BTreeMap<String, PositionalClaim>,
+    usage_observed: bool,
     belief: Belief,
     runtime_confirmed: bool,
     help_unavailable: bool,
@@ -165,6 +170,9 @@ impl CommandClaim {
         Self {
             path,
             summary: None,
+            aliases: BTreeSet::new(),
+            positionals: BTreeMap::new(),
+            usage_observed: false,
             belief: Belief::with_prior(COMMAND_PRIOR),
             runtime_confirmed: false,
             help_unavailable: false,
@@ -178,6 +186,7 @@ impl CommandClaim {
     fn apply_layout_candidate(
         &mut self,
         summary: Option<String>,
+        aliases: Vec<String>,
         evidence_id: &str,
         evidence_detail: &str,
     ) {
@@ -185,8 +194,36 @@ impl CommandClaim {
         if self.summary.is_none() {
             self.summary = summary;
         }
+        self.aliases.extend(aliases);
         self.evidence
             .push(format!("{evidence_id}:{evidence_detail}"));
+    }
+
+    fn apply_usage_arguments(
+        &mut self,
+        arguments: Vec<layout::CandidateArgument>,
+        evidence_id: &str,
+    ) {
+        self.usage_observed = true;
+        self.belief.update(0.5);
+        for argument in arguments {
+            self.positionals
+                .entry(argument.name.clone())
+                .and_modify(|existing| {
+                    existing.required |= argument.required;
+                    existing.variadic |= argument.variadic;
+                    existing
+                        .evidence
+                        .push(format!("{evidence_id}:{}", argument.evidence_detail));
+                })
+                .or_insert_with(|| PositionalClaim {
+                    name: argument.name,
+                    required: argument.required,
+                    variadic: argument.variadic,
+                    evidence: vec![format!("{evidence_id}:{}", argument.evidence_detail)],
+                });
+        }
+        self.evidence.push(format!("{evidence_id}:usage syntax"));
     }
 
     fn apply_runtime_help(&mut self, evidence_id: &str, help_like: bool) {
@@ -230,6 +267,18 @@ impl CommandClaim {
         self.summary.as_deref()
     }
 
+    pub fn aliases(&self) -> impl Iterator<Item = &String> {
+        self.aliases.iter()
+    }
+
+    pub fn positionals(&self) -> impl Iterator<Item = &PositionalClaim> {
+        self.positionals.values()
+    }
+
+    pub fn usage_observed(&self) -> bool {
+        self.usage_observed
+    }
+
     pub fn confidence(&self) -> f64 {
         self.belief.probability()
     }
@@ -259,12 +308,42 @@ impl CommandClaim {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PositionalClaim {
+    name: String,
+    required: bool,
+    variadic: bool,
+    evidence: Vec<String>,
+}
+
+impl PositionalClaim {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn required(&self) -> bool {
+        self.required
+    }
+
+    pub fn variadic(&self) -> bool {
+        self.variadic
+    }
+
+    pub fn evidence(&self) -> &[String] {
+        &self.evidence
+    }
+}
+
 #[derive(Debug)]
 pub struct FlagClaim {
     command_path: CommandPath,
     name: String,
     short: Option<String>,
     summary: Option<String>,
+    value_kind: FlagValueKind,
+    value_name: Option<String>,
+    required: bool,
+    repeatable: bool,
     belief: Belief,
     evidence: Vec<String>,
 }
@@ -276,27 +355,31 @@ impl FlagClaim {
             name,
             short: None,
             summary: None,
+            value_kind: FlagValueKind::Boolean,
+            value_name: None,
+            required: false,
+            repeatable: false,
             belief: Belief::with_prior(FLAG_PRIOR),
             evidence: Vec::new(),
         }
     }
 
-    fn apply_layout_candidate(
-        &mut self,
-        short: Option<String>,
-        summary: Option<String>,
-        evidence_id: &str,
-        evidence_detail: &str,
-    ) {
+    fn apply_layout_candidate(&mut self, candidate: layout::CandidateFlag, evidence_id: &str) {
         self.belief.update(1.0);
         if self.short.is_none() {
-            self.short = short;
+            self.short = candidate.short;
         }
         if self.summary.is_none() {
-            self.summary = summary;
+            self.summary = candidate.summary;
         }
+        self.value_kind = FlagValueKind::from(candidate.value_kind);
+        if self.value_name.is_none() {
+            self.value_name = candidate.value_name;
+        }
+        self.required |= candidate.required;
+        self.repeatable |= candidate.repeatable;
         self.evidence
-            .push(format!("{evidence_id}:{evidence_detail}"));
+            .push(format!("{evidence_id}:{}", candidate.evidence_detail));
     }
 
     pub fn command_path(&self) -> &CommandPath {
@@ -315,12 +398,49 @@ impl FlagClaim {
         self.summary.as_deref()
     }
 
+    pub fn value_kind(&self) -> FlagValueKind {
+        self.value_kind
+    }
+
+    pub fn value_name(&self) -> Option<&str> {
+        self.value_name.as_deref()
+    }
+
+    pub fn required(&self) -> bool {
+        self.required
+    }
+
+    pub fn repeatable(&self) -> bool {
+        self.repeatable
+    }
+
+    pub fn grammar_known(&self) -> bool {
+        self.value_kind == FlagValueKind::Boolean || self.value_name.is_some()
+    }
+
     pub fn confidence(&self) -> f64 {
         self.belief.probability()
     }
 
     pub fn evidence(&self) -> &[String] {
         &self.evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagValueKind {
+    Boolean,
+    Required,
+    Optional,
+}
+
+impl From<layout::CandidateFlagValueKind> for FlagValueKind {
+    fn from(value: layout::CandidateFlagValueKind) -> Self {
+        match value {
+            layout::CandidateFlagValueKind::Boolean => Self::Boolean,
+            layout::CandidateFlagValueKind::Required => Self::Required,
+            layout::CandidateFlagValueKind::Optional => Self::Optional,
+        }
     }
 }
 
@@ -361,7 +481,7 @@ fn is_child_path(current_path: &[String], candidate_path: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::ClaimSet;
+    use super::{ClaimSet, FlagValueKind};
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::observation::ShapeObservation;
     use crate::process::OutputCapture;
@@ -393,7 +513,19 @@ mod tests {
 
         assert!(measure.runtime_confirmed());
         assert!(measure.confidence() > 0.90);
-        assert!(claims.flags().any(|flag| flag.name() == "--out"));
+        assert!(measure.usage_observed());
+        assert!(
+            measure
+                .positionals()
+                .any(|argument| argument.name() == "target" && argument.required())
+        );
+
+        let out = claims
+            .flags()
+            .find(|flag| flag.name() == "--out")
+            .expect("out flag exists");
+        assert_eq!(out.value_kind(), FlagValueKind::Required);
+        assert_eq!(out.value_name(), Some("dir"));
     }
 
     #[test]
