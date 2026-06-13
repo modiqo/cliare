@@ -145,7 +145,7 @@ runs:
 
     - name: Upload CLIARE Artifacts
       if: ${{ inputs.upload-artifacts == 'true' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.out }}
