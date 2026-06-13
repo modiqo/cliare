@@ -27,7 +27,7 @@ cliare certify ./mycli
 cliare rescore .cliare/evidence.jsonl
 ```
 
-The implemented `measure` command fingerprints a target binary, runs bounded safe probes, records `evidence.jsonl`, emits a generic `shape.json`, and writes an experimental `scorecard.json` over currently measured dimensions. Other commands remain planned.
+The implemented `measure` command fingerprints a target binary, runs bounded safe probes, records `evidence.jsonl`, emits a generic `shape.json`, and writes experimental `scorecard.json` and `report.md` artifacts over currently measured dimensions. Other commands remain planned.
 
 ## Design Packet
 

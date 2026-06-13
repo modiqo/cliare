@@ -233,11 +233,12 @@ Compute initial CLIARE score and produce human report.
 
 ### Current Checkpoint
 
-The current implementation emits an experimental partial `scorecard.json` from `measure`.
+The current implementation emits experimental partial `scorecard.json` and `report.md` artifacts from `measure`.
 
 - Discovery, grammar, execution, and recovery are scored from current evidence.
 - Output and safety are present as `not_measured` dimensions until dedicated probes exist.
 - Fixture tests verify that a clearer CLI scores higher than a poor CLI.
+- The Markdown report explains the partial score, measured coverage, and findings.
 
 ---
 

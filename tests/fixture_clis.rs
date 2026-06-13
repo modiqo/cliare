@@ -10,7 +10,12 @@ use serde_json::Value;
 
 #[tokio::test]
 async fn custom_help_tree_confirms_nested_commands_and_aliases() {
-    let artifacts = measure_fixture(custom_help_tree_script(), 64).await;
+    let artifacts = measure_fixture(
+        "custom_help_tree_confirms_nested_commands_and_aliases",
+        custom_help_tree_script(),
+        64,
+    )
+    .await;
 
     let project_list = command(&artifacts.shape, &["project", "list"]);
     assert!(project_list["runtime_confirmed"].as_bool().unwrap_or(false));
@@ -27,7 +32,12 @@ async fn custom_help_tree_confirms_nested_commands_and_aliases() {
 
 #[tokio::test]
 async fn false_positive_help_rows_are_de_rated_by_runtime_evidence() {
-    let artifacts = measure_fixture(custom_help_tree_script(), 64).await;
+    let artifacts = measure_fixture(
+        "false_positive_help_rows_are_de_rated_by_runtime_evidence",
+        custom_help_tree_script(),
+        64,
+    )
+    .await;
 
     let env_var = command(&artifacts.shape, &["API_TOKEN"]);
     assert!(!env_var["runtime_confirmed"].as_bool().unwrap_or(true));
@@ -46,7 +56,12 @@ async fn false_positive_help_rows_are_de_rated_by_runtime_evidence() {
 
 #[tokio::test]
 async fn noisy_help_still_infers_from_stdout_layout() {
-    let artifacts = measure_fixture(noisy_help_script(), 32).await;
+    let artifacts = measure_fixture(
+        "noisy_help_still_infers_from_stdout_layout",
+        noisy_help_script(),
+        32,
+    )
+    .await;
 
     let run = command(&artifacts.shape, &["run"]);
     assert!(run["runtime_confirmed"].as_bool().unwrap_or(false));
@@ -57,12 +72,24 @@ async fn noisy_help_still_infers_from_stdout_layout() {
             .unwrap_or(0.0)
             > 0.0
     );
+    assert!(artifacts.report.contains("# CLIARE Report"));
+    assert!(artifacts.report.contains("not measured"));
 }
 
 #[tokio::test]
 async fn clearer_cli_scores_higher_than_poor_cli() {
-    let poor = measure_fixture(poor_help_script(), 16).await;
-    let clear = measure_fixture(noisy_help_script(), 32).await;
+    let poor = measure_fixture(
+        "clearer_cli_scores_higher_than_poor_cli_poor",
+        poor_help_script(),
+        16,
+    )
+    .await;
+    let clear = measure_fixture(
+        "clearer_cli_scores_higher_than_poor_cli_clear",
+        noisy_help_script(),
+        32,
+    )
+    .await;
 
     assert!(
         clear.scorecard["score"]["total"].as_f64().unwrap_or(0.0)
@@ -70,8 +97,8 @@ async fn clearer_cli_scores_higher_than_poor_cli() {
     );
 }
 
-async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
-    let workspace = TempWorkspace::new();
+async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> MeasuredFixture {
+    let workspace = TempWorkspace::new(name);
     let target = workspace.write_executable("fixture-cli", script);
     let out = workspace.path().join("artifacts");
 
@@ -88,6 +115,7 @@ async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
 
     let shape = read_json(&out.join("shape.json"));
     let scorecard = read_json(&out.join("scorecard.json"));
+    let report = fs::read_to_string(out.join("report.md")).expect("report is readable");
     let evidence =
         fs::read_to_string(out.join("evidence.jsonl")).expect("evidence log is readable");
 
@@ -95,6 +123,7 @@ async fn measure_fixture(script: &str, max_probes: usize) -> MeasuredFixture {
         _workspace: workspace,
         shape,
         scorecard,
+        report,
         evidence,
     }
 }
@@ -103,6 +132,7 @@ struct MeasuredFixture {
     _workspace: TempWorkspace,
     shape: Value,
     scorecard: Value,
+    report: String,
     evidence: String,
 }
 
@@ -111,9 +141,10 @@ struct TempWorkspace {
 }
 
 impl TempWorkspace {
-    fn new() -> Self {
+    fn new(name: &str) -> Self {
         let unique = format!(
-            "cliare-fixture-{}-{}",
+            "cliare-fixture-{}-{}-{}",
+            name,
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

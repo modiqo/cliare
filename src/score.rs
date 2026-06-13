@@ -102,17 +102,29 @@ pub struct ScoreModel {
     source: &'static str,
 }
 
-pub async fn write_scorecard(
+pub async fn write_score_artifacts(
     out_dir: &Path,
     target: TargetFingerprint,
     observations: &[ShapeObservation],
 ) -> Result<()> {
     let scorecard = scorecard(target, observations);
+    write_scorecard(out_dir, &scorecard).await?;
+    write_report(out_dir, &scorecard).await
+}
+
+async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<()> {
     let path = out_dir.join("scorecard.json");
     let bytes = serde_json::to_vec_pretty(&scorecard).map_err(CliareError::SerializeScorecard)?;
     fs::write(&path, bytes)
         .await
         .map_err(|source| CliareError::WriteScorecard { path, source })
+}
+
+async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<()> {
+    let path = out_dir.join("report.md");
+    fs::write(&path, render_report(scorecard))
+        .await
+        .map_err(|source| CliareError::WriteReport { path, source })
 }
 
 pub fn scorecard(target: TargetFingerprint, observations: &[ShapeObservation]) -> Scorecard {
@@ -331,6 +343,151 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
     findings
 }
 
+fn render_report(scorecard: &Scorecard) -> String {
+    let mut report = String::new();
+
+    report.push_str("# CLIARE Report\n\n");
+    report.push_str("This report is generated from runtime evidence. Score v0 is experimental and partial: unmeasured dimensions are shown but excluded from the partial total.\n\n");
+    report.push_str("## Summary\n\n");
+    report.push_str(&format!(
+        "- Target: `{}`\n",
+        scorecard.target.requested.display()
+    ));
+    report.push_str(&format!(
+        "- Resolved binary: `{}`\n",
+        scorecard.target.resolved.display()
+    ));
+    report.push_str(&format!(
+        "- Binary SHA-256: `{}`\n",
+        scorecard.target.binary_sha256
+    ));
+    report.push_str(&format!(
+        "- Score: `{:.1}` / 100 (`{}`)\n",
+        scorecard.score.total,
+        score_status_label(&scorecard.score.status)
+    ));
+    report.push_str(&format!(
+        "- Measured weight: `{:.1}` of `{:.1}`\n",
+        scorecard.score.measured_weight, scorecard.score.max_weight
+    ));
+    report.push_str(&format!("- Model: `{}`\n\n", scorecard.model.name));
+
+    report.push_str("## Subscores\n\n");
+    report.push_str("| Dimension | Score | Weight | Status | Rationale |\n");
+    report.push_str("| --- | ---: | ---: | --- | --- |\n");
+    for (dimension, subscore) in &scorecard.subscores {
+        report.push_str(&format!(
+            "| {} | {} | {:.2} | {} | {} |\n",
+            dimension_label(*dimension),
+            score_label(subscore.score),
+            subscore.weight,
+            dimension_status_label(&subscore.status),
+            escape_table_cell(&subscore.rationale)
+        ));
+    }
+    report.push('\n');
+
+    report.push_str("## Coverage\n\n");
+    report.push_str(&format!(
+        "- Commands discovered: `{}`\n",
+        scorecard.coverage.commands_discovered
+    ));
+    report.push_str(&format!(
+        "- Commands runtime-confirmed: `{}`\n",
+        scorecard.coverage.commands_runtime_confirmed
+    ));
+    report.push_str(&format!(
+        "- Command confirmation rate: `{:.1}%`\n",
+        scorecard.coverage.command_confirmation_rate * 100.0
+    ));
+    report.push_str(&format!(
+        "- Flags discovered: `{}`\n",
+        scorecard.coverage.flags_discovered
+    ));
+    report.push_str(&format!(
+        "- Average command confidence: `{:.3}`\n",
+        scorecard.coverage.avg_command_confidence
+    ));
+    report.push_str(&format!(
+        "- Average flag confidence: `{:.3}`\n",
+        scorecard.coverage.avg_flag_confidence
+    ));
+    report.push_str(&format!(
+        "- Probes completed: `{}`\n",
+        scorecard.coverage.probes_completed
+    ));
+    report.push_str(&format!(
+        "- Probe timeouts: `{}`\n",
+        scorecard.coverage.probes_timed_out
+    ));
+    report.push_str(&format!(
+        "- Probe spawn failures: `{}`\n\n",
+        scorecard.coverage.probes_failed_to_spawn
+    ));
+
+    report.push_str("## Findings\n\n");
+    if scorecard.findings.is_empty() {
+        report.push_str("No findings for measured dimensions.\n");
+    } else {
+        for finding in &scorecard.findings {
+            report.push_str(&format!(
+                "### {}: {}\n\n",
+                severity_label(&finding.severity),
+                finding.title
+            ));
+            report.push_str(&format!("- ID: `{}`\n", finding.id));
+            report.push_str(&format!(
+                "- Dimension: `{}`\n",
+                dimension_label(finding.dimension)
+            ));
+            report.push_str(&format!("- Detail: {}\n", finding.detail));
+            report.push_str(&format!("- Recommendation: {}\n\n", finding.recommendation));
+        }
+    }
+
+    report
+}
+
+fn score_label(score: Option<f64>) -> String {
+    score.map_or_else(|| "not measured".to_owned(), |score| format!("{score:.1}"))
+}
+
+fn score_status_label(status: &ScoreStatus) -> &'static str {
+    match status {
+        ScoreStatus::ExperimentalPartial => "experimental partial",
+    }
+}
+
+fn dimension_label(dimension: Dimension) -> &'static str {
+    match dimension {
+        Dimension::Discovery => "discovery",
+        Dimension::Grammar => "grammar",
+        Dimension::Execution => "execution",
+        Dimension::Output => "output",
+        Dimension::Safety => "safety",
+        Dimension::Recovery => "recovery",
+    }
+}
+
+fn dimension_status_label(status: &DimensionStatus) -> &'static str {
+    match status {
+        DimensionStatus::Measured => "measured",
+        DimensionStatus::NotMeasured => "not measured",
+    }
+}
+
+fn severity_label(severity: &Severity) -> &'static str {
+    match severity {
+        Severity::Low => "Low",
+        Severity::Medium => "Medium",
+        Severity::High => "High",
+    }
+}
+
+fn escape_table_cell(value: &str) -> String {
+    value.replace('|', "\\|")
+}
+
 #[derive(Debug)]
 struct Metrics {
     coverage: Coverage,
@@ -466,7 +623,7 @@ fn target_binary_name(target: &TargetFingerprint) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Dimension, scorecard};
+    use super::{Dimension, render_report, scorecard};
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::fingerprint::TargetFingerprint;
     use crate::observation::ShapeObservation;
@@ -531,6 +688,26 @@ mod tests {
         let scorecard = scorecard(target, &observations);
 
         assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
+    }
+
+    #[test]
+    fn report_renders_scorecard_summary_and_unmeasured_dimensions() {
+        let scorecard = scorecard(
+            target(),
+            &[observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  measure  Run probes\n",
+                Some(0),
+            )],
+        );
+
+        let report = render_report(&scorecard);
+
+        assert!(report.contains("# CLIARE Report"));
+        assert!(report.contains("| output | not measured |"));
+        assert!(report.contains("experimental partial"));
     }
 
     fn dimension_score(scorecard: &super::Scorecard, dimension: Dimension) -> f64 {

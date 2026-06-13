@@ -55,6 +55,13 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to write report {path}")]
+    WriteReport {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to spawn target process")]
     Spawn(#[source] std::io::Error),
 

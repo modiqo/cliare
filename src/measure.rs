@@ -77,7 +77,7 @@ pub async fn measure(args: MeasureArgs) -> Result<()> {
         .await?;
 
     shape::write_shape(&args.out, target.clone(), &observations).await?;
-    score::write_scorecard(&args.out, target, &observations).await
+    score::write_score_artifacts(&args.out, target, &observations).await
 }
 
 fn bootstrap_probes(target: &TargetFingerprint) -> Vec<ProbeSpec> {
