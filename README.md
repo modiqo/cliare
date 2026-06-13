@@ -1,10 +1,53 @@
 # CLIARE
 
-CLIARE is an open-source standard and Rust reference implementation for measuring how ready a command-line interface is for agents and automation.
+CLIARE is an Apache-2.0 open-source standard and Rust reference implementation for measuring how ready a command-line interface is for agents, harnesses, and automation.
 
-It treats a CLI as a black-box runtime system, exercises it in a controlled sandbox, records evidence, infers command shape, and produces a reproducible agent-readiness scorecard for CI, badges, and long-term improvement tracking.
+It treats a CLI as a black-box runtime system, exercises it through the executable as shipped, records evidence, infers command shape, and produces a reproducible agent-readiness scorecard for CI, badges, drift detection, and long-term quality improvement.
 
-CLIARE stands for **CLI for Agent Readiness**.
+CLIARE stands for **CLI Agent Readiness Evaluation**: a practical way to make CLI-agent-readiness measurable.
+
+## Mission
+
+The future of agent harnesses is increasingly CLI-native. Agents already lean on tools like `git`, `gh`, `docker`, `kubectl`, `supabase`, cloud CLIs, internal platform CLIs, and product-specific command surfaces because CLIs are easy to install, script, version, permission, and run in CI. At the same time, CLIs are evolving faster as new models learn to operate tools, vendors add agent-oriented workflows, and teams ship more automation-first surfaces.
+
+CLIARE exists to make those command surfaces measurable, navigable, and reliable. Its goal is to be integrated into every CI pipeline that manufactures CLIs for humans, automation, and agent harnesses.
+
+The project is built on a few commitments:
+
+- No source-code requirement: measure the executable users actually install.
+- No framework assumption: work across clap, cobra, argparse, hand-rolled parsers, shell wrappers, and poorly documented CLIs.
+- No hosted dependency: run locally in the maintainer's CI environment by default.
+- Evidence first: every score should be traceable to runtime observations.
+- Improvement oriented: scores should move when maintainers improve discoverability, grammar, outputs, safety, recovery, and stability.
+- Agent useful: emitted artifacts should help agents navigate CLIs diligently instead of rediscovering the same surface through blind trial and error.
+
+## What CLIARE Unlocks
+
+CLIARE turns a CLI from an opaque executable into a measured, versioned, evidence-backed interface.
+
+For maintainers, it provides a regression gate and improvement loop:
+
+- Detect command, flag, help, output, exit-code, auth, and safety drift between releases.
+- Track score improvements as the CLI adds clearer help, safer probes, better JSON output, dry-run support, noninteractive modes, and predictable errors.
+- Publish scorecards, CI summaries, badges, and release artifacts that show whether a CLI is becoming more usable by agents and automation.
+- Catch issues before release without uploading binaries or private command output to a cloud service.
+
+For agent harnesses, it provides a navigation index:
+
+- Command trees, aliases, flags, positionals, output contracts, and runtime states.
+- Safe probe evidence and destructive-risk signals.
+- Auth-gated and precondition-blocked paths that should not be mistaken for missing commands.
+- Confidence scores that help an agent choose high-quality paths before trying uncertain ones.
+- Portable shape artifacts that can be loaded by planners, tool routers, adapter builders, and benchmark runners.
+
+For model training and evaluation, it can create a structured corpus of real CLI behavior:
+
+- Runtime-derived command catalogs rather than hand-written benchmark assumptions.
+- Evidence-linked examples of discovery, recovery, output parsing, and precondition handling.
+- Release-to-release drift records that teach agents how tool surfaces change over time.
+- Long-tail CLI coverage beyond the handful of popular CLIs already overrepresented in pretraining.
+
+The ambition is not only to score CLIs. It is to raise the quality bar for CLI design, give maintainers a concrete path to improve, and give agents a trustworthy map for operating unfamiliar command surfaces.
 
 ## Status
 
