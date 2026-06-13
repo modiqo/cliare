@@ -1,0 +1,57 @@
+use std::path::PathBuf;
+
+#[derive(Debug, thiserror::Error)]
+pub enum CliareError {
+    #[error("target executable was not found: {0}")]
+    TargetNotFound(PathBuf),
+
+    #[error("target path is not a file: {0}")]
+    TargetNotFile(PathBuf),
+
+    #[error("failed to fingerprint target {path}")]
+    Fingerprint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to create artifact directory {path}")]
+    CreateArtifactDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to open evidence log {path}")]
+    OpenEvidenceLog {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write evidence event")]
+    WriteEvidence(#[source] std::io::Error),
+
+    #[error("failed to serialize evidence event")]
+    SerializeEvidence(#[source] serde_json::Error),
+
+    #[error("failed to spawn target process")]
+    Spawn(#[source] std::io::Error),
+
+    #[error("spawned target process did not expose {stream} pipe")]
+    MissingPipe { stream: &'static str },
+
+    #[error("failed to read process output")]
+    ReadOutput(#[source] std::io::Error),
+
+    #[error("failed to wait for target process")]
+    Wait(#[source] std::io::Error),
+
+    #[error("process reader task failed")]
+    Join(#[source] tokio::task::JoinError),
+
+    #[error("failed to format timestamp")]
+    TimeFormat(#[source] time::error::Format),
+}
+
+pub type Result<T> = std::result::Result<T, CliareError>;
