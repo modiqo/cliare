@@ -478,6 +478,7 @@ async fn guard_passes_against_same_score_baseline() {
         baseline: baseline_out.join("scorecard.json"),
         out: guard_out.clone(),
         allowed_drop: 0.0,
+        policy: None,
         timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
@@ -515,6 +516,7 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
         baseline,
         out: workspace.path().join("guard"),
         allowed_drop: 1.0,
+        policy: None,
         timeout_ms: 5_000,
         output_limit_bytes: 64 * 1024,
         profile: TraversalProfile::Standard,
@@ -533,6 +535,245 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
     let junit = fs::read_to_string(summary.measurement.junit_path).expect("junit is readable");
     assert!(junit.contains("score_regression"));
     assert!(junit.contains("CLIARE score regression exceeded allowed drop"));
+}
+
+#[tokio::test]
+async fn guard_policy_allows_expected_cache_side_effects() {
+    let workspace = TempWorkspace::new("guard_policy_allows_expected_cache_side_effects");
+    let target = workspace.write_executable("fixture-cli", cache_writing_help_script());
+    let baseline_out = workspace.path().join("baseline");
+    let guard_out = workspace.path().join("guard");
+    let policy = workspace.write_file(
+        "cliare.policy.json",
+        r#"{
+  "schema_version": "cliare.policy.v1",
+  "side_effects": {
+    "allow_paths": ["xdg-cache/fixture-cli/help-cache"],
+    "max_unapproved": 0,
+    "deny_credential_like": true
+  }
+}"#,
+    );
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: baseline_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("baseline measurement succeeds");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline: baseline_out.join("scorecard.json"),
+        out: guard_out.clone(),
+        allowed_drop: 0.0,
+        policy: Some(policy),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("guard with policy succeeds");
+
+    assert!(summary.passed);
+    assert!(summary.policy.as_ref().is_some_and(|policy| policy.passed));
+    let ci_summary = fs::read_to_string(guard_out.join("summary.md")).expect("summary is readable");
+    assert!(ci_summary.contains("## Policy"));
+    assert!(ci_summary.contains("| Result | pass |"));
+}
+
+#[tokio::test]
+async fn guard_policy_denies_credential_like_side_effects() {
+    let workspace = TempWorkspace::new("guard_policy_denies_credential_like_side_effects");
+    let target = workspace.write_executable("fixture-cli", credential_writing_help_script());
+    let baseline_out = workspace.path().join("baseline");
+    let policy = workspace.write_file(
+        "cliare.policy.json",
+        r#"{
+  "schema_version": "cliare.policy.v1",
+  "side_effects": {
+    "deny_credential_like": true
+  }
+}"#,
+    );
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: baseline_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("baseline measurement succeeds");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline: baseline_out.join("scorecard.json"),
+        out: workspace.path().join("guard"),
+        allowed_drop: 0.0,
+        policy: Some(policy),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("guard with policy succeeds");
+
+    assert!(!summary.passed);
+    assert!(summary.regression_passed);
+    let policy = summary.policy.expect("policy was evaluated");
+    assert!(!policy.passed);
+    assert!(
+        policy
+            .failures
+            .iter()
+            .any(|failure| failure.id == "policy.side_effects.credential_like")
+    );
+    let junit = fs::read_to_string(summary.measurement.junit_path).expect("junit is readable");
+    assert!(junit.contains("cliare.policy"));
+    assert!(junit.contains("policy.side_effects.credential_like"));
+}
+
+#[tokio::test]
+async fn guard_policy_fails_output_subscore_threshold() {
+    let workspace = TempWorkspace::new("guard_policy_fails_output_subscore_threshold");
+    let target = workspace.write_executable("fixture-cli", malformed_json_output_script());
+    let baseline_out = workspace.path().join("baseline");
+    let policy = workspace.write_file(
+        "cliare.policy.json",
+        r#"{
+  "schema_version": "cliare.policy.v1",
+  "min_subscores": {
+    "output": 100.0
+  }
+}"#,
+    );
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: baseline_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(64),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("baseline measurement succeeds");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline: baseline_out.join("scorecard.json"),
+        out: workspace.path().join("guard"),
+        allowed_drop: 0.0,
+        policy: Some(policy),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(64),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("guard with policy succeeds");
+
+    assert!(!summary.passed);
+    assert!(summary.regression_passed);
+    assert!(
+        summary
+            .policy
+            .expect("policy was evaluated")
+            .failures
+            .iter()
+            .any(|failure| failure.id == "policy.score.subscore_minimum.output")
+    );
+}
+
+#[tokio::test]
+async fn guard_policy_fails_total_score_threshold() {
+    let workspace = TempWorkspace::new("guard_policy_fails_total_score_threshold");
+    let target = workspace.write_executable("fixture-cli", poor_help_script());
+    let baseline_out = workspace.path().join("baseline");
+    let policy = workspace.write_file(
+        "cliare.policy.json",
+        r#"{
+  "schema_version": "cliare.policy.v1",
+  "min_total_score": 95.0
+}"#,
+    );
+
+    cliare::measure::measure(MeasureArgs {
+        target: target.clone(),
+        out: baseline_out.clone(),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(16),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("baseline measurement succeeds");
+
+    let summary = cliare::guard::guard(GuardArgs {
+        target,
+        baseline: baseline_out.join("scorecard.json"),
+        out: workspace.path().join("guard"),
+        allowed_drop: 0.0,
+        policy: Some(policy),
+        timeout_ms: 5_000,
+        output_limit_bytes: 64 * 1024,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(16),
+        min_expected_value: None,
+        concurrency: Some(2),
+        refresh: true,
+    })
+    .await
+    .expect("guard with policy succeeds");
+
+    assert!(!summary.passed);
+    assert!(summary.regression_passed);
+    assert!(
+        summary
+            .policy
+            .expect("policy was evaluated")
+            .failures
+            .iter()
+            .any(|failure| failure.id == "policy.score.total_minimum")
+    );
 }
 
 async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> MeasuredFixture {
@@ -619,6 +860,12 @@ impl TempWorkspace {
             .permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).expect("fixture script is executable");
+        path
+    }
+
+    fn write_file(&self, name: &str, contents: &str) -> PathBuf {
+        let path = self.path.join(name);
+        fs::write(&path, contents).expect("fixture file is written");
         path
     }
 }

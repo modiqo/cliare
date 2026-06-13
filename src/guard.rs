@@ -7,6 +7,7 @@ use crate::ci::{self, GuardCiContext};
 use crate::cli::{GuardArgs, MeasureArgs};
 use crate::error::{CliareError, Result};
 use crate::measure::{self, MeasurementSummary};
+use crate::policy::{self, PolicyEvaluation};
 
 #[derive(Debug, Clone)]
 pub struct GuardSummary {
@@ -16,22 +17,43 @@ pub struct GuardSummary {
     pub current_total: f64,
     pub delta: f64,
     pub allowed_drop: f64,
+    pub regression_passed: bool,
+    pub policy: Option<PolicyEvaluation>,
     pub passed: bool,
 }
 
 impl GuardSummary {
     pub fn terminal_summary(&self) -> String {
         let result = if self.passed { "pass" } else { "fail" };
-        let lines = [
+        let regression = if self.regression_passed {
+            "pass"
+        } else {
+            "fail"
+        };
+        let mut lines = vec![
             self.measurement.terminal_summary().trim_end().to_owned(),
             "guard:".to_owned(),
             format!("  result: {result}"),
+            format!("  score regression: {regression}"),
             format!("  baseline: {}", self.baseline_path.display()),
             format!("  baseline score: {:.1}", self.baseline_total),
             format!("  current score: {:.1}", self.current_total),
             format!("  delta: {:+.1}", self.delta),
             format!("  allowed drop: {:.1}", self.allowed_drop),
         ];
+        if let Some(policy) = &self.policy {
+            lines.push("policy:".to_owned());
+            lines.push(format!(
+                "  result: {}",
+                if policy.passed { "pass" } else { "fail" }
+            ));
+            lines.push(format!("  path: {}", policy.policy_path.display()));
+            lines.push(format!("  failures: {}", policy.failures.len()));
+            for failure in &policy.failures {
+                lines.push(format!("  - {}: {}", failure.id, failure.title));
+                lines.push(format!("    {}", failure.detail));
+            }
+        }
 
         format!("{}\n", lines.join("\n"))
     }
@@ -45,7 +67,12 @@ pub async fn guard(args: GuardArgs) -> Result<GuardSummary> {
     let current_total = measurement.score_total;
     let baseline_total = baseline.total()?;
     let delta = current_total - baseline_total;
-    let passed = delta + allowed_drop >= 0.0;
+    let regression_passed = delta + allowed_drop >= 0.0;
+    let policy = match &args.policy {
+        Some(policy_path) => Some(policy::evaluate_policy(policy_path, &args.out).await?),
+        None => None,
+    };
+    let passed = regression_passed && policy.as_ref().is_none_or(|policy| policy.passed);
     let ci_artifacts = ci::write_ci_artifacts(
         &args.out,
         Some(&GuardCiContext {
@@ -54,6 +81,8 @@ pub async fn guard(args: GuardArgs) -> Result<GuardSummary> {
             current_total,
             delta,
             allowed_drop,
+            regression_passed,
+            policy: policy.clone(),
             passed,
         }),
     )
@@ -67,6 +96,8 @@ pub async fn guard(args: GuardArgs) -> Result<GuardSummary> {
         current_total,
         delta,
         allowed_drop,
+        regression_passed,
+        policy,
         passed,
     })
 }
@@ -132,6 +163,8 @@ mod tests {
             current_total: 82.0,
             delta: 2.0,
             allowed_drop: 0.0,
+            regression_passed: true,
+            policy: None,
             passed: true,
         };
 
@@ -150,12 +183,15 @@ mod tests {
             current_total: 77.0,
             delta: -3.0,
             allowed_drop: 1.0,
+            regression_passed: false,
+            policy: None,
             passed: false,
         };
 
         let text = summary.terminal_summary();
 
         assert!(text.contains("result: fail"));
+        assert!(text.contains("score regression: fail"));
         assert!(text.contains("allowed drop: 1.0"));
     }
 

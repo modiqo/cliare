@@ -125,6 +125,10 @@ pub struct GuardArgs {
     #[arg(long, value_name = "POINTS", default_value_t = 0.0)]
     pub allowed_drop: f64,
 
+    /// Policy file with score thresholds and side-effect rules.
+    #[arg(long, value_name = "FILE", value_hint = ValueHint::FilePath)]
+    pub policy: Option<PathBuf>,
+
     /// Per-probe timeout in milliseconds.
     #[arg(long, value_name = "MS", default_value_t = 5_000)]
     pub timeout_ms: u64,

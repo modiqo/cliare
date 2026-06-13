@@ -292,11 +292,13 @@ The current implementation includes guard mode and CI artifacts:
 
 - `cliare guard <TARGET> --baseline <scorecard.json>` measures the target and compares total score.
 - `--allowed-drop <POINTS>` controls tolerated score regression.
+- `--policy <FILE>` evaluates a `cliare.policy.v1` JSON policy after measurement.
+- Policies support `min_total_score`, per-dimension `min_subscores`, side-effect `allow_paths`, `max_unapproved`, and `deny_credential_like`.
 - Guard prints the measurement summary plus pass/fail comparison details.
-- Guard rewrites `summary.md` and `junit.xml` with baseline score, current score, delta, allowed drop, and pass/fail context.
+- Guard rewrites `summary.md` and `junit.xml` with baseline score, current score, delta, allowed drop, policy status, policy failures, and pass/fail context.
 - `findings.sarif` is emitted from the same scorecard findings that drive the Markdown and JUnit artifacts.
-- The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads the artifact directory, appends `summary.md` to `$GITHUB_STEP_SUMMARY`, and exposes score/output paths.
-- Fixture tests cover pass and fail behavior for total-score regressions, generated SARIF, generated JUnit XML, and generated CI summaries.
+- The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, accepts optional `policy` and `concurrency` inputs, uploads the artifact directory, appends `summary.md` to `$GITHUB_STEP_SUMMARY`, and exposes score/output paths.
+- Fixture tests cover pass and fail behavior for total-score regressions, generated SARIF, generated JUnit XML, generated CI summaries, allowed cache writes, denied credential-like writes, output subscore thresholds, and total-score thresholds.
 
 The default recursion budget and scheduler width have also been raised for real-world CLIs with deep subcommand hierarchies:
 

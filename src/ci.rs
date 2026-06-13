@@ -7,6 +7,7 @@ use serde_json::json;
 use tokio::fs;
 
 use crate::error::{CliareError, Result};
+use crate::policy::PolicyEvaluation;
 
 #[derive(Debug, Clone)]
 pub struct CiArtifactSummary {
@@ -22,6 +23,8 @@ pub struct GuardCiContext {
     pub current_total: f64,
     pub delta: f64,
     pub allowed_drop: f64,
+    pub regression_passed: bool,
+    pub policy: Option<PolicyEvaluation>,
     pub passed: bool,
 }
 
@@ -100,6 +103,34 @@ async fn write_ci_summary(
             guard.allowed_drop
         )
         .expect("writing to string cannot fail");
+        if let Some(policy) = &guard.policy {
+            writeln!(&mut text).expect("writing to string cannot fail");
+            writeln!(&mut text, "## Policy").expect("writing to string cannot fail");
+            writeln!(&mut text).expect("writing to string cannot fail");
+            writeln!(
+                &mut text,
+                "| Field | Value |\n|---|---:|\n| Result | {} |\n| Policy | `{}` |\n| Failures | {} |",
+                if policy.passed { "pass" } else { "fail" },
+                markdown_escape(&policy.policy_path.display().to_string()),
+                policy.failures.len()
+            )
+            .expect("writing to string cannot fail");
+            if !policy.failures.is_empty() {
+                writeln!(&mut text).expect("writing to string cannot fail");
+                writeln!(&mut text, "| Rule | Failure | Detail |\n|---|---|---|")
+                    .expect("writing to string cannot fail");
+                for failure in &policy.failures {
+                    writeln!(
+                        &mut text,
+                        "| `{}` | {} | {} |",
+                        markdown_escape(&failure.id),
+                        markdown_escape(&failure.title),
+                        markdown_escape(&failure.detail)
+                    )
+                    .expect("writing to string cannot fail");
+                }
+            }
+        }
     }
 
     writeln!(&mut text).expect("writing to string cannot fail");
@@ -277,7 +308,7 @@ async fn write_junit(
     }
 
     if let Some(guard) = guard {
-        if guard.passed {
+        if guard.regression_passed {
             cases.push(TestCase::passed("cliare.guard", "score_regression"));
         } else {
             failures += 1;
@@ -295,6 +326,26 @@ async fn write_junit(
                     guard.baseline_path.display()
                 ),
             ));
+        }
+
+        if let Some(policy) = &guard.policy {
+            if policy.passed {
+                cases.push(TestCase::passed("cliare.policy", "policy"));
+            } else {
+                for failure in &policy.failures {
+                    failures += 1;
+                    cases.push(TestCase::failed(
+                        "cliare.policy",
+                        &failure.id,
+                        "policy_failure",
+                        &failure.title,
+                        &format!(
+                            "{}\n\nRecommendation: {}",
+                            failure.detail, failure.recommendation
+                        ),
+                    ));
+                }
+            }
         }
     }
 

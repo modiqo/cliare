@@ -12,6 +12,9 @@ inputs:
   baseline:
     description: Baseline scorecard path for guard mode.
     required: false
+  policy:
+    description: Optional CLIARE policy JSON file for guard mode.
+    required: false
   allowed-drop:
     description: Allowed score drop for guard mode.
     required: false
@@ -75,6 +78,7 @@ runs:
         CLIARE_COMMAND: ${{ inputs.cliare-command }}
         CLIARE_EXTRA_ARGS: ${{ inputs.extra-args }}
         CLIARE_BASELINE: ${{ inputs.baseline }}
+        CLIARE_POLICY: ${{ inputs.policy }}
         CLIARE_ALLOWED_DROP: ${{ inputs.allowed-drop }}
       run: |
         set -euo pipefail
@@ -87,6 +91,10 @@ runs:
         if [[ -n "$CLIARE_CONCURRENCY" ]]; then
           concurrency_args=(--concurrency "$CLIARE_CONCURRENCY")
         fi
+        policy_args=()
+        if [[ -n "$CLIARE_POLICY" ]]; then
+          policy_args=(--policy "$CLIARE_POLICY")
+        fi
 
         case "$CLIARE_MODE" in
           measure)
@@ -97,7 +105,7 @@ runs:
               echo "baseline input is required when mode=guard" >&2
               exit 2
             fi
-            "$CLIARE_COMMAND" guard "$CLIARE_TARGET" --baseline "$CLIARE_BASELINE" --out "$CLIARE_OUT" --profile "$CLIARE_PROFILE" --allowed-drop "$CLIARE_ALLOWED_DROP" "${concurrency_args[@]}" "${extra_args[@]}"
+            "$CLIARE_COMMAND" guard "$CLIARE_TARGET" --baseline "$CLIARE_BASELINE" --out "$CLIARE_OUT" --profile "$CLIARE_PROFILE" --allowed-drop "$CLIARE_ALLOWED_DROP" "${policy_args[@]}" "${concurrency_args[@]}" "${extra_args[@]}"
             ;;
           *)
             echo "mode must be 'measure' or 'guard', got '$CLIARE_MODE'" >&2

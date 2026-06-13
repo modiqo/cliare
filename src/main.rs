@@ -18,12 +18,14 @@ async fn main() -> miette::Result<()> {
             print!("{}", summary.terminal_summary());
             if summary.passed {
                 Ok(())
-            } else {
+            } else if !summary.regression_passed {
                 Err(miette::miette!(
                     "guard failed: score changed by {:+.1}, allowed drop is {:.1}",
                     summary.delta,
                     summary.allowed_drop
                 ))
+            } else {
+                Err(miette::miette!("guard failed: policy checks failed"))
             }
         }
     }

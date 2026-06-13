@@ -75,7 +75,7 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **13** | [Rust Runtime Engineering](13-rust-runtime-engineering.md) | Async recursive probing, bounded parallelism, Rust traits, memory discipline, error handling | Domain scheduler over Tokio, typed errors, deterministic convergence |
 | **14** | [Operational Contracts](14-operational-contracts.md) | Post-core hardening for cache reuse, adversarial targets, dependency policy, score governance, and reproducibility | Non-critical follow-up before public certification |
 | **15** | [Generic Inference Processor](15-generic-inference-processor.md) | Corrected framework-agnostic inference design: layout observations, candidate claims, Bayesian updates, confirmation probes | Clap is dogfood only, not an inference assumption |
-| **16** | [Progress Scorecard](16-progress-scorecard.md) | Project delivery scorecard, MVP progress, next checkpoint | Current MVP estimate: 86% complete, 14% remaining |
+| **16** | [Progress Scorecard](16-progress-scorecard.md) | Project delivery scorecard, MVP progress, next checkpoint | Current MVP estimate: 91% complete, 9% remaining |
 
 ---
 

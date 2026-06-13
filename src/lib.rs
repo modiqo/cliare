@@ -11,6 +11,7 @@ pub mod measure;
 pub mod observation;
 pub mod output;
 pub mod planner;
+pub mod policy;
 pub mod process;
 pub mod sandbox;
 pub mod score;

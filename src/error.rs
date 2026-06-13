@@ -180,6 +180,58 @@ pub enum CliareError {
         source: serde_json::Error,
     },
 
+    #[error("failed to read policy file {path}")]
+    ReadPolicy {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse policy file {path}")]
+    ParsePolicy {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("unsupported policy schema {schema_version} in {path}")]
+    UnsupportedPolicySchema {
+        path: PathBuf,
+        schema_version: String,
+    },
+
+    #[error("policy score threshold {field} must be finite and between 0 and 100: {value}")]
+    InvalidPolicyScoreThreshold { field: String, value: f64 },
+
+    #[error("failed to read scorecard for policy evaluation {path}")]
+    ReadPolicyScorecard {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse scorecard for policy evaluation {path}")]
+    ParsePolicyScorecard {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to read evidence for policy evaluation {path}")]
+    ReadPolicyEvidence {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse evidence for policy evaluation {path}:{line}")]
+    ParsePolicyEvidence {
+        path: PathBuf,
+        line: usize,
+        #[source]
+        source: serde_json::Error,
+    },
+
     #[error("baseline score must be finite and between 0 and 100: {total}")]
     InvalidBaselineScore { total: f64 },
 

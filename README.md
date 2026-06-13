@@ -23,11 +23,30 @@ This repository is private while the project is being shaped. The initial commit
 ```sh
 cliare measure ./mycli
 cliare guard ./mycli --baseline .cliare/baseline.scorecard.json
+cliare guard ./mycli --baseline .cliare/baseline.scorecard.json --policy cliare.policy.json
 cliare certify ./mycli
 cliare rescore .cliare/evidence.jsonl
 ```
 
-The implemented `measure` command fingerprints a target binary, runs bounded safe probes inside isolated per-probe HOME/PWD/XDG/TMP sandboxes with a sanitized environment, records `evidence.jsonl`, emits a generic `shape.json`, and writes experimental `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` artifacts over currently measured dimensions. The shape artifact now includes aliases, usage-derived positionals, flag grammar such as boolean, required-value, optional-value, repeatable, and required flags, plus output contracts for advertised JSON/YAML/table/plain modes where help output exposes them. CLIARE probes documented output flags only through safe help probes such as `--json --help` or `--format json --help`, then records parse success or failure in the shape and scorecard. Every probe is also wrapped in sandbox filesystem snapshots so persistent created, modified, and deleted files are recorded as safety evidence. It also writes `measure-cache.json`; later runs reuse artifacts when the target fingerprint, traversal profile, sandbox profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE version, measurement engine, and artifact set match. Use `--refresh` to force a new probe run. The implemented `guard` command measures a target, rewrites CI artifacts with guard context, and fails on total-score regression against a baseline scorecard. Traversal profiles provide useful presets: `quick` is depth 3 / 64 probes / concurrency 2, `standard` is depth 5 / 256 probes / concurrency 4, and `deep` is depth 8 / 1000 probes / concurrency 8. `--max-depth`, `--max-probes`, `--min-expected-value`, and `--concurrency` override the selected profile for larger, tighter, or more aggressive CI runs. Scorecards also report coverage pressure, output coverage, side-effect coverage, scheduler accounting, and runtime isolation metadata, including profile, observed depth, frontier remaining, expected-value convergence skips, candidates skipped by depth, stop reason, probes skipped by budget, probes scheduled, scheduler rounds, output parse successes, sandbox file changes, sandbox root, and env policy. The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads only CLIARE artifacts, appends the Markdown summary to the job summary, and exposes score/output paths. Other commands remain planned.
+The implemented `measure` command fingerprints a target binary, runs bounded safe probes inside isolated per-probe HOME/PWD/XDG/TMP sandboxes with a sanitized environment, records `evidence.jsonl`, emits a generic `shape.json`, and writes experimental `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` artifacts over currently measured dimensions. The shape artifact now includes aliases, usage-derived positionals, flag grammar such as boolean, required-value, optional-value, repeatable, and required flags, plus output contracts for advertised JSON/YAML/table/plain modes where help output exposes them. CLIARE probes documented output flags only through safe help probes such as `--json --help` or `--format json --help`, then records parse success or failure in the shape and scorecard. Every probe is also wrapped in sandbox filesystem snapshots so persistent created, modified, and deleted files are recorded as safety evidence. It also writes `measure-cache.json`; later runs reuse artifacts when the target fingerprint, traversal profile, sandbox profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE version, measurement engine, and artifact set match. Use `--refresh` to force a new probe run. The implemented `guard` command measures a target, rewrites CI artifacts with guard context, fails on total-score regression against a baseline scorecard, and can also evaluate `cliare.policy.v1` JSON policies through `--policy`. Policies support `min_total_score`, per-dimension `min_subscores`, side-effect `allow_paths`, `max_unapproved`, and `deny_credential_like`. Traversal profiles provide useful presets: `quick` is depth 3 / 64 probes / concurrency 2, `standard` is depth 5 / 256 probes / concurrency 4, and `deep` is depth 8 / 1000 probes / concurrency 8. `--max-depth`, `--max-probes`, `--min-expected-value`, and `--concurrency` override the selected profile for larger, tighter, or more aggressive CI runs. Scorecards also report coverage pressure, output coverage, side-effect coverage, scheduler accounting, and runtime isolation metadata, including profile, observed depth, frontier remaining, expected-value convergence skips, candidates skipped by depth, stop reason, probes skipped by budget, probes scheduled, scheduler rounds, output parse successes, sandbox file changes, sandbox root, and env policy. The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads only CLIARE artifacts, appends the Markdown summary to the job summary, and exposes score/output paths. Other commands remain planned.
+
+Example policy:
+
+```json
+{
+  "schema_version": "cliare.policy.v1",
+  "min_total_score": 80.0,
+  "min_subscores": {
+    "output": 50.0,
+    "safety": 90.0
+  },
+  "side_effects": {
+    "allow_paths": ["xdg-cache/fixture-cli/**"],
+    "max_unapproved": 0,
+    "deny_credential_like": true
+  }
+}
+```
 
 ## Design Packet
 
