@@ -38,6 +38,7 @@ pub struct MeasurementSummary {
     pub score_status: String,
     pub findings: usize,
     pub observed_max_depth: usize,
+    pub traversal_profile: String,
     pub max_depth: usize,
     pub max_probes: usize,
     pub frontier_remaining: usize,
@@ -65,6 +66,7 @@ impl MeasurementSummary {
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
             "coverage pressure:".to_owned(),
+            format!("  profile: {}", self.traversal_profile),
             format!(
                 "  depth: observed {} / budget {}",
                 self.observed_max_depth, self.max_depth
@@ -93,7 +95,9 @@ impl MeasurementSummary {
 
 pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let target = fingerprint_target(&args.target).await?;
-    let profile = ProbeProfile::from(&args);
+    let max_depth = args.resolved_max_depth();
+    let max_probes = args.resolved_max_probes();
+    let profile = ProbeProfile::from_args(&args, max_depth, max_probes);
 
     if !args.refresh
         && let Some(summary) = cached_summary(&args.out, &target, &profile).await?
@@ -111,7 +115,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .await?;
 
     let binary_name = target_binary_name(&target);
-    let mut planner = DeterministicPlanner::new(args.max_depth, invalid_token_seed(&binary_name));
+    let mut planner = DeterministicPlanner::new(max_depth, invalid_token_seed(&binary_name));
     planner.seed(bootstrap_probes(&target));
     let process = TargetProcess::new(
         target.resolved.clone(),
@@ -121,7 +125,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let mut observations = Vec::new();
     let mut probes_completed = 0_usize;
 
-    while probes_completed < args.max_probes {
+    while probes_completed < max_probes {
         let Some(probe) = planner.next() else {
             break;
         };
@@ -164,7 +168,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let planner_stats = planner.stats();
     let run_context = ScoreRunContext {
         max_depth: planner_stats.max_depth,
-        max_probes: args.max_probes,
+        max_probes,
+        traversal_profile: args.profile.label(),
         frontier_remaining: planner_stats.frontier_remaining,
         candidates_skipped_by_depth: planner_stats.candidates_skipped_by_depth,
     };
@@ -185,6 +190,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         score_status: score_artifacts.status.to_owned(),
         findings: score_artifacts.findings,
         observed_max_depth: score_artifacts.observed_max_depth,
+        traversal_profile: score_artifacts.traversal_profile.to_owned(),
         max_depth: score_artifacts.max_depth,
         max_probes: score_artifacts.max_probes,
         frontier_remaining: score_artifacts.frontier_remaining,
@@ -200,19 +206,21 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 struct ProbeProfile {
+    traversal_profile: crate::cli::TraversalProfile,
     timeout_ms: u64,
     output_limit_bytes: usize,
     max_depth: usize,
     max_probes: usize,
 }
 
-impl From<&MeasureArgs> for ProbeProfile {
-    fn from(args: &MeasureArgs) -> Self {
+impl ProbeProfile {
+    fn from_args(args: &MeasureArgs, max_depth: usize, max_probes: usize) -> Self {
         Self {
+            traversal_profile: args.profile,
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
-            max_depth: args.max_depth,
-            max_probes: args.max_probes,
+            max_depth,
+            max_probes,
         }
     }
 }
@@ -237,6 +245,7 @@ struct CachedMeasurementSummary {
     score_status: String,
     findings: usize,
     observed_max_depth: usize,
+    traversal_profile: String,
     max_depth: usize,
     max_probes: usize,
     frontier_remaining: usize,
@@ -295,6 +304,7 @@ impl MeasurementCacheManifest {
             score_status: self.summary.score_status,
             findings: self.summary.findings,
             observed_max_depth: self.summary.observed_max_depth,
+            traversal_profile: self.summary.traversal_profile,
             max_depth: self.summary.max_depth,
             max_probes: self.summary.max_probes,
             frontier_remaining: self.summary.frontier_remaining,
@@ -347,6 +357,7 @@ async fn write_cache_manifest(
             score_status: summary.score_status.to_owned(),
             findings: summary.findings,
             observed_max_depth: summary.observed_max_depth,
+            traversal_profile: summary.traversal_profile.to_owned(),
             max_depth: summary.max_depth,
             max_probes: summary.max_probes,
             frontier_remaining: summary.frontier_remaining,
@@ -446,6 +457,7 @@ mod tests {
             score_status: "experimental partial".to_owned(),
             findings: 2,
             observed_max_depth: 1,
+            traversal_profile: "standard".to_owned(),
             max_depth: 5,
             max_probes: 256,
             frontier_remaining: 0,

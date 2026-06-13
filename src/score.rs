@@ -74,6 +74,7 @@ pub struct Coverage {
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
     observed_max_depth: usize,
+    traversal_profile: &'static str,
     max_depth: usize,
     max_probes: usize,
     probes_completed: usize,
@@ -120,6 +121,7 @@ pub struct ScoreArtifactSummary {
     pub status: &'static str,
     pub findings: usize,
     pub observed_max_depth: usize,
+    pub traversal_profile: &'static str,
     pub max_depth: usize,
     pub max_probes: usize,
     pub frontier_remaining: usize,
@@ -130,6 +132,7 @@ pub struct ScoreArtifactSummary {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ScoreRunContext {
+    pub traversal_profile: &'static str,
     pub max_depth: usize,
     pub max_probes: usize,
     pub frontier_remaining: usize,
@@ -156,6 +159,7 @@ pub async fn write_score_artifacts(
         status: score_status_label(&scorecard.score.status),
         findings: scorecard.findings.len(),
         observed_max_depth: scorecard.coverage.observed_max_depth,
+        traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
         max_probes: scorecard.coverage.max_probes,
         frontier_remaining: scorecard.coverage.frontier_remaining,
@@ -482,6 +486,10 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.observed_max_depth
     ));
     report.push_str(&format!(
+        "- Traversal profile: `{}`\n",
+        scorecard.coverage.traversal_profile
+    ));
+    report.push_str(&format!(
         "- Depth budget: `{}`\n",
         scorecard.coverage.max_depth
     ));
@@ -627,6 +635,7 @@ impl Metrics {
                 avg_command_confidence,
                 avg_flag_confidence,
                 observed_max_depth: observed_max_depth(&commands),
+                traversal_profile: run_context.traversal_profile,
                 max_depth: run_context.max_depth,
                 max_probes: run_context.max_probes,
                 probes_completed: observations.len(),
@@ -820,6 +829,7 @@ mod tests {
                 Some(0),
             )],
             ScoreRunContext {
+                traversal_profile: "standard",
                 max_depth: 5,
                 max_probes: 256,
                 frontier_remaining: 0,
@@ -832,6 +842,7 @@ mod tests {
         assert!(report.contains("# CLIARE Report"));
         assert!(report.contains("| output | not measured |"));
         assert!(report.contains("experimental partial"));
+        assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
         assert!(report.contains("- Budget exhausted: `false`"));
     }
@@ -859,6 +870,7 @@ mod tests {
             target(),
             &observations,
             ScoreRunContext {
+                traversal_profile: "quick",
                 max_depth: 1,
                 max_probes: 2,
                 frontier_remaining: 3,
@@ -867,6 +879,7 @@ mod tests {
         );
 
         assert_eq!(scorecard.coverage.observed_max_depth, 2);
+        assert_eq!(scorecard.coverage.traversal_profile, "quick");
         assert_eq!(scorecard.coverage.max_depth, 1);
         assert_eq!(scorecard.coverage.max_probes, 2);
         assert_eq!(scorecard.coverage.frontier_remaining, 3);

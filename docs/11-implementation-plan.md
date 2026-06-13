@@ -284,14 +284,16 @@ The current implementation includes a first guard mode:
 
 The default recursion budget has also been raised for real-world CLIs with deep subcommand hierarchies:
 
-- `--max-depth` defaults to 5 command path segments.
-- `--max-probes` defaults to 256 probes.
-- `measure` and `guard` share the same defaults.
+- `--profile quick` resolves to 3 command path segments and 64 probes.
+- `--profile standard` resolves to 5 command path segments and 256 probes.
+- `--profile deep` resolves to 8 command path segments and 1000 probes.
+- `standard` is the default for `measure` and `guard`.
+- `--max-depth` and `--max-probes` override the selected profile.
 - The planner still enforces both limits deterministically so CI runs stay bounded.
 
 Coverage pressure is now explicit rather than hidden inside the score:
 
-- terminal summaries show observed depth, depth budget, completed probes, probe budget, remaining frontier, depth-skipped candidates, budget-skipped probes, and whether the run exhausted its budget
+- terminal summaries show traversal profile, observed depth, depth budget, completed probes, probe budget, remaining frontier, depth-skipped candidates, budget-skipped probes, and whether the run exhausted its budget
 - `scorecard.json` records the same fields under `coverage`
 - `report.md` renders the budget pressure fields for CI artifacts and human review
 - score v0 does not directly penalize a CLI for being deep; it exposes budget pressure so callers can decide whether to rerun with a larger profile
@@ -299,7 +301,7 @@ Coverage pressure is now explicit rather than hidden inside the score:
 Measurement cache reuse is now implemented:
 
 - successful measurement writes `measure-cache.json`
-- cache matching requires the same target fingerprint, probe profile, CLIARE package version, and measurement engine
+- cache matching requires the same target fingerprint, traversal profile, resolved probe budget, CLIARE package version, and measurement engine
 - reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, and `report.md` to still exist
 - terminal summaries print `cache: hit` or `cache: miss`
 - `--refresh` bypasses cache reuse for both `measure` and `guard`

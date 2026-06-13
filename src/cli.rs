@@ -1,10 +1,15 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand, ValueHint};
+use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
+use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_MAX_DEPTH: usize = 5;
-pub const DEFAULT_MAX_PROBES: usize = 256;
+pub const QUICK_MAX_DEPTH: usize = 3;
+pub const QUICK_MAX_PROBES: usize = 64;
+pub const STANDARD_MAX_DEPTH: usize = 5;
+pub const STANDARD_MAX_PROBES: usize = 256;
+pub const DEEP_MAX_DEPTH: usize = 8;
+pub const DEEP_MAX_PROBES: usize = 1_000;
 
 #[derive(Debug, Parser)]
 #[command(name = "cliare")]
@@ -45,13 +50,17 @@ pub struct MeasureArgs {
     #[arg(long, value_name = "BYTES", default_value_t = 1_048_576)]
     pub output_limit_bytes: usize,
 
+    /// Traversal budget preset.
+    #[arg(long, value_enum, default_value_t = TraversalProfile::Standard)]
+    pub profile: TraversalProfile,
+
     /// Maximum command-path depth to recursively confirm.
-    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_DEPTH)]
-    pub max_depth: usize,
+    #[arg(long, value_name = "N")]
+    pub max_depth: Option<usize>,
 
     /// Maximum probes to execute for this run.
-    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PROBES)]
-    pub max_probes: usize,
+    #[arg(long, value_name = "N")]
+    pub max_probes: Option<usize>,
 
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
@@ -61,6 +70,16 @@ pub struct MeasureArgs {
 impl MeasureArgs {
     pub fn timeout(&self) -> Duration {
         Duration::from_millis(self.timeout_ms)
+    }
+
+    pub fn resolved_max_depth(&self) -> usize {
+        self.max_depth
+            .unwrap_or_else(|| self.profile.default_max_depth())
+    }
+
+    pub fn resolved_max_probes(&self) -> usize {
+        self.max_probes
+            .unwrap_or_else(|| self.profile.default_max_probes())
     }
 }
 
@@ -90,13 +109,17 @@ pub struct GuardArgs {
     #[arg(long, value_name = "BYTES", default_value_t = 1_048_576)]
     pub output_limit_bytes: usize,
 
+    /// Traversal budget preset.
+    #[arg(long, value_enum, default_value_t = TraversalProfile::Standard)]
+    pub profile: TraversalProfile,
+
     /// Maximum command-path depth to recursively confirm.
-    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_DEPTH)]
-    pub max_depth: usize,
+    #[arg(long, value_name = "N")]
+    pub max_depth: Option<usize>,
 
     /// Maximum probes to execute for this run.
-    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PROBES)]
-    pub max_probes: usize,
+    #[arg(long, value_name = "N")]
+    pub max_probes: Option<usize>,
 
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
@@ -110,6 +133,7 @@ impl From<&GuardArgs> for MeasureArgs {
             out: args.out.clone(),
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
+            profile: args.profile,
             max_depth: args.max_depth,
             max_probes: args.max_probes,
             refresh: args.refresh,
@@ -117,11 +141,54 @@ impl From<&GuardArgs> for MeasureArgs {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum TraversalProfile {
+    Quick,
+    Standard,
+    Deep,
+}
+
+impl TraversalProfile {
+    pub fn default_max_depth(self) -> usize {
+        match self {
+            Self::Quick => QUICK_MAX_DEPTH,
+            Self::Standard => STANDARD_MAX_DEPTH,
+            Self::Deep => DEEP_MAX_DEPTH,
+        }
+    }
+
+    pub fn default_max_probes(self) -> usize {
+        match self {
+            Self::Quick => QUICK_MAX_PROBES,
+            Self::Standard => STANDARD_MAX_PROBES,
+            Self::Deep => DEEP_MAX_PROBES,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Quick => "quick",
+            Self::Standard => "standard",
+            Self::Deep => "deep",
+        }
+    }
+}
+
+impl std::fmt::Display for TraversalProfile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::{CommandFactory, Parser};
 
-    use super::{Cli, Command, DEFAULT_MAX_DEPTH, DEFAULT_MAX_PROBES};
+    use super::{
+        Cli, Command, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, QUICK_MAX_DEPTH, QUICK_MAX_PROBES,
+        STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES, TraversalProfile,
+    };
 
     #[test]
     fn clap_surface_exposes_measure_and_global_version() {
@@ -143,18 +210,66 @@ mod tests {
 
         match measure.command {
             Command::Measure(args) => {
-                assert_eq!(args.max_depth, DEFAULT_MAX_DEPTH);
-                assert_eq!(args.max_probes, DEFAULT_MAX_PROBES);
+                assert_eq!(args.profile, TraversalProfile::Standard);
+                assert_eq!(args.resolved_max_depth(), STANDARD_MAX_DEPTH);
+                assert_eq!(args.resolved_max_probes(), STANDARD_MAX_PROBES);
             }
             Command::Guard(_) => panic!("expected measure command"),
         }
 
         match guard.command {
             Command::Guard(args) => {
-                assert_eq!(args.max_depth, DEFAULT_MAX_DEPTH);
-                assert_eq!(args.max_probes, DEFAULT_MAX_PROBES);
+                let measure_args = super::MeasureArgs::from(&args);
+                assert_eq!(args.profile, TraversalProfile::Standard);
+                assert_eq!(measure_args.resolved_max_depth(), STANDARD_MAX_DEPTH);
+                assert_eq!(measure_args.resolved_max_probes(), STANDARD_MAX_PROBES);
             }
             Command::Measure(_) => panic!("expected guard command"),
+        }
+    }
+
+    #[test]
+    fn traversal_profiles_resolve_budget_presets_and_overrides() {
+        let quick = Cli::try_parse_from(["cliare", "measure", "target", "--profile", "quick"])
+            .expect("valid quick profile");
+        let deep = Cli::try_parse_from(["cliare", "measure", "target", "--profile", "deep"])
+            .expect("valid deep profile");
+        let override_depth = Cli::try_parse_from([
+            "cliare",
+            "measure",
+            "target",
+            "--profile",
+            "quick",
+            "--max-depth",
+            "7",
+            "--max-probes",
+            "128",
+        ])
+        .expect("valid overrides");
+
+        assert_budget(
+            quick,
+            TraversalProfile::Quick,
+            QUICK_MAX_DEPTH,
+            QUICK_MAX_PROBES,
+        );
+        assert_budget(
+            deep,
+            TraversalProfile::Deep,
+            DEEP_MAX_DEPTH,
+            DEEP_MAX_PROBES,
+        );
+        assert_budget(override_depth, TraversalProfile::Quick, 7, 128);
+    }
+
+    fn assert_budget(cli: Cli, profile: TraversalProfile, max_depth: usize, max_probes: usize) {
+        match cli.command {
+            Command::Measure(args) => {
+                assert_eq!(args.profile, profile);
+                assert_eq!(args.resolved_max_depth(), max_depth);
+                assert_eq!(args.resolved_max_probes(), max_probes);
+            }
+            Command::Guard(_) => panic!("expected measure command"),
         }
     }
 }

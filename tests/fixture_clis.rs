@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cliare::cli::{GuardArgs, MeasureArgs};
+use cliare::cli::{GuardArgs, MeasureArgs, TraversalProfile};
 use serde_json::Value;
 
 #[tokio::test]
@@ -128,8 +128,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         out: out.clone(),
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 32,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
         refresh: false,
     })
     .await
@@ -139,8 +140,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         out: out.clone(),
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 32,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
         refresh: false,
     })
     .await
@@ -150,8 +152,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         out,
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 32,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
         refresh: true,
     })
     .await
@@ -176,8 +179,9 @@ async fn guard_passes_against_same_score_baseline() {
         out: baseline_out.clone(),
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 32,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
         refresh: false,
     })
     .await
@@ -190,8 +194,9 @@ async fn guard_passes_against_same_score_baseline() {
         allowed_drop: 0.0,
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 32,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(32),
         refresh: false,
     })
     .await
@@ -219,8 +224,9 @@ async fn guard_fails_when_score_drops_beyond_allowed_threshold() {
         allowed_drop: 1.0,
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes: 16,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(16),
         refresh: false,
     })
     .await
@@ -241,8 +247,9 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
         out: out.clone(),
         timeout_ms: 1_000,
         output_limit_bytes: 64 * 1024,
-        max_depth: 2,
-        max_probes,
+        profile: TraversalProfile::Standard,
+        max_depth: Some(2),
+        max_probes: Some(max_probes),
         refresh: false,
     })
     .await

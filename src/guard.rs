@@ -175,6 +175,7 @@ mod tests {
             score_status: "experimental partial".to_owned(),
             findings: 0,
             observed_max_depth: 1,
+            traversal_profile: "standard".to_owned(),
             max_depth: 5,
             max_probes: 256,
             frontier_remaining: 0,
