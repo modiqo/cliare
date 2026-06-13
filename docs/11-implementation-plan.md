@@ -196,6 +196,7 @@ The current implementation has local probing, evidence, and the first generic cl
 - `fingerprint` resolves explicit and PATH targets to absolute binaries and hashes them.
 - `sandbox` creates an isolated runtime root under the artifact directory with deterministic HOME, PWD, XDG config/cache/data, temp dirs, and a cleared allowlisted environment.
 - `process` executes probes with bounded stdout/stderr, timeouts, null stdin, and sandbox cwd/env.
+- `process` snapshots sandbox HOME/cwd/XDG/TMP before and after each probe and attaches persistent file changes to process evidence.
 - `evidence` records run-level sandbox metadata and per-probe cwd/env policy.
 - `claims` converts observations into command and flag beliefs.
 - `claims` also records advertised output contracts and parser results for safe output-mode probes.
@@ -203,7 +204,7 @@ The current implementation has local probing, evidence, and the first generic cl
 - `shape` emits the catalog from claims rather than from a framework parser.
 - Invalid-child probes are gated on evidence of nested commands so leaf commands with positionals are not misclassified as command trees.
 - Output-mode probes combine the documented output flag with `--help` so CLIARE can validate machine-readable behavior without running a command body.
-- Fixture CLI integration tests cover custom help, aliases, noisy help, runtime false-positive rejection, cache reuse, score guards, sandbox HOME/PWD isolation, parseable JSON output, and malformed JSON output.
+- Fixture CLI integration tests cover custom help, aliases, noisy help, runtime false-positive rejection, cache reuse, score guards, sandbox HOME/PWD isolation, parseable JSON output, malformed JSON output, clean probes, cache writes, and credential-like writes.
 
 ---
 
@@ -241,12 +242,13 @@ Compute initial CLIARE score and produce human report.
 
 The current implementation emits experimental partial `scorecard.json` and `report.md` artifacts from `measure`.
 
-- Discovery, grammar, execution, recovery, and output are scored from current evidence.
+- Discovery, grammar, execution, recovery, output, and initial safety are scored from current evidence.
 - Output scoring credits advertised JSON/YAML contracts and safe parse-probe success; CLIs with no machine-readable mode now receive output findings.
-- Safety is present as a `not_measured` dimension until side-effect observation exists.
+- Safety scoring uses persistent sandbox file changes from safe probes and reports created, modified, deleted, and credential-like paths.
 - Fixture tests verify that a clearer CLI scores higher than a poor CLI.
 - Fixture tests verify that parseable JSON output improves the output subscore and malformed JSON records a parse gap.
-- The Markdown report explains the score, measured coverage, output coverage, and findings.
+- Fixture tests verify that clean probes receive full safety credit and help-time writes lower the safety score.
+- The Markdown report explains the score, measured coverage, output coverage, side-effect coverage, and findings.
 - The CLI prints a terminal summary with score, probe count, finding count, and artifact paths.
 
 ---

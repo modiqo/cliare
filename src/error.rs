@@ -36,6 +36,27 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read sandbox directory {path}")]
+    ReadSandboxDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read sandbox metadata {path}")]
+    ReadSandboxMetadata {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read sandbox file {path}")]
+    ReadSandboxFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to open evidence log {path}")]
     OpenEvidenceLog {
         path: PathBuf,

@@ -81,6 +81,12 @@ pub struct Coverage {
     machine_readable_output_contracts: usize,
     output_mode_probes_completed: usize,
     output_mode_parse_successes: usize,
+    side_effect_files_created: usize,
+    side_effect_files_modified: usize,
+    side_effect_files_deleted: usize,
+    side_effect_files_total: usize,
+    side_effect_probe_count: usize,
+    credential_like_side_effects: usize,
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
     observed_max_depth: usize,
@@ -148,6 +154,12 @@ pub struct ScoreArtifactSummary {
     pub machine_readable_output_contracts: usize,
     pub output_mode_probes_completed: usize,
     pub output_mode_parse_successes: usize,
+    pub side_effect_files_created: usize,
+    pub side_effect_files_modified: usize,
+    pub side_effect_files_deleted: usize,
+    pub side_effect_files_total: usize,
+    pub side_effect_probe_count: usize,
+    pub credential_like_side_effects: usize,
     pub observed_max_depth: usize,
     pub traversal_profile: &'static str,
     pub max_depth: usize,
@@ -225,6 +237,12 @@ pub async fn write_score_artifacts(
         machine_readable_output_contracts: scorecard.coverage.machine_readable_output_contracts,
         output_mode_probes_completed: scorecard.coverage.output_mode_probes_completed,
         output_mode_parse_successes: scorecard.coverage.output_mode_parse_successes,
+        side_effect_files_created: scorecard.coverage.side_effect_files_created,
+        side_effect_files_modified: scorecard.coverage.side_effect_files_modified,
+        side_effect_files_deleted: scorecard.coverage.side_effect_files_deleted,
+        side_effect_files_total: scorecard.coverage.side_effect_files_total,
+        side_effect_probe_count: scorecard.coverage.side_effect_probe_count,
+        credential_like_side_effects: scorecard.coverage.credential_like_side_effects,
         observed_max_depth: scorecard.coverage.observed_max_depth,
         traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
@@ -354,11 +372,10 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Safety,
         DimensionScore {
-            score: None,
+            score: Some(round_score(safety_score(metrics))),
             weight: 0.05,
-            status: DimensionStatus::NotMeasured,
-            rationale: "side-effect and dry-run classification are not implemented in score v0"
-                .to_owned(),
+            status: DimensionStatus::Measured,
+            rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
         },
     );
 
@@ -516,6 +533,35 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
         });
     }
 
+    if metrics.coverage.side_effect_files_total > 0 {
+        findings.push(Finding {
+            id: "finding.safety.safe_probe_side_effects",
+            dimension: Dimension::Safety,
+            severity: Severity::High,
+            title: "Safe probes left persistent filesystem side effects",
+            detail: format!(
+                "{} file changes were observed across {} probes.",
+                metrics.coverage.side_effect_files_total,
+                metrics.coverage.side_effect_probe_count
+            ),
+            recommendation: "Keep help, version, and diagnostic paths read-only, or clearly document unavoidable cache/config writes.",
+        });
+    }
+
+    if metrics.coverage.credential_like_side_effects > 0 {
+        findings.push(Finding {
+            id: "finding.safety.credential_like_side_effects",
+            dimension: Dimension::Safety,
+            severity: Severity::High,
+            title: "Side-effect paths looked credential-related",
+            detail: format!(
+                "{} side-effect paths contained credential-like terms.",
+                metrics.coverage.credential_like_side_effects
+            ),
+            recommendation: "Do not create token, secret, credential, or key material during discovery probes.",
+        });
+    }
+
     findings
 }
 
@@ -617,6 +663,30 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Output-mode parse successes: `{}`\n",
         scorecard.coverage.output_mode_parse_successes
+    ));
+    report.push_str(&format!(
+        "- Side-effect file changes: `{}`\n",
+        scorecard.coverage.side_effect_files_total
+    ));
+    report.push_str(&format!(
+        "- Side-effect probes: `{}`\n",
+        scorecard.coverage.side_effect_probe_count
+    ));
+    report.push_str(&format!(
+        "- Side-effect files created: `{}`\n",
+        scorecard.coverage.side_effect_files_created
+    ));
+    report.push_str(&format!(
+        "- Side-effect files modified: `{}`\n",
+        scorecard.coverage.side_effect_files_modified
+    ));
+    report.push_str(&format!(
+        "- Side-effect files deleted: `{}`\n",
+        scorecard.coverage.side_effect_files_deleted
+    ));
+    report.push_str(&format!(
+        "- Credential-like side-effect paths: `{}`\n",
+        scorecard.coverage.credential_like_side_effects
     ));
     report.push_str(&format!(
         "- Average command confidence: `{:.3}`\n",
@@ -780,6 +850,9 @@ struct Metrics {
     machine_readable_output_contracts: usize,
     output_mode_probe_count: usize,
     output_mode_parse_successes: usize,
+    side_effect_files_total: usize,
+    side_effect_probe_count: usize,
+    credential_like_side_effects: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -846,6 +919,12 @@ impl Metrics {
                 machine_readable_output_contracts,
                 output_mode_probes_completed: output_mode_probe_count,
                 output_mode_parse_successes,
+                side_effect_files_created: process_metrics.side_effect_files_created,
+                side_effect_files_modified: process_metrics.side_effect_files_modified,
+                side_effect_files_deleted: process_metrics.side_effect_files_deleted,
+                side_effect_files_total: process_metrics.side_effect_files_total,
+                side_effect_probe_count: process_metrics.side_effect_probe_count,
+                credential_like_side_effects: process_metrics.credential_like_side_effects,
                 avg_command_confidence,
                 avg_flag_confidence,
                 observed_max_depth: observed_max_depth(&commands),
@@ -873,6 +952,9 @@ impl Metrics {
             machine_readable_output_contracts,
             output_mode_probe_count,
             output_mode_parse_successes,
+            side_effect_files_total: process_metrics.side_effect_files_total,
+            side_effect_probe_count: process_metrics.side_effect_probe_count,
+            credential_like_side_effects: process_metrics.credential_like_side_effects,
             invalid_probe_count: process_metrics.invalid_probe_count,
             invalid_probe_rejections: process_metrics.invalid_probe_rejections,
         }
@@ -901,6 +983,22 @@ fn output_score(metrics: &Metrics) -> f64 {
         .machine_readable_output_contracts
         .max(metrics.output_mode_probe_count);
     advertised_score + 60.0 * ratio(metrics.output_mode_parse_successes, denominator)
+}
+
+fn safety_score(metrics: &Metrics) -> f64 {
+    if metrics.coverage.probes_completed == 0 {
+        return 0.0;
+    }
+
+    let changed_probe_penalty = 45.0
+        * ratio(
+            metrics.side_effect_probe_count,
+            metrics.coverage.probes_completed,
+        );
+    let file_penalty = (metrics.side_effect_files_total as f64 * 8.0).min(35.0);
+    let credential_penalty = (metrics.credential_like_side_effects as f64 * 20.0).min(40.0);
+
+    (100.0 - changed_probe_penalty - file_penalty - credential_penalty).max(0.0)
 }
 
 fn machine_readable_output_contract(contract: &OutputContractClaim) -> bool {
@@ -939,6 +1037,12 @@ fn observed_max_depth(commands: &[&CommandClaim]) -> usize {
 struct ProcessMetrics {
     timed_out: usize,
     failed_to_spawn: usize,
+    side_effect_files_created: usize,
+    side_effect_files_modified: usize,
+    side_effect_files_deleted: usize,
+    side_effect_files_total: usize,
+    side_effect_probe_count: usize,
+    credential_like_side_effects: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -954,6 +1058,20 @@ impl ProcessMetrics {
                 ProcessStatus::Exited { .. } => {}
             }
 
+            let side_effects = &observation.process.side_effects;
+            metrics.side_effect_files_created += side_effects.created;
+            metrics.side_effect_files_modified += side_effects.modified;
+            metrics.side_effect_files_deleted += side_effects.deleted;
+            metrics.side_effect_files_total += side_effects.total;
+            if side_effects.total > 0 {
+                metrics.side_effect_probe_count += 1;
+            }
+            metrics.credential_like_side_effects += side_effects
+                .changes
+                .iter()
+                .filter(|change| credential_like_path(&change.path))
+                .count();
+
             if matches!(
                 observation.intent,
                 ProbeIntent::InvalidCommand | ProbeIntent::InvalidChild | ProbeIntent::InvalidFlag
@@ -967,6 +1085,13 @@ impl ProcessMetrics {
 
         metrics
     }
+}
+
+fn credential_like_path(path: &Path) -> bool {
+    let text = path.display().to_string().to_ascii_lowercase();
+    ["token", "secret", "credential", "credentials", "key"]
+        .iter()
+        .any(|needle| text.contains(needle))
 }
 
 fn grammar_gaps_for(command: &CommandClaim) -> usize {
@@ -1289,6 +1414,7 @@ mod tests {
                 duration_ms: 1,
                 stdout: output(stdout),
                 stderr: output(""),
+                side_effects: crate::sandbox::SideEffectSummary::default(),
             },
         }
     }

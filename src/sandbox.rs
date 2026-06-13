@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use sha2::{Digest, Sha256};
+use tokio::fs::{self, File};
+use tokio::io::AsyncReadExt;
 
 use crate::error::{CliareError, Result};
 
@@ -50,8 +52,10 @@ pub struct ProbeSandboxEvidence {
 
 #[derive(Debug, Clone)]
 pub struct ProcessSandbox {
+    pub root: PathBuf,
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
+    regions: Vec<SandboxRegionRoot>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,8 +158,23 @@ impl Sandbox {
 
     pub fn execution(&self) -> ProcessSandbox {
         ProcessSandbox {
+            root: self.metadata.root.clone(),
             cwd: self.metadata.workdir.clone(),
             env: self.env.clone(),
+            regions: vec![
+                SandboxRegionRoot::new(SandboxRegion::Home, self.metadata.home.clone()),
+                SandboxRegionRoot::new(SandboxRegion::Workdir, self.metadata.workdir.clone()),
+                SandboxRegionRoot::new(
+                    SandboxRegion::XdgConfig,
+                    self.metadata.xdg_config_home.clone(),
+                ),
+                SandboxRegionRoot::new(
+                    SandboxRegion::XdgCache,
+                    self.metadata.xdg_cache_home.clone(),
+                ),
+                SandboxRegionRoot::new(SandboxRegion::XdgData, self.metadata.xdg_data_home.clone()),
+                SandboxRegionRoot::new(SandboxRegion::Tmp, self.metadata.tmp.clone()),
+            ],
         }
     }
 
@@ -166,5 +185,286 @@ impl Sandbox {
             env_policy: self.metadata.env_policy,
             env_keys: self.metadata.env_keys.clone(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SandboxRegionRoot {
+    region: SandboxRegion,
+    path: PathBuf,
+}
+
+impl SandboxRegionRoot {
+    fn new(region: SandboxRegion, path: PathBuf) -> Self {
+        Self { region, path }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxRegion {
+    Home,
+    Workdir,
+    XdgConfig,
+    XdgCache,
+    XdgData,
+    Tmp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileChangeKind {
+    Created,
+    Modified,
+    Deleted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FileChange {
+    pub kind: FileChangeKind,
+    pub region: SandboxRegion,
+    pub path: PathBuf,
+    pub size_bytes: Option<u64>,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct SideEffectSummary {
+    pub created: usize,
+    pub modified: usize,
+    pub deleted: usize,
+    pub total: usize,
+    pub changes: Vec<FileChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideEffectSnapshot {
+    files: BTreeMap<PathBuf, FileSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileSnapshot {
+    region: SandboxRegion,
+    size_bytes: u64,
+    sha256: String,
+}
+
+impl ProcessSandbox {
+    pub async fn snapshot(&self) -> Result<SideEffectSnapshot> {
+        let mut files = BTreeMap::new();
+
+        for region_root in &self.regions {
+            scan_region(&self.root, region_root, &mut files).await?;
+        }
+
+        Ok(SideEffectSnapshot { files })
+    }
+}
+
+impl SideEffectSnapshot {
+    pub fn diff(&self, after: &Self) -> SideEffectSummary {
+        let mut changes = Vec::new();
+
+        for (path, before_file) in &self.files {
+            match after.files.get(path) {
+                Some(after_file) if after_file == before_file => {}
+                Some(after_file) => changes.push(FileChange {
+                    kind: FileChangeKind::Modified,
+                    region: after_file.region,
+                    path: path.clone(),
+                    size_bytes: Some(after_file.size_bytes),
+                    sha256: Some(after_file.sha256.clone()),
+                }),
+                None => changes.push(FileChange {
+                    kind: FileChangeKind::Deleted,
+                    region: before_file.region,
+                    path: path.clone(),
+                    size_bytes: None,
+                    sha256: None,
+                }),
+            }
+        }
+
+        for (path, after_file) in &after.files {
+            if self.files.contains_key(path) {
+                continue;
+            }
+            changes.push(FileChange {
+                kind: FileChangeKind::Created,
+                region: after_file.region,
+                path: path.clone(),
+                size_bytes: Some(after_file.size_bytes),
+                sha256: Some(after_file.sha256.clone()),
+            });
+        }
+
+        let created = changes
+            .iter()
+            .filter(|change| change.kind == FileChangeKind::Created)
+            .count();
+        let modified = changes
+            .iter()
+            .filter(|change| change.kind == FileChangeKind::Modified)
+            .count();
+        let deleted = changes
+            .iter()
+            .filter(|change| change.kind == FileChangeKind::Deleted)
+            .count();
+
+        SideEffectSummary {
+            created,
+            modified,
+            deleted,
+            total: changes.len(),
+            changes,
+        }
+    }
+}
+
+async fn scan_region(
+    sandbox_root: &Path,
+    region_root: &SandboxRegionRoot,
+    files: &mut BTreeMap<PathBuf, FileSnapshot>,
+) -> Result<()> {
+    let mut pending = vec![region_root.path.clone()];
+
+    while let Some(dir) = pending.pop() {
+        let mut entries =
+            fs::read_dir(&dir)
+                .await
+                .map_err(|source| CliareError::ReadSandboxDir {
+                    path: dir.clone(),
+                    source,
+                })?;
+
+        while let Some(entry) =
+            entries
+                .next_entry()
+                .await
+                .map_err(|source| CliareError::ReadSandboxDir {
+                    path: dir.clone(),
+                    source,
+                })?
+        {
+            let path = entry.path();
+            let metadata =
+                entry
+                    .metadata()
+                    .await
+                    .map_err(|source| CliareError::ReadSandboxMetadata {
+                        path: path.clone(),
+                        source,
+                    })?;
+
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if metadata.is_file() {
+                let relative_path = path
+                    .strip_prefix(sandbox_root)
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|_| path.clone());
+                files.insert(
+                    relative_path,
+                    FileSnapshot {
+                        region: region_root.region,
+                        size_bytes: metadata.len(),
+                        sha256: sha256_file(&path).await?,
+                    },
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = File::open(path)
+        .await
+        .map_err(|source| CliareError::ReadSandboxFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let bytes_read =
+            file.read(&mut buffer)
+                .await
+                .map_err(|source| CliareError::ReadSandboxFile {
+                    path: path.to_path_buf(),
+                    source,
+                })?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::{FileChangeKind, Sandbox, SandboxRegion};
+
+    #[tokio::test]
+    async fn snapshots_report_created_modified_and_deleted_files_by_region() {
+        let root = unique_test_dir("sandbox-side-effects");
+        let sandbox = Sandbox::create(&root).await.expect("sandbox is created");
+        let execution = sandbox.execution();
+
+        let deleted_path = sandbox.metadata().home.join("deleted");
+        let modified_path = sandbox.metadata().workdir.join("modified");
+        tokio::fs::write(&deleted_path, "before")
+            .await
+            .expect("deleted fixture is written");
+        tokio::fs::write(&modified_path, "before")
+            .await
+            .expect("modified fixture is written");
+
+        let before = execution
+            .snapshot()
+            .await
+            .expect("before snapshot succeeds");
+
+        tokio::fs::remove_file(&deleted_path)
+            .await
+            .expect("deleted fixture is removed");
+        tokio::fs::write(&modified_path, "after")
+            .await
+            .expect("modified fixture is changed");
+        tokio::fs::write(sandbox.metadata().tmp.join("created"), "new")
+            .await
+            .expect("created fixture is written");
+
+        let after = execution.snapshot().await.expect("after snapshot succeeds");
+        let diff = before.diff(&after);
+
+        assert_eq!(diff.created, 1);
+        assert_eq!(diff.modified, 1);
+        assert_eq!(diff.deleted, 1);
+        assert!(diff.changes.iter().any(|change| {
+            change.kind == FileChangeKind::Created && change.region == SandboxRegion::Tmp
+        }));
+        assert!(diff.changes.iter().any(|change| {
+            change.kind == FileChangeKind::Modified && change.region == SandboxRegion::Workdir
+        }));
+        assert!(diff.changes.iter().any(|change| {
+            change.kind == FileChangeKind::Deleted && change.region == SandboxRegion::Home
+        }));
+
+        let _ = tokio::fs::remove_dir_all(root).await;
+    }
+
+    fn unique_test_dir(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("cliare-{name}-{}-{nonce}", std::process::id()))
     }
 }

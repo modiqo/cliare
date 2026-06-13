@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::process::{OutputCapture, ProbeOutcome};
-use crate::sandbox::{ProbeSandboxEvidence, SandboxMetadata};
+use crate::sandbox::{ProbeSandboxEvidence, SandboxMetadata, SideEffectSummary};
 
 const SCHEMA_VERSION: &str = "cliare.evidence.v1";
 
@@ -126,6 +126,7 @@ pub struct ProcessCompleted {
     pub duration_ms: u128,
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
+    pub side_effects: SideEffectSummary,
 }
 
 #[derive(Debug, Serialize)]
@@ -172,6 +173,7 @@ impl ProcessCompleted {
             duration_ms: outcome.duration.as_millis(),
             stdout: outcome.stdout,
             stderr: outcome.stderr,
+            side_effects: outcome.side_effects,
         }
     }
 }

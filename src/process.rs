@@ -10,7 +10,7 @@ use tokio::time;
 
 use crate::error::{CliareError, Result};
 use crate::evidence::ProbeIntent;
-use crate::sandbox::ProcessSandbox;
+use crate::sandbox::{ProcessSandbox, SideEffectSummary};
 
 #[derive(Debug, Clone)]
 pub struct ProbeSpec {
@@ -122,6 +122,7 @@ impl TargetProcess {
     pub async fn run(&self, probe: &ProbeSpec) -> Result<ProbeOutcome> {
         let started = Instant::now();
         let argv = self.argv(probe);
+        let before_side_effects = self.sandbox.snapshot().await?;
         let mut command = Command::new(&self.target);
         command
             .args(&probe.args)
@@ -161,6 +162,8 @@ impl TargetProcess {
 
         let stdout = stdout_task.await.map_err(CliareError::Join)??;
         let stderr = stderr_task.await.map_err(CliareError::Join)??;
+        let after_side_effects = self.sandbox.snapshot().await?;
+        let side_effects = before_side_effects.diff(&after_side_effects);
 
         Ok(ProbeOutcome {
             argv,
@@ -169,6 +172,7 @@ impl TargetProcess {
             duration: started.elapsed(),
             stdout,
             stderr,
+            side_effects,
         })
     }
 
@@ -185,6 +189,7 @@ pub struct ProbeOutcome {
     pub duration: Duration,
     pub stdout: OutputCapture,
     pub stderr: OutputCapture,
+    pub side_effects: SideEffectSummary,
 }
 
 #[derive(Debug, Clone, Serialize)]

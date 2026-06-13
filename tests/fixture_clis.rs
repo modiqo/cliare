@@ -127,7 +127,11 @@ async fn noisy_help_still_infers_from_stdout_layout() {
             .is_some()
     );
     assert!(artifacts.report.contains("# CLIARE Report"));
-    assert!(artifacts.report.contains("not measured"));
+    assert!(
+        artifacts
+            .report
+            .contains("| safety | 100.0 | 0.05 | measured |")
+    );
     assert!(artifacts.report.contains("Budget exhausted"));
     assert!(artifacts.report.contains("Traversal stop reason"));
 }
@@ -210,6 +214,84 @@ async fn malformed_output_mode_records_parse_gap_and_finding() {
     assert_eq!(
         artifacts.scorecard["coverage"]["output_mode_parse_successes"].as_u64(),
         Some(0)
+    );
+}
+
+#[tokio::test]
+async fn clean_cli_reports_zero_side_effects_and_full_safety_score() {
+    let artifacts = measure_fixture(
+        "clean_cli_reports_zero_side_effects_and_full_safety_score",
+        noisy_help_script(),
+        32,
+    )
+    .await;
+
+    assert_eq!(
+        artifacts.scorecard["coverage"]["side_effect_files_total"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(
+        artifacts.scorecard["coverage"]["side_effect_probe_count"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(
+        artifacts.scorecard["subscores"]["safety"]["score"].as_f64(),
+        Some(100.0)
+    );
+}
+
+#[tokio::test]
+async fn help_cache_write_is_recorded_as_safety_evidence() {
+    let artifacts = measure_fixture(
+        "help_cache_write_is_recorded_as_safety_evidence",
+        cache_writing_help_script(),
+        32,
+    )
+    .await;
+
+    assert!(
+        artifacts
+            .evidence
+            .contains("\"side_effects\":{\"created\":")
+    );
+    assert!(
+        artifacts.scorecard["coverage"]["side_effect_files_created"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+    assert!(
+        artifacts.scorecard["subscores"]["safety"]["score"]
+            .as_f64()
+            .unwrap_or(100.0)
+            < 100.0
+    );
+    assert!(
+        artifacts
+            .report
+            .contains("Safe probes left persistent filesystem side effects")
+    );
+}
+
+#[tokio::test]
+async fn credential_like_side_effect_paths_are_reported() {
+    let artifacts = measure_fixture(
+        "credential_like_side_effect_paths_are_reported",
+        credential_writing_help_script(),
+        32,
+    )
+    .await;
+
+    assert!(
+        artifacts.scorecard["coverage"]["credential_like_side_effects"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+    assert!(
+        artifacts
+            .report
+            .contains("Side-effect paths looked credential-related")
     );
 }
 
@@ -819,6 +901,109 @@ case "$1" in
   --__cliare_unknown_*|__cliare_unknown_*)
     echo "unknown input" >&2
     exit 2
+    ;;
+  *)
+    echo "unknown command: $1" >&2
+    exit 2
+    ;;
+esac
+"#
+}
+
+fn cache_writing_help_script() -> &'static str {
+    r#"#!/bin/sh
+
+write_cache() {
+  mkdir -p "$XDG_CACHE_HOME/fixture-cli"
+  printf cache > "$XDG_CACHE_HOME/fixture-cli/help-cache"
+}
+
+case "$1" in
+  ""|"--help"|"-h"|"help")
+    write_cache
+    cat <<'EOF'
+Commands:
+  run  Run the job
+
+Options:
+  --help  Show help
+EOF
+    exit 0
+    ;;
+  "run")
+    case "$2" in
+      ""|"--help")
+        write_cache
+        cat <<'EOF'
+Usage: fixture-cli run [OPTIONS]
+
+Options:
+  --help  Show help
+EOF
+        exit 0
+        ;;
+      --__cliare_unknown_*)
+        echo "unknown option: $2" >&2
+        exit 2
+        ;;
+      *)
+        echo "unexpected argument: $2" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  "--version"|"version")
+    echo "fixture-cli 1.0.0"
+    exit 0
+    ;;
+  *)
+    echo "unknown command: $1" >&2
+    exit 2
+    ;;
+esac
+"#
+}
+
+fn credential_writing_help_script() -> &'static str {
+    r#"#!/bin/sh
+
+case "$1" in
+  ""|"--help"|"-h"|"help")
+    printf token > "$HOME/session-token"
+    cat <<'EOF'
+Commands:
+  run  Run the job
+
+Options:
+  --help  Show help
+EOF
+    exit 0
+    ;;
+  "run")
+    case "$2" in
+      ""|"--help")
+        printf secret > "$HOME/run-secret"
+        cat <<'EOF'
+Usage: fixture-cli run [OPTIONS]
+
+Options:
+  --help  Show help
+EOF
+        exit 0
+        ;;
+      --__cliare_unknown_*)
+        echo "unknown option: $2" >&2
+        exit 2
+        ;;
+      *)
+        echo "unexpected argument: $2" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  "--version"|"version")
+    echo "fixture-cli 1.0.0"
+    exit 0
     ;;
   *)
     echo "unknown command: $1" >&2

@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `feat: classify machine-readable output modes`
+> Last updated: after checkpoint `feat: score sandbox side effects`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it is the project delivery scorecard for the MVP.
 
@@ -12,23 +12,23 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 |---|---:|---|
 | Repository and package foundation | 100% | Rust project, license, README, design docs, private GitHub repo |
 | CLI surface | 55% | `measure`, `guard`, traversal profiles, cache bypass; baseline/publish/certify still planned |
-| Runtime probing | 60% | Safe bootstrap, bounded output, timeouts, recursive probes, isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env |
+| Runtime probing | 68% | Safe bootstrap, bounded output, timeouts, recursive probes, isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env, per-probe filesystem diffs |
 | Generic inference | 58% | Layout claims, runtime confirmation, Bayesian confidence, usage positionals, aliases, flag grammar, and output-mode claims exist; value domains still planned |
 | Command shape artifact | 68% | Commands, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
-| Scoring | 50% | v0 dimensions for discovery, grammar, execution, recovery, and output; safety and determinism still planned |
+| Scoring | 58% | v0 dimensions for discovery, grammar, execution, recovery, output, and initial safety; determinism still planned |
 | CI guard | 40% | Baseline comparison exists; policy files, SARIF/JUnit, GitHub Action still planned |
 | Cache and fingerprinting | 60% | Binary/profile/version/sandbox-profile cache reuse exists; replay/resume checkpoints still planned |
 | Traversal control | 65% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, and pressure reporting exist; async parallel traversal still planned |
-| QA and calibration | 30% | Synthetic fixture tests cover command inference, cache, guard, sandbox isolation, parseable JSON, and malformed JSON; real CLI corpus still planned |
+| QA and calibration | 36% | Synthetic fixture tests cover command inference, cache, guard, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, and credential-like writes; real CLI corpus still planned |
 | Public publishing | 5% | Designed but not implemented |
 
 ## MVP Completion
 
-Estimated MVP completion: **68%**
+Estimated MVP completion: **74%**
 
-Estimated MVP work remaining: **32%**
+Estimated MVP work remaining: **26%**
 
-The current implementation is useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: side-effect scoring, CI packaging, calibration, and async traversal scale.
+The current implementation is useful for local measurement and early CI regression checks. The remaining MVP work is mostly hardening: CI packaging, calibration, async traversal scale, and richer policy controls.
 
 ---
 
@@ -46,35 +46,36 @@ The current implementation is useful for local measurement and early CI regressi
 10. Richer grammar extraction for aliases, usage positionals, flag arity, required flags, optional values, and repeated values.
 11. Sandbox isolation profile with sanitized env, isolated HOME/PWD/XDG config-cache-data/TMP, evidence metadata, scorecard metadata, cache profile matching, and fixture tests proving probe writes land inside the sandbox.
 12. Output classification and machine-readable mode detection with generic output-mode claims, safe `--help` output probes, shape output contracts, measured output subscore, and fixtures for parseable and malformed JSON.
+13. Side-effect observation and initial safety scoring with per-probe sandbox snapshots, created/modified/deleted file evidence, measured safety subscore, and fixtures for clean CLIs, cache-writing CLIs, and credential-like writes.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 13: Side-Effect Observation and Initial Safety Scoring
+### Checkpoint 14: CI Output Formats and GitHub Action Wrapper
 
-Goal: observe filesystem side effects inside the sandbox and turn the `safety` dimension into a measured score without executing known-destructive workflows.
+Goal: make CLIARE easy to adopt in CI by emitting machine-readable test artifacts and providing a minimal GitHub Action wrapper.
 
 Acceptance criteria:
 
-- Snapshot sandbox HOME/cwd/XDG/TMP before and after each safe probe.
-- Record created, modified, and deleted files by sandbox region.
-- Treat writes during help/version/diagnostic probes as safety evidence.
-- Add safety coverage fields and an initial measured safety subscore.
-- Add findings for unexpected writes, credential-looking files, and writes outside expected runtime dirs.
-- Add fixtures for clean CLIs, cache-writing CLIs, config-writing CLIs, and destructive-looking commands that are not executed.
+- Emit SARIF for findings that should appear in code-scanning or PR review surfaces.
+- Emit JUnit XML for CI systems that expect test-style pass/fail artifacts.
+- Emit a compact Markdown summary suitable for GitHub step summaries.
+- Add a GitHub Action wrapper that runs `cliare measure` or `cliare guard`, uploads artifacts, and exposes score outputs.
+- Preserve local-first behavior; CI should run the binary in the caller's environment and never upload the target CLI.
+- Add fixtures/tests for generated SARIF, JUnit, and summary files.
 
 Why this is next:
 
-- The sandbox exists; the next value is measuring what probes actually changed.
-- Side-effect evidence unlocks the currently unmeasured `safety` dimension.
-- Local-first OSS adoption depends on proving CLIARE can report surprising writes without needing cloud execution.
+- The core scorecard is now useful; adoption depends on frictionless CI integration.
+- CI artifacts make CLIARE reviewable by maintainers and easy to wire into score regression policies.
+- This is the shortest path to OSS visibility and practical GTM distribution.
 
 ---
 
 ## Near-Term Order
 
-1. Side-effect observation inside the sandbox and initial safety scoring.
-2. CI output formats and GitHub Action wrapper.
-3. Async traversal execution with bounded parallelism and deterministic convergence.
+1. CI output formats and GitHub Action wrapper.
+2. Async traversal execution with bounded parallelism and deterministic convergence.
+3. Policy controls for side-effect allowances and score thresholds.
 4. Real CLI benchmark corpus and calibration metrics.

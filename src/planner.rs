@@ -544,6 +544,7 @@ mod tests {
                 duration_ms: 1,
                 stdout: output(stdout),
                 stderr: output(""),
+                side_effects: crate::sandbox::SideEffectSummary::default(),
             },
         }
     }
