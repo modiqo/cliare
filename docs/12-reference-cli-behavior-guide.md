@@ -7,7 +7,7 @@
 
 ## Summary
 
-This guide describes what an agent-ready CLI looks like. It is not only a scoring guide; it is a reference for maintainers who want their command surfaces to work reliably under agents, harnesses, CI systems, and automation.
+This guide describes the behavior profile of an agent-ready CLI. It is not only a scoring guide; it is a reference for maintainers who want command surfaces to work reliably under agents, harnesses, CI systems, and automation.
 
 Agent readiness does not come from AI-specific labels alone. It comes from making the CLI discoverable, typed, deterministic, parseable, safe, and recoverable.
 

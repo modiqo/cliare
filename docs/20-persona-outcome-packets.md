@@ -7,7 +7,7 @@
 
 ## Purpose
 
-CLIARE should not stop at a score. A score is useful for comparison, but it is not enough to change behavior. The durable product loop is:
+CLIARE turns a measurement run into persona-specific action. A score is useful for comparison, but durable improvement comes from evidence, prioritization, remediation, and verification:
 
 1. Run CLIARE against a target CLI.
 2. Produce evidence, shape, command-index, score, coverage, and artifact-map artifacts.
@@ -17,7 +17,7 @@ CLIARE should not stop at a score. A score is useful for comparison, but it is n
 
 Persona outcome packets are the report layer that makes this loop operational. They turn one measurement run into concrete runbooks for maintainers, harness builders, platform teams, security reviewers, open-source maintainers, ecosystem teams, and researchers.
 
-This design keeps runtime probing separate from persona reporting. The expensive and potentially risky operation is `cliare measure`. Persona reports are deterministic projections over the measured artifacts:
+Runtime probing remains separate from persona reporting. The expensive and potentially risky operation is `cliare measure`; persona reports are deterministic projections over the measured artifacts:
 
 ```text
 .cliare/
@@ -66,7 +66,7 @@ When a measurement is part of a runtime context suite, the packet is scoped to a
       persona-maintainer.md
 ```
 
-In that layout, `cliare report <persona> --out .cliare/mycli --context workspace` and `cliare report <persona> --out .cliare/mycli/contexts/workspace` address the same artifact bundle. If the suite root contains multiple persisted contexts and no context is selected, the command should stop and list the available context names and directories instead of guessing.
+In that layout, `cliare report <persona> --out .cliare/mycli --context workspace` and `cliare report <persona> --out .cliare/mycli/contexts/workspace` address the same artifact bundle. If the suite root contains multiple persisted contexts and no context is selected, the command lists the available context names and directories rather than guessing.
 
 This separation matters. It means different teams can consume the same evidence without rerunning the target binary. It also means a public scorecard can be audited against the packet that produced its recommendations.
 

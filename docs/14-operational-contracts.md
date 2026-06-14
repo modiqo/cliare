@@ -8,7 +8,7 @@
 
 ## Summary
 
-The core CLIARE design is captured in the earlier documents. This document records operational contracts that should be formalized before CLIARE becomes a public standard:
+The core CLIARE design is captured in the earlier documents. This reference records the operational contracts required before CLIARE becomes a public standard:
 
 - when cached shape/evidence can be reused
 - how to explain cache hits and misses
@@ -18,7 +18,7 @@ The core CLIARE design is captured in the earlier documents. This document recor
 - how scoring model versions are governed
 - how reproducibility levels are displayed
 
-This is intentionally ranked after the main architecture, math, runtime, and CI design. It is a hardening layer.
+These topics sit after the main architecture, scoring, runtime, and CI design. They form the hardening layer for public certification.
 
 ---
 

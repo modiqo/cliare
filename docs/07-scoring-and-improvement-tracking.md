@@ -7,7 +7,7 @@
 
 ## Summary
 
-CLIARE should not only produce a score. It should create an improvement loop.
+CLIARE turns runtime measurement into an improvement loop. The score is the entry point; the durable value is the evidence-backed path from finding to fix to verified improvement.
 
 The core workflow:
 
@@ -15,7 +15,7 @@ The core workflow:
 measure -> report -> improve -> guard -> certify -> publish
 ```
 
-A maintainer should be able to answer:
+A maintainer can use the scorecard and reports to answer:
 
 - What is our current score?
 - Why is it that score?

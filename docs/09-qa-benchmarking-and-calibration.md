@@ -7,7 +7,7 @@
 
 ## Summary
 
-CLIARE is a measurement tool. Its own correctness matters. If it produces scores that are noisy, uncalibrated, or easy to game, it will not become a standard.
+CLIARE is a measurement tool, so its own correctness is part of the product. Noisy, uncalibrated, or easily gamed scores would weaken the standard.
 
 QA has three layers:
 
@@ -31,7 +31,7 @@ QA has three layers:
 
 ## Benchmark Corpus
 
-CLIARE needs both synthetic and real-world CLIs.
+CLIARE uses both synthetic and real-world CLIs.
 
 ### Synthetic CLIs
 

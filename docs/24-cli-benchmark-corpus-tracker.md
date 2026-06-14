@@ -7,13 +7,13 @@
 
 ## Purpose
 
-This document tracks the real-world CLI corpus CLIARE should measure as the benchmark suite matures. The emphasis is not raw popularity alone. The corpus should represent CLIs that agent harnesses commonly need when operating real software projects: source control platforms, clouds, containers, Kubernetes, infrastructure-as-code, deployment platforms, databases, package managers, secrets, observability, and AI-application infrastructure.
+This tracker records the real-world CLI corpus used to mature CLIARE's benchmark suite. The emphasis is not raw popularity alone. The corpus represents CLIs that agent harnesses commonly need when operating real software projects: source control platforms, clouds, containers, Kubernetes, infrastructure-as-code, deployment platforms, databases, package managers, secrets, observability, and AI-application infrastructure.
 
 This tracker intentionally excludes basic shell staples such as `python`, `grep`, `sed`, `awk`, `jq`, `curl`, `bash`, and coreutils. Those tools matter, but agents are already heavily pretrained on them and they are not the primary benchmark pressure point for CLIARE v0. It also excludes AI-agent harness CLIs for this pass.
 
-The blank findings columns are intentional. When benchmark artifacts are generated, each row should be updated with the artifact folder, score, traversal status, and the highest-value findings from the persona and issue reports.
+The blank findings columns are intentional. As benchmark artifacts are generated, each row records the artifact folder, score, traversal status, and the highest-value findings from the persona and issue reports.
 
-Suggested artifact layout:
+Reference artifact layout:
 
 ```text
 benchmarks/corpus/<cli-id>/
@@ -32,7 +32,7 @@ benchmarks/corpus/<cli-id>/
   persona-maintainer.md
 ```
 
-Suggested measurement command:
+Reference measurement command:
 
 ```sh
 cliare measure <command> --out .cliare-bench/<cli-id> --profile deep --max-depth 12 --max-probes 5000 --refresh

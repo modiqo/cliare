@@ -1,6 +1,6 @@
 # 01 - Vision and Positioning
 
-> **Scope:** Why CLIARE should exist, how it should be positioned, and how stewardship can support ecosystem adoption without compromising independence.
+> **Scope:** Why CLIARE exists, how it is positioned, and how stewardship supports ecosystem adoption without compromising independence.
 > **Status:** Reference Design
 
 ---
@@ -9,7 +9,7 @@
 
 CLIARE is a standard and reference implementation for measuring CLI readiness for agents, harnesses, CI systems, and automation.
 
-The project should stand on technical merit. It must remain useful to teams that never become modiqo customers; that independence is what makes the standard durable.
+The project stands on technical merit. It remains useful to teams that never become modiqo customers; that independence is what makes the standard durable.
 
 Public positioning:
 
@@ -280,7 +280,7 @@ Agent readiness includes:
 
 ### 5. Local CI Is The Default
 
-CLIARE should run where the binary already exists:
+CLIARE runs where the binary already exists:
 
 - GitHub Actions
 - Buildkite

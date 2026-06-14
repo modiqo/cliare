@@ -7,7 +7,7 @@
 
 ## Summary
 
-Some CLIs are small and can be measured in seconds. Others may have hundreds of commands, plugins, slow startup, network behavior, or fixture setup. CLIARE needs checkpointing from the beginning.
+Some CLIs are measured in seconds. Others have hundreds of commands, plugins, slow startup, network behavior, or fixture setup. CLIARE handles those surfaces with checkpointing, replayable evidence, and explicit artifact lifecycle rules.
 
 The principle:
 

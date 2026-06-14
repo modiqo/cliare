@@ -7,7 +7,7 @@
 
 ## Summary
 
-CLIARE should exercise CLIs in a sandbox after install/build, then destroy the sandbox after computation. The sandbox is not optional implementation detail. It is the measurement environment.
+CLIARE exercises target CLIs in a controlled runtime after install or build, then tears down that runtime after measurement. The sandbox is part of the measurement environment, not an implementation detail.
 
 The sandbox serves four purposes:
 
@@ -24,7 +24,7 @@ Default rule:
 
 ## Probe Profiles
 
-CLIARE must not have one universal probing mode. Different users need different tradeoffs.
+CLIARE supports multiple probing profiles because different measurement contexts have different risk and coverage tradeoffs.
 
 ### `safe`
 

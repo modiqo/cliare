@@ -14,7 +14,7 @@ The template has two jobs:
 1. Give maintainers a clear target when improving an existing CLI.
 2. Give new projects a starting point that will measure well under CLIARE without needing special-case inference.
 
-CLIARE should not require a project to use a specific parser, framework, programming language, or command structure. A CLI can be written with Clap, Cobra, Click, argparse, shell scripts, or a custom parser and still conform. The contract is runtime behavior.
+CLIARE does not require a project to use a specific parser, framework, programming language, or command structure. A CLI can be written with Clap, Cobra, Click, argparse, shell scripts, or a custom parser and still conform. The contract is runtime behavior.
 
 ---
 
@@ -467,4 +467,3 @@ A CLI is strongly agent-ready when:
 - unknown child commands and flags are rejected clearly
 - all help and metadata paths are deterministic in clean CI
 - public scorecards include binary fingerprints and traversal profile
-

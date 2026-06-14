@@ -7,7 +7,7 @@
 
 ## Overview
 
-Implementation is divided into phases. Each phase has a checkpoint and acceptance criteria.
+The implementation roadmap is organized into phases. Each phase has a checkpoint and acceptance criteria.
 
 ```
 Phase 0: Project scaffold and schemas
@@ -25,13 +25,13 @@ Phase 8: v1 standard
 
 ## Repository Layout
 
-Suggested repo:
+Repository:
 
 ```
 modiqo/cliare
 ```
 
-Suggested layout:
+Reference layout:
 
 ```
 cliare/
@@ -69,7 +69,7 @@ cliare/
     github-action/
 ```
 
-Language choice:
+Implementation language:
 
 - Rust is a strong fit for local process execution, sandboxing, speed, and portable binaries.
 - TypeScript can be used for GitHub Action wrapper and web leaderboard.

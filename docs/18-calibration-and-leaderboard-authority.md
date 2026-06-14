@@ -1,6 +1,6 @@
 # 18 - Calibration and Leaderboard Authority
 
-> **Scope:** What CLIARE must build before a public leaderboard score should be considered authoritative.
+> **Scope:** Calibration, reproducibility, and governance required before public leaderboard scores are authoritative.
 > **Status:** Standard-readiness plan
 
 ---
@@ -18,9 +18,9 @@ The current `cliare-score-v0` is already useful for:
 - benchmark corpus experimentation
 - agent harness navigation artifacts
 
-An authoritative public leaderboard needs a higher bar. It must prove that scores are calibrated, reproducible, comparable, hard to game, and tied to transparent evidence.
+An authoritative public leaderboard has a higher bar. It requires calibrated, reproducible, comparable scores that are hard to game and tied to transparent evidence.
 
-This document defines that bar.
+This plan describes that bar.
 
 The target posture is:
 
@@ -33,9 +33,9 @@ v1: calibrated public standard score for certification and leaderboard ranking
 
 ## Why Calibration Must Be A Product Feature
 
-If CLIARE is going to become a standard, calibration cannot be an internal QA note. It has to be part of the product surface.
+For CLIARE to operate as a standard, calibration belongs in the product surface rather than an internal QA note.
 
-A maintainer, agent harness author, or leaderboard viewer should be able to ask:
+A maintainer, agent harness author, or leaderboard viewer can ask:
 
 - How accurate is CLIARE at command discovery?
 - When CLIARE says confidence is 0.80, is it right about 80% of the time?

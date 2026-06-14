@@ -7,7 +7,7 @@
 
 ## Purpose
 
-CLIARE should help teams improve a CLI, not merely describe it. A scorecard answers whether the measured release is more or less agent-ready than another release. An issue ledger answers what a maintainer, harness builder, security reviewer, or platform owner should do next.
+CLIARE helps teams improve a CLI, not merely describe it. A scorecard answers whether the measured release is more or less agent-ready than another release. An issue ledger answers what a maintainer, harness builder, security reviewer, or platform owner can do next.
 
 The ledger is the canonical review artifact derived from one measurement run. Persona reports are views over that ledger. This keeps the reporting system consistent:
 

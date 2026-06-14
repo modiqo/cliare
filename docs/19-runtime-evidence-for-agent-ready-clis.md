@@ -20,7 +20,7 @@ This creates an interface quality problem. Human users can compensate for ambigu
 
 The current ecosystem has strong conventions for API schemas, test coverage, static analysis, supply-chain provenance, and benchmark reporting. CLIs have weaker measurement infrastructure, despite long-standing command-line conventions such as POSIX utility syntax guidance [7]. A CLI may be excellent for an experienced human and poor for an agent. Another may be small but highly regular, with stable JSON output and clear diagnostics. Without a runtime scorecard, both cases are hard to compare and hard to improve.
 
-CLIARE is designed to close that gap. It does not require source-code access, does not assume a parser framework, and does not ask maintainers to upload binaries to a hosted runner. It executes bounded probes against the installed binary, records what happened, and produces artifacts that can be consumed by maintainers, CI systems, agent harnesses, and calibration workflows.
+CLIARE closes that gap without requiring source-code access, assuming a parser framework, or asking maintainers to upload binaries to a hosted runner. It executes bounded probes against the installed binary, records what happened, and produces artifacts that can be consumed by maintainers, CI systems, agent harnesses, and calibration workflows.
 
 ## 2. Problem Setting
 

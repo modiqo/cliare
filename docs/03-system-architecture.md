@@ -7,7 +7,7 @@
 
 ## Architectural Goal
 
-CLIARE must be able to inspect an arbitrary command-line binary without source access and produce a reproducible scorecard. The design separates expensive runtime probing from cheap inference and scoring.
+CLIARE inspects arbitrary command-line binaries without source access and produces reproducible scorecards. The architecture separates expensive runtime probing from comparatively cheap inference and scoring.
 
 That separation is central:
 
@@ -15,7 +15,7 @@ That separation is central:
 Probe once. Infer many times. Score many times.
 ```
 
-If CLIARE improves its scoring model, users should be able to rescore old evidence without rerunning the binary. If a user wants to debug one finding, the raw observation must be available. If the leaderboard changes the public weighting model, historical scorecards can be regenerated from evidence when evidence is available.
+When the scoring model improves, preserved evidence can be rescored without rerunning the target binary. Findings remain traceable to raw observations, and leaderboard model changes can be evaluated against historical evidence when that evidence is available.
 
 ---
 

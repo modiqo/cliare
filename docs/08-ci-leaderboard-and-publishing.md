@@ -7,9 +7,9 @@
 
 ## Core Decision
 
-CLIARE should run the target binary in the user's own CI by default.
+CLIARE runs the target binary in the user's own CI by default.
 
-modiqo should not execute arbitrary user binaries as the primary product path.
+modiqo does not need to execute arbitrary user binaries for the primary workflow.
 
 Default workflow:
 
@@ -21,7 +21,7 @@ Project CI optionally publishes scorecard
 modiqo leaderboard displays verified scorecard
 ```
 
-This is more secure, cheaper, more reproducible, and easier to adopt.
+This model is more secure, cheaper, more reproducible, and easier to adopt.
 
 ---
 

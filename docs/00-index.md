@@ -21,9 +21,7 @@ Agents increasingly rely on command-line tools. They use CLIs to build software,
 
 That approach works until the CLI drifts. Help text changes. Flags move. Output formats change. Completion scripts expose commands not documented in help. Hidden plugin commands appear. A new version introduces a destructive default. A command that used to print JSON starts printing progress text before JSON. The agent's learned use becomes stale.
 
-The industry needs a standard way to measure whether a CLI is ready for agents and automation.
-
-CLIARE is designed to provide that standard.
+The industry needs a standard way to measure whether a CLI is ready for agents and automation. CLIARE provides a runtime evidence standard for that work.
 
 It is not a documentation linter. It is not a wrapper generator. It is not just a parser for `--help`. CLIARE is a runtime measurement system:
 
@@ -43,9 +41,9 @@ The main thesis is:
 
 > A CLI's agent readiness is the posterior expected utility of a competent agent using that CLI across realistic tasks, given observed runtime evidence.
 
-That definition is intentionally formal. CLIARE should be evaluated as a measurement standard: a score should improve when the CLI improves, degrade when behavior becomes less safe or less discoverable, and remain explainable at every level.
+That definition is intentionally formal. CLIARE is evaluated as a measurement standard: a score improves when the CLI improves, degrades when behavior becomes less safe or less discoverable, and remains explainable at every level.
 
-The score must never be a black-box opinion. Every point should trace to evidence:
+The score is not a black-box opinion. Every point traces to evidence:
 
 - which probes ran
 - what they observed
@@ -65,7 +63,7 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **03** | [System Architecture](03-system-architecture.md) | Components, data flow, storage, CLI commands, plugin boundary | Probe -> Evidence -> Inference -> Shape -> Score -> Report |
 | **04** | [Probe Sandbox Runtime](04-probe-sandbox-runtime.md) | How CLIARE safely exercises arbitrary binaries | Temp HOME, network policy, filesystem diffing, timeouts, profiles |
 | **05** | [Evidence and Command Shape Spec](05-evidence-and-command-shape-spec.md) | Evidence log schema and normalized command-shape IR | Every inferred fact carries provenance and confidence |
-| **06** | [Mathematical Model](06-mathematical-model.md) | Formal probabilistic model, Bayesian updates, scoring theory | Posterior expected utility, proper scoring rules, calibration |
+| **06** | [Computational Scoring Model](06-computational-scoring-model.md) | Probabilistic scoring model, Bayesian updates, and calibration theory | Posterior expected utility, proper scoring rules, calibration |
 | **07** | [Scoring and Improvement Tracking](07-scoring-and-improvement-tracking.md) | Subscores, regressions, monotonic improvements, baselines | Separate known-surface, capability-adjusted, and whole-surface scores |
 | **08** | [CI, Leaderboard, and Publishing](08-ci-leaderboard-and-publishing.md) | Local CI execution, scorecard publishing, badge strategy | modiqo hosts scorecards, not untrusted binary execution |
 | **09** | [QA, Benchmarking, and Calibration](09-qa-benchmarking-and-calibration.md) | Test strategy, benchmark corpus, fixtures, ground truth | Synthetic CLIs plus real CLIs with human-verified truth sets |

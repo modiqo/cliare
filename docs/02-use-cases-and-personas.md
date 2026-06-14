@@ -1,15 +1,15 @@
 # 02 - Use Cases and Personas
 
-> **Scope:** The user groups, jobs-to-be-done, workflows, and concrete scenarios CLIARE must support.
+> **Scope:** User groups, jobs-to-be-done, workflows, and concrete scenarios supported by CLIARE.
 > **Status:** Reference Design
 
 ---
 
 ## Overview
 
-CLIARE is useful because CLI usability has become a cross-cutting problem. It is not only a concern for CLI maintainers. It affects agent harnesses, CI pipelines, internal platform teams, security reviewers, DevRel teams, and tool vendors.
+CLI usability has become a cross-cutting engineering concern. It affects maintainers, agent harnesses, CI pipelines, internal platform teams, security reviewers, DevRel teams, and tool vendors.
 
-The design should explicitly serve multiple personas without diluting the core product:
+CLIARE serves these personas through one evidence model and persona-specific report views:
 
 1. CLI maintainers
 2. Agent harness builders

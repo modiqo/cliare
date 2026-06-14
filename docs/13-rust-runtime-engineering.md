@@ -7,7 +7,7 @@
 
 ## Summary
 
-CLIARE should be implemented as a serious Rust runtime, not a loose collection of subprocess calls. The core problem is an adaptive exploration engine:
+The CLIARE reference implementation is a Rust runtime for adaptive CLI exploration, not a thin wrapper around subprocess calls. The core problem is an evidence-driven exploration engine:
 
 1. Run probes.
 2. Extract new command candidates.
@@ -19,7 +19,7 @@ CLIARE should be implemented as a serious Rust runtime, not a loose collection o
 
 This is not a generic graph problem that needs a graph library. The command surface has a specific structure: mostly a rooted command tree with lateral evidence links, contradiction links, and probe dependencies. A purpose-built scheduler over stable IDs and compact arenas is clearer, faster, easier to checkpoint, and easier to audit.
 
-Recommended foundation:
+Runtime foundation:
 
 - `tokio` for async process execution, timers, cancellation, and filesystem coordination.
 - `tokio::task::JoinSet` for bounded owned task groups.

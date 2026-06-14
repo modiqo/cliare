@@ -8,9 +8,9 @@
 
 ## Framework Boundary
 
-CLIARE must not assume that a target CLI uses Clap, Cobra, Click, argparse, oclif, or any other specific framework.
+CLIARE's inference boundary is framework-agnostic. Target CLIs may use Clap, Cobra, Click, argparse, oclif, shell scripts, custom parsers, plugin dispatchers, or legacy conventions.
 
-CLIARE itself may use Clap for its own CLI because that gives the project a clean command surface. When CLIARE measures CLIARE, the measurement path must still treat CLIARE as an unknown black-box CLI. Clap may influence a framework-likelihood prior only after evidence suggests it; it must not select a hard-coded parser or bypass the generic processor.
+CLIARE itself uses Clap for its own command surface. When CLIARE measures CLIARE, the measurement path still treats the binary as an unknown black-box CLI. Framework-specific clues may contribute weak priors after evidence suggests them, but they do not select a hard-coded parser or bypass the generic processor.
 
 The generic processor is:
 

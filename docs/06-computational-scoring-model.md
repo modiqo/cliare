@@ -1,13 +1,13 @@
-# 06 - Mathematical Model
+# 06 - Computational Scoring Model
 
-> **Scope:** Formal model for black-box CLI inference, Bayesian evidence updates, agent-readiness scoring, calibration, and monotonic improvement.
+> **Scope:** Computational model for black-box CLI inference, Bayesian evidence updates, agent-readiness scoring, calibration, and monotonic improvement.
 > **Status:** Reference Design
 
 ---
 
 ## Summary
 
-CLIARE should have a proper mathematical foundation. The score should not be a loose heuristic. It should be interpretable as:
+CLIARE's score is grounded in a formal utility interpretation rather than an ad hoc heuristic. The score is interpretable as:
 
 > The posterior expected utility of an agent using this CLI across a task distribution, given observed runtime evidence.
 
@@ -24,13 +24,13 @@ Where:
 - `E` is the observed evidence from probing.
 - `U` is an agent-readiness utility function.
 
-This document defines the model.
+This reference describes the model and the implementation boundary for the current score engine.
 
 ---
 
 ## Implementation Map
 
-This document describes the mathematical target and the current reference implementation. The current implementation is an evidence-only v0 score model (`cliare-score-v0`) with log-odds belief updates, deterministic subscores, explicit gaps, and evidence-linked reports. The full calibrated Bayesian model described here is the direction of travel for model v1 and later.
+This reference describes the computational scoring target and the current implementation. The current implementation is an evidence-only v0 score model (`cliare-score-v0`) with log-odds belief updates, deterministic subscores, explicit gaps, and evidence-linked reports. The full calibrated Bayesian model described here is the direction of travel for model v1 and later.
 
 | Model Concept | Rust Implementation |
 |---|---|
@@ -47,7 +47,7 @@ This document describes the mathematical target and the current reference implem
 | Persona packets and reviewable issue ledger | [`src/report.rs`](../src/report.rs) |
 | Benchmark corpus execution and calibration inputs | [`src/benchmark.rs`](../src/benchmark.rs) |
 
-When the text below says "should", it describes the standard model. When it says "current v0", it describes the linked Rust implementation.
+Normative language in this reference describes the target standard model. Mentions of "current v0" describe the linked Rust implementation.
 
 ---
 
@@ -956,7 +956,7 @@ The current v0 implementation has shipped:
 - explicit findings and persona issue ledgers
 - benchmark corpus execution for calibration inputs
 
-The v1 mathematical target is:
+The v1 computational target is:
 
 - calibrated weighted Beta-Bernoulli binary claims
 - calibrated Dirichlet categorical claims

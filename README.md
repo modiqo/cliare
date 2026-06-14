@@ -17,9 +17,9 @@ The project is built on a few commitments:
 - No source-code requirement: measure the executable users actually install.
 - No framework assumption: work across clap, cobra, argparse, hand-rolled parsers, shell wrappers, and poorly documented CLIs.
 - No hosted dependency: run locally in the maintainer's CI environment by default.
-- Evidence first: every score should be traceable to runtime observations.
-- Improvement oriented: scores should move when maintainers improve discoverability, grammar, outputs, safety, recovery, and stability.
-- Agent-operable artifacts: emitted shape catalogs and scorecards should help agents navigate CLIs without rediscovering the same surface through blind trial and error.
+- Evidence first: every score traces to runtime observations.
+- Improvement oriented: scores move when maintainers improve discoverability, grammar, outputs, safety, recovery, and stability.
+- Agent-operable artifacts: emitted shape catalogs and scorecards help agents navigate CLIs without rediscovering the same surface through blind trial and error.
 
 ## What CLIARE Unlocks
 
@@ -332,7 +332,7 @@ Example policy:
 Start here:
 
 - [Design index](docs/00-index.md)
-- [Mathematical model](docs/06-mathematical-model.md)
+- [Computational scoring model](docs/06-computational-scoring-model.md)
 - [Scoring model and Bayesian confidence](docs/17-scoring-model-and-bayesian-confidence.md)
 - [Calibration and leaderboard authority](docs/18-calibration-and-leaderboard-authority.md)
 - [Technical paper](docs/19-runtime-evidence-for-agent-ready-clis.md) ([PDF](docs/19-runtime-evidence-for-agent-ready-clis.pdf))
