@@ -260,6 +260,7 @@ Start here:
 - [Scoring model and Bayesian confidence](docs/17-scoring-model-and-bayesian-confidence.md)
 - [Calibration and leaderboard authority](docs/18-calibration-and-leaderboard-authority.md)
 - [Technical paper](docs/19-runtime-evidence-for-agent-ready-clis.md) ([PDF](docs/19-runtime-evidence-for-agent-ready-clis.pdf))
+- [CLI benchmark corpus tracker](docs/24-cli-benchmark-corpus-tracker.md)
 - [Rust runtime engineering](docs/13-rust-runtime-engineering.md)
 - [Operational contracts](docs/14-operational-contracts.md)
 

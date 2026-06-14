@@ -83,6 +83,7 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **21** | [Reviewable Issue Ledger and Persona Views](21-reviewable-issue-ledger.md) | Canonical issue ledger, evidence context, and persona projections | Persona reports are filtered views over deterministic, reviewable issues |
 | **22** | [Agent-Ready CLI Standard Template](22-agent-ready-cli-standard-template.md) | Runtime behavior template for CLIs that want strong agent and CLIARE compatibility | Help, output, diagnostics, preconditions, fixtures, and CI artifacts form the measurable standard |
 | **23** | [Agent Skill Installation](23-agent-skills-installation.md) | Installable CLIARE review skills and persona commands for coding agents | Claude, Codex, and Cursor can inspect CLIARE artifacts through the same table-first review discipline |
+| **24** | [CLI Benchmark Corpus Tracker](24-cli-benchmark-corpus-tracker.md) | Candidate vendor and popular OSS CLIs for the real-world benchmark corpus | P0/P1 tracker with blank measurement, score, traversal, and findings columns |
 
 ---
 
