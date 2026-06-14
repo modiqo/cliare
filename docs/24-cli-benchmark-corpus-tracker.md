@@ -47,7 +47,7 @@ These are the first CLIs to measure. They cover the most common operational surf
 
 | Priority | CLI | Category | Why Harnesses Use It | Benchmark Folder | Latest Score | Traversal Status | Findings / Follow-Up |
 |---:|---|---|---|---|---:|---|---|
-| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. | `benchmarks/corpus/gh` | `94.4` | Complete: converged; 185 commands indexed; 184 runtime-confirmed; 792/5000 probes; depth 3/12; frontier 0; no side effects. | High: 34 advertised output modes did not parse. Medium: 8 output modes need fixtures; 1 help-unavailable command. Low: 1 flag-grammar gap. |
+| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. | `benchmarks/corpus/gh` | `98.5` | Host-context verification; 185 commands indexed; 177 runtime-confirmed; 560/560 probes; depth 3/4; budget exhausted with 87 frontier candidates; no side effects. | No output parse-failure findings. 19 advertised output contracts are precondition-blocked by auth, local repository context, or fixture-required operands/flags. 7 command candidates still need runtime confirmation. |
 | 2 | `aws` | Cloud | AWS resource inspection, provisioning, service APIs, auth profiles, and deployment workflows. |  |  |  |  |
 | 3 | `gcloud` | Cloud | Google Cloud resource management, auth, projects, config, deployments, and logs. |  |  |  |  |
 | 4 | `az` | Cloud | Azure resource management, deployments, identity, storage, containers, and app services. |  |  |  |  |
@@ -131,7 +131,7 @@ For each CLI, record the following after measurement:
 - top harness findings
 - top security findings
 - whether fixtures are needed
-- whether auth/profile/project preconditions were observed
+- whether auth, local-context, profile, dependency, or other preconditions were observed
 - whether public leaderboard use would be appropriate
 
 The first pass should optimize for breadth and comparability. The second pass should add per-CLI fixture notes, expected command families, and human-verified truth labels for calibration.

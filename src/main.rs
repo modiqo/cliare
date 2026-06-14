@@ -19,7 +19,7 @@ async fn main() -> miette::Result<()> {
             Ok(())
         }
         Command::Jobs(args) => {
-            let summary = cliare::jobs::jobs(args).into_diagnostic()?;
+            let summary = cliare::jobs::jobs(args).await.into_diagnostic()?;
             print!("{}", summary.terminal_summary());
             Ok(())
         }
@@ -62,6 +62,11 @@ async fn main() -> miette::Result<()> {
                 Err(miette::miette!("guard failed: policy checks failed"))
             }
         }
+        Command::Context(args) => {
+            let summary = cliare::context::context(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
         Command::Metadata(args) => print_metadata(args),
     }
 }
@@ -74,7 +79,7 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
                 "name": "cliare",
                 "version": env!("CARGO_PKG_VERSION"),
                 "formats": ["text", "json"],
-                "commands": ["measure", "jobs", "guard", "benchmark", "report", "describe", "skills", "metadata"],
+                "commands": ["measure", "jobs", "guard", "benchmark", "report", "describe", "skills", "context", "metadata"],
             });
             println!(
                 "{}",
@@ -93,5 +98,5 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
 }
 
 fn metadata_help() -> &'static str {
-    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nCommands: measure, jobs, guard, benchmark, report, describe, skills, metadata\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
+    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nCommands: measure, jobs, guard, benchmark, report, describe, skills, context, metadata\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
 }

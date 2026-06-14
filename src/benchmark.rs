@@ -396,6 +396,8 @@ fn target_report_from_summary(
         commands_precondition_blocked: Some(summary.commands_precondition_blocked),
         precondition_blocked_probes: Some(summary.precondition_blocked_probes),
         auth_required_probes: Some(summary.auth_required_probes),
+        local_context_required_probes: Some(summary.local_context_required_probes),
+        fixture_required_probes: Some(summary.fixture_required_probes),
         output_contracts_discovered: Some(summary.output_contracts_discovered),
         machine_readable_output_contracts: Some(summary.machine_readable_output_contracts),
         output_mode_parse_successes: Some(summary.output_mode_parse_successes),
@@ -525,6 +527,14 @@ async fn write_markdown_report(out_dir: &Path, report: &BenchmarkReport) -> Resu
     text.push_str(&format!(
         "| Auth-required probes | {} |\n",
         report.calibration.auth_required_probes
+    ));
+    text.push_str(&format!(
+        "| Local-context-required probes | {} |\n",
+        report.calibration.local_context_required_probes
+    ));
+    text.push_str(&format!(
+        "| Fixture-required probes | {} |\n",
+        report.calibration.fixture_required_probes
     ));
     text.push_str(&format!(
         "| Output contracts discovered | {} |\n",
@@ -707,8 +717,12 @@ fn precondition_label(target: &BenchmarkTargetReport) -> String {
         target.commands_precondition_blocked,
         target.precondition_blocked_probes,
         target.auth_required_probes,
+        target.local_context_required_probes,
+        target.fixture_required_probes,
     ) {
-        (Some(commands), Some(probes), Some(auth)) => format!("{commands}/{probes}/{auth}"),
+        (Some(commands), Some(probes), Some(auth), Some(local), Some(fixture)) => {
+            format!("{commands}/{probes}/{auth}/{local}/{fixture}")
+        }
         _ => "n/a".to_owned(),
     }
 }
@@ -785,10 +799,19 @@ impl BenchmarkTarget {
                 .or(defaults.output_limit_bytes)
                 .unwrap_or(1_048_576),
             profile,
+            execution_mode: crate::sandbox::SandboxProfile::Isolated,
             max_depth: self.max_depth.or(defaults.max_depth),
             max_probes: self.max_probes.or(defaults.max_probes),
             min_expected_value: self.min_expected_value.or(defaults.min_expected_value),
             concurrency: self.concurrency.or(defaults.concurrency),
+            context: None,
+            context_name: None,
+            auth_state: None,
+            local_context_state: None,
+            fixture_state: None,
+            network_state: None,
+            runtime_dependency_state: None,
+            context_workdir: None,
             refresh,
             detach: false,
             detached_worker: false,
@@ -909,6 +932,8 @@ struct BenchmarkCalibration {
     commands_precondition_blocked: usize,
     precondition_blocked_probes: usize,
     auth_required_probes: usize,
+    local_context_required_probes: usize,
+    fixture_required_probes: usize,
     output_contracts_discovered: usize,
     machine_readable_output_contracts: usize,
     output_mode_parse_successes: usize,
@@ -981,6 +1006,12 @@ impl BenchmarkCalibration {
                 target.precondition_blocked_probes
             }),
             auth_required_probes: sum_optional_usize(targets, |target| target.auth_required_probes),
+            local_context_required_probes: sum_optional_usize(targets, |target| {
+                target.local_context_required_probes
+            }),
+            fixture_required_probes: sum_optional_usize(targets, |target| {
+                target.fixture_required_probes
+            }),
             output_contracts_discovered: sum_optional_usize(targets, |target| {
                 target.output_contracts_discovered
             }),
@@ -1049,6 +1080,8 @@ struct BenchmarkTargetReport {
     commands_precondition_blocked: Option<usize>,
     precondition_blocked_probes: Option<usize>,
     auth_required_probes: Option<usize>,
+    local_context_required_probes: Option<usize>,
+    fixture_required_probes: Option<usize>,
     output_contracts_discovered: Option<usize>,
     machine_readable_output_contracts: Option<usize>,
     output_mode_parse_successes: Option<usize>,
@@ -1085,6 +1118,8 @@ impl BenchmarkTargetReport {
             commands_precondition_blocked: None,
             precondition_blocked_probes: None,
             auth_required_probes: None,
+            local_context_required_probes: None,
+            fixture_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,
@@ -1126,6 +1161,8 @@ impl BenchmarkTargetReport {
             commands_precondition_blocked: None,
             precondition_blocked_probes: None,
             auth_required_probes: None,
+            local_context_required_probes: None,
+            fixture_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,
@@ -1168,6 +1205,8 @@ impl BenchmarkTargetReport {
             commands_precondition_blocked: None,
             precondition_blocked_probes: None,
             auth_required_probes: None,
+            local_context_required_probes: None,
+            fixture_required_probes: None,
             output_contracts_discovered: None,
             machine_readable_output_contracts: None,
             output_mode_parse_successes: None,

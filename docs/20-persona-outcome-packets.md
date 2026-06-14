@@ -49,6 +49,25 @@ cliare report <persona> --out .cliare
   ...
 ```
 
+When a measurement is part of a runtime context suite, the packet is scoped to a single context artifact directory:
+
+```text
+.cliare/mycli/
+  context-suite.json
+  context-compare.md
+  contexts/
+    clean/
+      scorecard.json
+      command-index.json
+      persona-maintainer.md
+    workspace/
+      scorecard.json
+      command-index.json
+      persona-maintainer.md
+```
+
+In that layout, `cliare report <persona> --out .cliare/mycli --context workspace` and `cliare report <persona> --out .cliare/mycli/contexts/workspace` address the same artifact bundle. If the suite root contains multiple persisted contexts and no context is selected, the command should stop and list the available context names and directories instead of guessing.
+
 This separation matters. It means different teams can consume the same evidence without rerunning the target binary. It also means a public scorecard can be audited against the packet that produced its recommendations.
 
 ---
@@ -289,7 +308,7 @@ The harness packet is for agent platform builders. It should answer:
 - Which commands have enough confidence to expose?
 - Which commands should be excluded?
 - Which output contracts are parseable?
-- Which commands are blocked by auth/profile preconditions?
+- Which commands require auth, local context, profile, or another runtime precondition?
 - Which invocations have known grammar and stable diagnostics?
 
 Required action types:
@@ -329,7 +348,7 @@ The security packet is an evidence review. It should answer:
 
 - What files changed during safe probes?
 - Did any path look credential-related?
-- Which probes were auth-gated?
+- Which probes were auth-gated, local-context-gated, or otherwise precondition-gated?
 - Which command paths should be excluded from agent exposure?
 - Is the evidence sufficient for approval, exception, or denial?
 
@@ -337,7 +356,7 @@ Required action types:
 
 - persistent side effects
 - credential-like side effects
-- auth-required preconditions
+- auth-required and local-context-required preconditions
 - command paths with unknown side-effect profile
 - incomplete traversal under security review
 
@@ -449,11 +468,21 @@ cliare measure ./mycli --profile standard --out .cliare/current
 cliare report maintainer --out .cliare/current --write
 ```
 
+For context-sensitive CLIs, run the loop against an explicit context:
+
+```sh
+cliare measure ./mycli --profile standard --out .cliare/current --context clean
+cliare measure ./mycli --profile deep --out .cliare/current --context workspace --context-workdir /path/to/project
+cliare report maintainer --out .cliare/current --context workspace --write
+```
+
 For large surfaces or manual investigations, run the measurement as a detached job and inspect progress from another terminal or agent session:
 
 ```sh
 cliare measure ./mycli --profile deep --out .cliare/current --detach
 cliare jobs status --out .cliare/current
+cliare measure ./mycli --profile deep --out .cliare/current --context workspace --context-workdir /path/to/project --detach
+cliare jobs status --out .cliare/current --context workspace
 ```
 
 Then after fixes:
@@ -495,6 +524,13 @@ The report command remains the focused refresh and projection command:
 cliare report <persona> --out .cliare
 ```
 
+For a context suite, report generation must resolve to one measurement context:
+
+```sh
+cliare report <persona> --out .cliare/mycli --context workspace
+cliare report <persona> --out .cliare/mycli/contexts/workspace
+```
+
 with these output options:
 
 ```sh
@@ -510,6 +546,7 @@ Behavior:
 - read `.cliare/shape.json`
 - read `.cliare/evidence.jsonl`
 - reference `.cliare/command-index.json` and `.cliare/command-index.md` as command-level drill-down artifacts
+- when `--out` points at a context suite root, require a concrete `--context` unless only one persisted context exists
 - build a typed `PersonaOutcomePacket`
 - render Markdown or JSON
 - when `--write` is passed, refresh `issues.json`, `issues.md`, and the selected `persona-<persona>.md` / `persona-<persona>.json`

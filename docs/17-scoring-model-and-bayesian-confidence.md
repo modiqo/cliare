@@ -18,6 +18,14 @@ cliare-score-v0  local CI and engineering feedback
 cliare-score-v1  calibrated certification and public leaderboard ranking
 ```
 
+Scores are scoped to a runtime context. The same binary can produce materially different evidence when measured clean, authenticated, inside a project workspace, with fixture data, or with local runtime dependencies available. CLIARE therefore treats the measurement key as:
+
+```text
+(binary fingerprint, runtime context, traversal profile, sandbox profile, probe budget, score model)
+```
+
+The runtime context is written to `runtime-context.json`, embedded in `scorecard.json`, and included in `measure-cache.json`. Cache reuse is valid only inside the same context. A clean unauthenticated score should not be used as the authenticated workspace score, and an authenticated workspace score should not hide clean-start failures.
+
 ---
 
 ## Formal Interpretation
@@ -39,6 +47,14 @@ Where:
 
 The v0 implementation does not estimate the full posterior over `G` and `T`. It implements a deterministic approximation over directly measured dimensions, while preserving the evidence and model-version metadata needed for later rescore and calibration.
 
+For a context suite, the scalar score is interpreted per context:
+
+```text
+Score_context = 100 * E[U(G, T, C) | E_C]
+```
+
+where `C` is the declared runtime context and `E_C` is evidence collected under that context. `context-suite.json` and `context-compare.md` compare those per-context scores and summarize observed precondition chains. The comparison is not a replacement for the per-context scorecard; it is a map that tells a reviewer which operating condition exposed auth, local-context, fixture, network, or dependency limitations.
+
 ---
 
 ## Bayesian Claim Layer
@@ -52,6 +68,7 @@ command_exists(["project", "list"])
 flag_exists(["project", "list"], "--format")
 flag_arity("--format") = required_value
 runtime_state(["model"]) = precondition_blocked(auth_required)
+runtime_state(["project", "create"]) = precondition_blocked(fixture_required)
 output_mode(["list"], "--json") = json
 ```
 
@@ -82,7 +99,7 @@ Current command evidence weights:
 | Structural command row in help/layout | `+1.0` | Weak positive candidate evidence |
 | Usage syntax observed | `+0.5` | Small positive grammar evidence |
 | Runtime help is reachable and help-like | `+4.0` | Strong positive command evidence |
-| Runtime says auth/login/profile is required | `+2.0` | Positive command evidence, but blocked by precondition |
+| Runtime reports a classified precondition such as auth, local context, or fixture input | `+2.0` | Positive command evidence, but conditional on runtime setup |
 | Runtime help is not help-like and not precondition-blocked | `-2.0` | Negative command evidence |
 | Invalid child rejected cleanly | `+0.5` | Small positive parser-boundary evidence |
 | Invalid flag rejected cleanly | `+0.5` | Small positive parser-boundary evidence |
@@ -122,7 +139,9 @@ The current inference pipeline uses evidence layers:
 
 Help text is only one weak evidence source. Runtime behavior has higher weight. Auth-required output is not treated as command absence; it becomes `runtime_state: precondition_blocked` with `auth_required`.
 
-This distinction matters for real CLIs whose command-specific help can be gated by authentication, profile state, current working directory, or installed plugins. A high-precision precondition diagnostic is command recognition evidence, not command absence.
+This distinction matters for real CLIs whose command-specific help or safe execution can be gated by authentication, profile state, current working directory, required operands, fixture data, or installed plugins. A high-precision precondition diagnostic is command recognition evidence, not command absence.
+
+Runtime context changes how that evidence should be read. If `clean` reports `auth_required` and `authenticated` confirms the same command, the clean run has discovered a precondition and the authenticated run has confirmed the reachable behavior behind it. That is an improvement path, not a contradiction. Similarly, if `local-context` confirms commands that the clean run marks `local_context_required`, the suite has identified a workspace precondition that agents can satisfy deliberately. If a command reports `fixture_required`, CLIARE has reached command-specific validation but cannot safely supply missing operands, required flags, resource identifiers, or sample data without a declared fixture.
 
 ---
 
@@ -171,7 +190,7 @@ recognition_rate = (runtime_confirmed_commands + precondition_blocked_commands)
 discovery = 70 * recognition_rate + 30 * avg_command_confidence
 ```
 
-The inclusion of `precondition_blocked_commands` is intentional. If a command returns a high-precision auth-required diagnostic, CLIARE has evidence that the command exists, even if the current runtime cannot exercise it further.
+The inclusion of `precondition_blocked_commands` is intentional. If a command returns a high-precision precondition diagnostic, CLIARE has evidence that the command exists, even if the current runtime cannot exercise it further.
 
 Discovery improves when:
 
@@ -279,7 +298,9 @@ else:
     output = 40 + 60 * output_mode_parse_successes / denominator
 ```
 
-The fixed 40-point base rewards advertised JSON/YAML contracts. The parse component rewards safe probes that actually produce parseable output. Precondition-blocked output probes are reported separately and do not count as parse failures.
+The fixed 40-point base rewards advertised JSON/YAML contracts. The parse component rewards safe probes that actually produce parseable output. Precondition-blocked output probes are reported separately and do not count as parse failures. This includes output probes blocked by `auth_required`, `local_context_required`, and `fixture_required`.
+
+Output probing must respect the CLI's advertised output grammar. If help says `--json fields` and lists field names, the probe should use valid field names such as `--json number,title,url`, not the literal value `json`. Transformer flags such as jq expressions or templates are not output-mode producers; they are only safe to probe after a producer contract exists.
 
 Output improves when:
 
@@ -323,7 +344,7 @@ Safety improves when:
 2. It is evidence-replayable because the score is derived from observations.
 3. It decomposes into subscores and findings.
 4. It detects score deltas across releases.
-5. It distinguishes missing commands from auth/precondition-blocked commands.
+5. It distinguishes missing commands from runtime-precondition-blocked commands.
 6. It makes traversal pressure visible instead of hiding incomplete exploration.
 7. It can run in the maintainer's CI environment without sending binaries to a hosted runner.
 
@@ -402,7 +423,7 @@ CLIARE should satisfy these local monotonicity expectations:
 | Make help probes read-only | Safety up |
 | Add dry-run to mutating commands | Safety up in future model |
 | Reject unknown flags consistently | Recovery up |
-| Replace generic auth failure with precise auth-required diagnostic | Discovery/precondition accuracy up |
+| Replace generic precondition failure with a precise, actionable diagnostic | Discovery, recovery, and precondition accuracy up |
 
 Whole-surface scores can still move down when a CLI adds many poorly documented commands. That is not a violation; it means the measured surface grew and the new surface is less agent-ready. For release governance, CLIARE should preserve both:
 

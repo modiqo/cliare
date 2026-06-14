@@ -64,17 +64,22 @@ pub async fn guard(args: GuardArgs) -> Result<GuardSummary> {
     let allowed_drop = allowed_drop(args.allowed_drop)?;
     let baseline_path = args.baseline.clone();
     let mut measurement = measure::measure(MeasureArgs::from(&args)).await?;
+    let artifact_dir = measurement
+        .scorecard_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| args.out.clone());
     let current_total = measurement.score_total;
     let baseline_total = baseline.total()?;
     let delta = current_total - baseline_total;
     let regression_passed = delta + allowed_drop >= 0.0;
     let policy = match &args.policy {
-        Some(policy_path) => Some(policy::evaluate_policy(policy_path, &args.out).await?),
+        Some(policy_path) => Some(policy::evaluate_policy(policy_path, &artifact_dir).await?),
         None => None,
     };
     let passed = regression_passed && policy.as_ref().is_none_or(|policy| policy.passed);
     let ci_artifacts = ci::write_ci_artifacts(
-        &args.out,
+        &artifact_dir,
         Some(&GuardCiContext {
             baseline_path: baseline_path.clone(),
             baseline_total,
@@ -249,6 +254,10 @@ mod tests {
             output_mode_precondition_blocked: 0,
             precondition_blocked_probes: 0,
             auth_required_probes: 0,
+            local_context_required_probes: 0,
+            fixture_required_probes: 0,
+            actionable_precondition_probes: 0,
+            precondition_recovery_rate: 0.0,
             side_effect_files_created: 0,
             side_effect_files_modified: 0,
             side_effect_files_deleted: 0,
@@ -273,6 +282,11 @@ mod tests {
             traversal_stop_reason: "converged".to_owned(),
             traversal_complete: true,
             cache_hit: false,
+            runtime_context: crate::context::RuntimeContext::default(),
+            suite_root_path: PathBuf::from(".cliare"),
+            runtime_context_path: Some(PathBuf::from(".cliare/runtime-context.json")),
+            context_suite_path: None,
+            context_compare_path: None,
         }
     }
 }

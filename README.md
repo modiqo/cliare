@@ -100,8 +100,74 @@ Use these measurement controls deliberately:
 | `--max-probes <N>` | Overrides the probe budget when a large surface needs more runtime evidence. |
 | `--min-expected-value <N>` | Controls when low-value frontier exploration can converge; lower values explore more aggressively. |
 | `--concurrency <N>` | Runs more probes in parallel when the target CLI and machine can tolerate it. |
+| `--execution-mode host` | Runs probes with the caller's inherited environment and real working directory. Use for local investigation of auth/profile/workspace behavior; keep CI on the default isolated mode. |
 | `--detach` | Starts a background measurement worker, prints job metadata, and returns control to the shell. |
 | `--refresh` | Ignores reusable cached artifacts and probes the target again. |
+
+### Runtime Contexts
+
+Many CLIs expose different behavior depending on login state, current working directory, fixture data, network access, local daemons, or installed plugins. CLIARE treats those conditions as runtime context, not as noise. A clean unauthenticated run and an authenticated workspace run are separate measurements of the same binary.
+
+When `--context` is supplied, `--out` becomes the suite root and every measurement writes a complete artifact bundle under `contexts/<context>/`:
+
+```text
+.cliare/rote/
+  context-suite.json
+  context-compare.md
+  contexts/
+    clean/
+      scorecard.json
+      command-index.json
+      persona-maintainer.md
+      runtime-context.json
+    authenticated/
+      scorecard.json
+      command-index.json
+      persona-harness.md
+      runtime-context.json
+    local-context/
+      scorecard.json
+      command-index.json
+      persona-security.md
+      runtime-context.json
+```
+
+Run the same CLI under the contexts that matter for your users:
+
+```sh
+cliare measure rote --out .cliare/rote --context clean --profile standard --refresh
+cliare measure rote --out .cliare/rote --context authenticated --auth-state present --profile standard --refresh
+cliare measure rote --out .cliare/rote --context local-context --context-workdir /path/to/workspace --profile deep --max-depth 12 --max-probes 5000 --refresh
+```
+
+Each context folder contains the normal artifact set: scorecard, report, command index, shape, evidence, issues, CI files, persona packets, README, and agent guide. The suite root contains the cross-context comparison files. `cliare measure` refreshes the suite comparison after each context run when a context is declared; you can also rebuild it explicitly:
+
+```sh
+cliare context compare .cliare/rote/contexts/clean .cliare/rote/contexts/authenticated .cliare/rote/contexts/local-context --out .cliare/rote --write
+```
+
+Use `--context-workdir` when the CLI needs to run inside a repository, project, or workspace. CLIARE still isolates HOME, XDG, tmp, stdin, timeouts, output capture, and per-probe scratch directories; only the process working directory is supplied by the caller. Because the supplied workdir is part of the evidence surface, prefer a lean fixture or representative workspace for deep runs rather than a directory dominated by generated build output.
+
+Use `--execution-mode host` only when you intentionally want probes to inherit the caller's `HOME`, `PATH`, credentials, local config, and current process environment. Host mode records `sandbox_profile: host` and `env_policy: inherited` in the evidence and scorecard so it cannot be confused with an isolated CI measurement. It is useful for comparing clean, authenticated, and workspace-provisioned behavior, but it should not be used as a default CI gate.
+
+Commands that consume measurement artifacts use the same context routing. If `--out` points at a suite root with more than one persisted context, `report` and `jobs status` require `--context <name>` and print the available context names with their artifact directories. You can also pass the context artifact directory directly. `describe` can describe the suite root itself, which is useful for discovering persisted contexts, and accepts `--context` when you want the artifact map for one context.
+
+```sh
+cliare describe .cliare/rote
+cliare describe .cliare/rote --context local-context --write
+cliare report maintainer --out .cliare/rote --context local-context --write
+cliare report harness --out .cliare/rote/contexts/local-context --write
+```
+
+Detached context runs report the context artifact directory in their status command:
+
+```sh
+cliare measure rote --out .cliare/rote --context local-context --context-workdir /path/to/workspace --detach --refresh
+cliare jobs status --out .cliare/rote --context local-context
+cliare jobs status --out .cliare/rote/contexts/local-context
+```
+
+Cache reuse is also context-scoped. The runtime context is part of the measurement profile, so a clean run cannot satisfy an authenticated or workspace run even when the binary fingerprint is identical.
 
 Start human review with `artifact-map.md`, not the raw JSON files. The artifact map explains what was generated, whether the run completed, which files are intended for humans, and where to drill down. Then open the persona report that matches the review you are doing.
 
@@ -130,6 +196,15 @@ For harness integration, generate the measurement with enough traversal budget, 
 cliare measure mycli --out .cliare/mycli --profile deep --max-depth 12 --max-probes 5000 --refresh
 cliare report harness --out .cliare/mycli --write
 cliare describe .cliare/mycli --write
+```
+
+For context suites, select the context explicitly or pass the context artifact directory:
+
+```sh
+cliare measure mycli --out .cliare/mycli --context clean --profile standard --refresh
+cliare measure mycli --out .cliare/mycli --context workspace --context-workdir /path/to/project --profile deep --refresh
+cliare report harness --out .cliare/mycli --context workspace --write
+cliare describe .cliare/mycli --context workspace --write
 ```
 
 `command-index.json` is the harness-facing artifact. It is one row per command path and is designed for routing, planning, and safety checks: command path, argv form, summary, confidence, runtime state, readiness state, discovered flags, positionals, preconditions, output contracts, gaps, and evidence pointers. `command-index.md` is the same catalog rendered for human review.
@@ -201,27 +276,28 @@ Every persona packet starts with score context and a prioritized action table, t
 ```sh
 cliare measure ./mycli
 cliare measure ./mycli --out .cliare/mycli --profile deep --detach
-cliare jobs status --out .cliare/mycli
+cliare measure ./mycli --out .cliare/mycli --context clean --refresh
+cliare measure ./mycli --out .cliare/mycli --context local-context --context-workdir /path/to/project --profile deep --refresh
+cliare jobs status --out .cliare/mycli --context local-context
 cliare guard ./mycli --baseline .cliare/baseline.scorecard.json
 cliare guard ./mycli --baseline .cliare/baseline.scorecard.json --policy cliare.policy.json
 cliare benchmark --manifest benchmarks/local-corpus.json --out .cliare-bench
-cliare report maintainer --out .cliare --write
-cliare report harness --out .cliare --format json
-cliare describe .cliare --write
+cliare context compare .cliare/mycli/contexts/clean .cliare/mycli/contexts/local-context --out .cliare/mycli --write
+cliare report maintainer --out .cliare/mycli --context local-context --write
+cliare report harness --out .cliare/mycli/contexts/local-context --format json
+cliare describe .cliare/mycli --context local-context --write
 cliare skills list
 cliare skills install --agent all
 cliare metadata --format json
-cliare certify ./mycli
-cliare rescore .cliare/evidence.jsonl
 ```
 
-The implemented `measure` command fingerprints a target binary, runs bounded safe probes inside isolated per-probe HOME/PWD/XDG/TMP sandboxes with a sanitized environment, records `evidence.jsonl`, emits a generic `shape.json`, writes `command-index.json` and `command-index.md` as command-centric lookup tables, and writes `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, `junit.xml`, `issues.json`, `issues.md`, and persona reports for maintainers, harness builders, platform teams, security reviewers, OSS maintainers, DevRel teams, and researchers. The shape artifact includes aliases, usage-derived positionals, flag grammar such as boolean, required-value, optional-value, repeatable, and required flags, plus output contracts for advertised JSON/YAML/table/plain modes where help output exposes them. The command index projects that raw shape into one row per command with parameters, runtime state, preconditions, output-contract status, suitability for agent use, and evidence pointers. Command extraction is structural rather than framework-specific: it uses indentation, aligned rows, compact invocation cells, token morphology, block density, runtime confirmation, and manpage detection instead of hard-coded section titles such as `Commands` or `Subcommands`. CLIARE distinguishes command absence from precondition-blocked runtime evidence: auth/login diagnostics are represented as `runtime_state: precondition_blocked` with `auth_required`, not as ordinary command failures. Output-contract inference excludes file-path defaults such as `report.json` unless the flag is actually advertised as a format or machine-output selector. Every probe is wrapped in sandbox filesystem snapshots so persistent created, modified, and deleted files are recorded as safety evidence. `measure-cache.json` allows later runs to reuse artifacts when the target fingerprint, traversal profile, sandbox profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE version, measurement engine, and artifact set match; cache hits refresh derived issue and persona reports from existing measurement artifacts without rerunning probes. Use `--refresh` to force a new probe run.
+The implemented `measure` command fingerprints a target binary, runs bounded safe probes inside isolated per-probe HOME/XDG/TMP sandboxes with a sanitized environment, records `evidence.jsonl`, emits a generic `shape.json`, writes `command-index.json` and `command-index.md` as command-centric lookup tables, and writes `runtime-context.json`, `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, `junit.xml`, `issues.json`, `issues.md`, and persona reports for maintainers, harness builders, platform teams, security reviewers, OSS maintainers, DevRel teams, and researchers. In a context suite, the same artifact set is written under `contexts/<context>/`, while `context-suite.json` and `context-compare.md` live at the suite root. The shape artifact includes aliases, usage-derived positionals, flag grammar such as boolean, required-value, optional-value, repeatable, and required flags, plus output contracts for advertised JSON/YAML/table/plain modes where help output exposes them. For field-selecting JSON flags, CLIARE extracts advertised field names from help and probes a valid field subset instead of assuming the literal value `json`; flags that transform an existing JSON stream, such as jq/template filters, are not treated as machine-output producers. The command index projects that raw shape into one row per command with parameters, runtime state, preconditions, output-contract status, suitability for agent use, and evidence pointers. Command extraction is structural rather than framework-specific: it uses indentation, aligned rows, compact invocation cells, token morphology, block density, runtime confirmation, and manpage detection instead of hard-coded section titles such as `Commands` or `Subcommands`. CLIARE distinguishes command absence from precondition-blocked runtime evidence: authentication, local-context, and fixture/input diagnostics are represented as `runtime_state: precondition_blocked` with preconditions such as `auth_required`, `local_context_required`, or `fixture_required`, not as ordinary command failures. Diagnostic recovery quality is scored separately from the precondition itself: labeled fixes, command examples, hints, and help references make a CLI more agent-ready because they give harnesses a path to recover. Output-contract inference excludes file-path defaults such as `report.json` unless the flag is actually advertised as a format or machine-output selector. Every probe is wrapped in sandbox filesystem snapshots so persistent created, modified, and deleted files are recorded as safety evidence. `measure-cache.json` allows later runs to reuse artifacts when the target fingerprint, runtime context, traversal profile, sandbox profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE version, measurement engine, and artifact set match; cache hits refresh derived issue and persona reports from existing measurement artifacts without rerunning probes. Use `--refresh` to force a new probe run.
 
-Fresh measurements create a progress job under `<out>/jobs/`. Foreground `measure` remains blocking so CI can fail fast on measurement errors and policy gates. Long interactive runs can use `--detach`; CLIARE re-execs itself as a background worker, returns immediately with a job id, child PID, progress log, stdout log, stderr log, and status command, and continues writing the normal artifact set. `cliare jobs status --out <dir>` reads `<out>/jobs/current` and reports `not_started`, `starting`, `running`, `complete`, or `failed` from the latest progress evidence. The progress log contains flushed lines with probe-budget percentage, scheduler state, probe status, side-effect counts, artifact-writing milestones, and a final `100.0% complete` line. `<out>/jobs/current` points at the latest progress log and preserves detached-worker stdout/stderr paths when present.
+Fresh measurements create a progress job under the effective artifact directory. Plain runs use `<out>/jobs/`; context runs use `<out>/contexts/<context>/jobs/`. Foreground `measure` remains blocking so CI can fail fast on measurement errors and policy gates. Long interactive runs can use `--detach`; CLIARE re-execs itself as a background worker, returns immediately with a job id, child PID, progress log, stdout log, stderr log, and status command, and continues writing the normal artifact set. `cliare jobs status --out <dir>` reads `<dir>/jobs/current` for a direct measurement directory. For a context suite root, use `cliare jobs status --out <suite> --context <name>`; if the context is omitted and multiple contexts are persisted, CLIARE stops and prints the available context names and artifact directories. The progress log contains flushed lines with probe-budget percentage, scheduler state, probe status, side-effect counts, artifact-writing milestones, and a final `100.0% complete` line. `jobs/current` points at the latest progress log and preserves detached-worker stdout/stderr paths when present.
 
 The implemented `guard` command measures a target, rewrites CI artifacts with guard context, fails on total-score regression against a baseline scorecard, and can evaluate `cliare.policy.v1` JSON policies through `--policy`. Policies support `min_total_score`, per-dimension `min_subscores`, side-effect `allow_paths`, `max_unapproved`, and `deny_credential_like`. Traversal profiles provide useful presets: `quick` is depth 3 / 64 probes / concurrency 2, `standard` is depth 5 / 256 probes / concurrency 4, and `deep` is depth 8 / 1000 probes / concurrency 8. `--max-depth`, `--max-probes`, `--min-expected-value`, and `--concurrency` override the selected profile for larger, tighter, or more aggressive CI runs.
 
-Scorecards report coverage pressure, output coverage, precondition-blocked probes, side-effect coverage, scheduler accounting, and runtime isolation metadata, including profile, observed depth, frontier remaining, expected-value convergence skips, candidates skipped by depth, stop reason, probes skipped by budget, probes scheduled, scheduler rounds, output parse successes, sandbox file changes, sandbox root, and env policy. The implemented `benchmark` command runs a manifest-defined real CLI corpus with target-level parallelism, per-target measurement artifacts, expected score bands, runtime caps, precondition-blocked counts, and streaming `benchmark.json`/`benchmark.md` reports. Benchmark aggregation is single-writer with atomic file replacement and an output-directory lock, so parallel target execution does not corrupt the aggregate report. The implemented `report` command projects existing measurement artifacts into persona outcome packets for maintainers, harness builders, platform teams, security reviewers, OSS maintainers, DevRel teams, and researchers. Persona Markdown reports are table-first and include drill-down sections for selected issues; `--write` persists both Markdown and JSON packet artifacts. The implemented `describe` command turns a measurement or benchmark artifact directory into `cliare.artifact-map.v1`: a typed file manifest, health summary, navigation plan, job status, score/issue/command summaries, and missing-required-artifact list for agents and humans. `describe --write` persists `artifact-map.json` and `artifact-map.md`. The implemented `skills` command installs the CLIARE artifact-review skill for Claude, Codex, and Cursor, including Claude persona command wrappers such as `/cliare-harness` and `/cliare-security`. `metadata --format json` emits a parseable CLIARE implementation contract. The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads only CLIARE artifacts, appends the Markdown summary to the job summary, and exposes score/output paths. `certify`, `rescore`, and hosted publishing remain planned.
+Scorecards report coverage pressure, output coverage, precondition-blocked probes, auth-required probes, local-context-required probes, fixture-required probes, actionable precondition diagnostics, side-effect coverage, scheduler accounting, and runtime isolation metadata, including profile, observed depth, frontier remaining, expected-value convergence skips, candidates skipped by depth, stop reason, probes skipped by budget, probes scheduled, scheduler rounds, output parse successes, sandbox file changes, sandbox root, and env policy. The implemented `benchmark` command runs a manifest-defined real CLI corpus with target-level parallelism, per-target measurement artifacts, expected score bands, runtime caps, precondition-blocked counts, and streaming `benchmark.json`/`benchmark.md` reports. Benchmark aggregation is single-writer with atomic file replacement and an output-directory lock, so parallel target execution does not corrupt the aggregate report. The implemented `report` command projects existing measurement artifacts into persona outcome packets for maintainers, harness builders, platform teams, security reviewers, OSS maintainers, DevRel teams, and researchers. Persona Markdown reports are table-first and include drill-down sections for selected issues; `--write` persists both Markdown and JSON packet artifacts. When `report` or `jobs status` is pointed at a context suite root with multiple contexts, the command requires `--context` and prints the persisted context names and artifact directories. The implemented `describe` command turns a measurement, benchmark, or context-suite artifact directory into `cliare.artifact-map.v1`: a typed file manifest, health summary, navigation plan, job status, score/issue/command/context summaries, and missing-required-artifact list for agents and humans. `describe --write` persists `artifact-map.json` and `artifact-map.md`; `describe <suite>` lists persisted contexts, while `describe <suite> --context <name>` describes one context artifact directory. The implemented `skills` command installs the CLIARE artifact-review skill for Claude, Codex, and Cursor, including Claude persona command wrappers such as `/cliare-harness` and `/cliare-security`. `metadata --format json` emits a parseable CLIARE implementation contract. The root `action.yml` composite action runs `measure` or `guard` in the caller's CI environment, uploads only CLIARE artifacts, appends the Markdown summary to the job summary, and exposes score/output paths. `certify`, `rescore`, and hosted publishing remain planned.
 
 ## Agent Skills
 

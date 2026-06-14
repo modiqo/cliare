@@ -6,6 +6,8 @@ use crate::evidence::ProcessStatus;
 #[serde(rename_all = "snake_case")]
 pub enum PreconditionKind {
     AuthRequired,
+    LocalContextRequired,
+    FixtureRequired,
     NetworkUnavailable,
     RuntimeDependencyUnavailable,
 }
@@ -14,6 +16,8 @@ impl PreconditionKind {
     pub fn label(self) -> &'static str {
         match self {
             Self::AuthRequired => "auth_required",
+            Self::LocalContextRequired => "local_context_required",
+            Self::FixtureRequired => "fixture_required",
             Self::NetworkUnavailable => "network_unavailable",
             Self::RuntimeDependencyUnavailable => "runtime_dependency_unavailable",
         }
@@ -25,65 +29,7 @@ pub fn classify_process(
     stdout: Option<&str>,
     stderr: Option<&str>,
 ) -> Option<PreconditionKind> {
-    if !matches!(status, ProcessStatus::Exited { code: Some(code) } if *code != 0) {
-        return None;
-    }
-
-    let text = format!(
-        "{}\n{}",
-        stdout.unwrap_or_default(),
-        stderr.unwrap_or_default()
-    )
-    .to_ascii_lowercase();
-
-    let auth_phrases = [
-        "requires login",
-        "login required",
-        "please login",
-        "please log in",
-        "not logged in",
-        "requires authentication",
-        "authentication required",
-        "not authenticated",
-        "unauthenticated",
-        "auth required",
-        "requires auth",
-    ];
-
-    if auth_phrases.iter().any(|phrase| text.contains(phrase)) {
-        return Some(PreconditionKind::AuthRequired);
-    }
-
-    let network_phrases = [
-        "rate limit exceeded",
-        "network is unreachable",
-        "temporary failure in name resolution",
-        "no such host",
-        "could not resolve host",
-        "connection refused",
-        "connection timed out",
-        "request timed out",
-    ];
-    if network_phrases.iter().any(|phrase| text.contains(phrase)) {
-        return Some(PreconditionKind::NetworkUnavailable);
-    }
-
-    let runtime_dependency_phrases = [
-        "cannot connect to the docker daemon",
-        "docker desktop is a prerequisite",
-        "docker daemon is not running",
-        "failed to inspect service",
-        "failed to inspect container",
-        "no such file or directory: docker",
-    ];
-    if runtime_dependency_phrases
-        .iter()
-        .any(|phrase| text.contains(phrase))
-    {
-        return Some(PreconditionKind::RuntimeDependencyUnavailable);
-    }
-
-    None
+    crate::diagnostic::analyze_process(status, stdout, stderr).precondition
 }
 
 pub fn classify_text(text: &str) -> Option<PreconditionKind> {
@@ -121,6 +67,32 @@ mod tests {
         assert_eq!(
             classify_text("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
             Some(PreconditionKind::RuntimeDependencyUnavailable)
+        );
+    }
+
+    #[test]
+    fn detects_local_context_preconditions() {
+        assert_eq!(
+            classify_text(
+                "error: not in a workspace directory\n\nFix:\n  tool init demo\n  cd workspaces/demo"
+            ),
+            Some(PreconditionKind::LocalContextRequired)
+        );
+        assert_eq!(
+            classify_text("failed to run git: fatal: not a git repository: .git"),
+            Some(PreconditionKind::LocalContextRequired)
+        );
+    }
+
+    #[test]
+    fn detects_fixture_required_preconditions() {
+        assert_eq!(
+            classify_text("owner is required when not running interactively"),
+            Some(PreconditionKind::FixtureRequired)
+        );
+        assert_eq!(
+            classify_text("missing required argument <PROJECT_ID>"),
+            Some(PreconditionKind::FixtureRequired)
         );
     }
 }

@@ -7,7 +7,7 @@
 
 ## Summary
 
-CLIARE has four primary technical artifact families:
+CLIARE has five primary technical artifact families:
 
 1. **Evidence Log**
    - append-only observations from probing
@@ -31,7 +31,12 @@ CLIARE has four primary technical artifact families:
    - records artifact kind, health, file roles, schemas, missing required files, current job state, and recommended navigation order
    - suitable as the first machine-readable file an agent opens when inspecting a CLIARE output directory
 
-The evidence log is analogous to source code. The shape catalog is analogous to compiled IR. The command index is the queryable symbol table that agents and maintainers use before invoking a command. The artifact map is the package manifest for the output directory: it tells an agent which artifacts exist, which are missing, and where to begin.
+5. **Runtime Context Suite**
+   - suite-level index for multiple measurements of the same binary under different runtime contexts
+   - separates clean, authenticated, local-context, fixture, and custom runs into distinct artifact directories
+   - records context score deltas and observed precondition chains without flattening persona files into one namespace
+
+The evidence log is analogous to source code. The shape catalog is analogous to compiled IR. The command index is the queryable symbol table that agents and maintainers use before invoking a command. The artifact map is the package manifest for a single output directory: it tells an agent which artifacts exist, which are missing, and where to begin. The context suite is the package manifest for a set of related measurements: it tells a reviewer how the same executable behaves when auth, workspace, fixture, network, or runtime dependency state changes.
 
 ---
 
@@ -56,6 +61,12 @@ File:
 
 ```
 .cliare/evidence.jsonl
+```
+
+For context-suite measurements, the same file lives under the context artifact directory:
+
+```text
+.cliare/<target>/contexts/<context>/evidence.jsonl
 ```
 
 Each line is a JSON object.
@@ -89,6 +100,29 @@ Kinds:
 - `classifier_annotation`
 - `redaction_event`
 - `run_finished`
+
+The `run_started` event carries `runtime_context` so the evidence log remains self-describing even when copied away from the suite root.
+
+```json
+{
+  "kind": "run_started",
+  "payload": {
+    "runtime_context": {
+      "schema_version": "cliare.runtime-context.v1",
+      "profile": "local_context",
+      "name": "local-context",
+      "auth_state": "present",
+      "local_context_state": "present",
+      "fixture_state": "absent",
+      "network_state": "unknown",
+      "runtime_dependency_state": "unknown",
+      "cwd_policy": "provided",
+      "workdir": "/path/to/project",
+      "declared_by": "cli"
+    }
+  }
+}
+```
 
 ---
 
@@ -345,9 +379,9 @@ Files:
 | Suitability | Meaning | Harness Treatment |
 |---|---|---|
 | `ready` | The command is runtime-confirmed and has no blocking gaps. If it also has a parseable machine-readable output contract, it is especially suitable for agent routing. | Candidate for automatic routing, subject to the harness's own permissions and task policy. |
-| `conditional` | The command is runtime-confirmed, but some command-quality gap remains: unavailable help, unknown flags, unknown arity, missing invalid-command diagnostics, missing invalid-flag diagnostics, or output parse failure. | Expose only with policy or manual review. Prefer safer alternatives when planning unattended actions. |
+| `conditional` | The command is runtime-confirmed, or was recognized by the runtime, but a satisfiable condition remains: auth, local workspace/project context, unavailable help, unknown flags, unknown arity, missing invalid-command diagnostics, missing invalid-flag diagnostics, or output parse failure. | Expose only when the harness can satisfy the condition or when policy allows manual review. Prefer safer alternatives when planning unattended actions. |
 | `needs_fixture` | The command has an advertised output contract or behavior that CLIARE could not safely validate without fixture operands, command-local data, or a safe runtime setup. | Do not treat the missing validation as a CLI defect. Add fixtures or documented safe operands before routing automatically. |
-| `blocked` | A runtime precondition blocked safe confirmation or use. Examples include `auth_required`, `profile_required`, `project_required`, or missing local runtime state. | Treat as unavailable unless the harness can explicitly satisfy the precondition. Do not confuse this with command absence. |
+| `blocked` | The command is blocked by an opaque, infrastructure-level, or currently unsatisfied runtime condition such as unavailable network or local runtime dependency. | Treat as unavailable until the runtime condition is provisioned or the diagnostic becomes explicit enough to classify. Do not confuse this with command absence. |
 | `candidate` | The command is inferred from help/layout or related evidence, but has not accumulated enough runtime evidence to be confirmed. | Keep out of automatic routing. Confirm with deeper measurement, clearer help, or explicit catalog metadata. |
 
 Example:
@@ -400,11 +434,38 @@ Example:
     {
       "command": "project billing",
       "runtime_state": "precondition_blocked",
-      "agent_suitability": "blocked",
+      "agent_suitability": "conditional",
       "suitability_reasons": [
         "requires runtime precondition: auth_required"
       ],
       "preconditions": ["auth_required"]
+    },
+    {
+      "command": "stats",
+      "runtime_state": "precondition_blocked",
+      "agent_suitability": "conditional",
+      "suitability_reasons": [
+        "requires runtime precondition: local_context_required"
+      ],
+      "preconditions": ["local_context_required"]
+    },
+    {
+      "command": "project create",
+      "runtime_state": "runtime_confirmed",
+      "agent_suitability": "needs_fixture",
+      "suitability_reasons": [
+        "requires runtime precondition: fixture_required"
+      ],
+      "preconditions": ["fixture_required"],
+      "output_contracts": [
+        {
+          "mode": "json",
+          "flag_name": "--format",
+          "argv_fragment": ["--format", "json"],
+          "status": "precondition_blocked",
+          "preconditions": ["fixture_required"]
+        }
+      ]
     },
     {
       "command": "project internal",
@@ -418,7 +479,23 @@ Example:
 }
 ```
 
-For the example above, an agent harness can consider `project list` for routing, should treat `project delete` as policy-gated, should ask for fixture support before relying on `project export`, should avoid `project billing` unless auth is provisioned, and should ignore `project internal` until a later measurement confirms it.
+For the example above, an agent harness can consider `project list` for routing, should treat `project delete` as policy-gated, should ask for fixture support before relying on `project export`, should use `project billing` only when auth is provisioned, should use `stats` only inside the required local context, should invoke `project create` only after providing safe required flags or fixture operands, and should ignore `project internal` until a later measurement confirms it.
+
+### Diagnostic Recovery
+
+Precondition classification is based on diagnostic features rather than vendor-specific phrase buckets. CLIARE analyzes process status, command-recognition evidence, labeled diagnostic blocks, shell command examples, action families such as changing directory or logging in, and weak lexical token classes. Exact prose such as "not in a workspace directory", "not a git repository", or "required flag not set" should be calibration examples, not production special cases.
+
+The current precondition labels are:
+
+| Precondition | Meaning |
+|---|---|
+| `auth_required` | The runtime recognized the command but requires login, credentials, tokens, or an authenticated profile. |
+| `local_context_required` | The runtime recognized the command but requires a repository, workspace, project directory, configured profile, or similar current-directory context. |
+| `fixture_required` | The runtime recognized the command but requires safe operands, required flags, resource identifiers, field values, or fixture data before behavior or output can be validated. |
+| `network_unavailable` | The runtime recognized the command but could not reach a required network service or exceeded network availability constraints. |
+| `runtime_dependency_unavailable` | The runtime recognized the command but requires a local daemon, container runtime, socket, service, plugin, or executable dependency. |
+
+Diagnostics that include actionable recovery affordances improve the recovery dimension. A command that exits with a local-context precondition and provides concrete `Fix`, `hint`, or `help` guidance is more agent-ready than a command that exits with the same precondition and no recovery path.
 
 ---
 
@@ -677,6 +754,22 @@ Output kinds:
 - `binary`
 - `empty`
 - `unknown`
+
+For advertised output modes, CLIARE distinguishes producer flags from transformer flags. A flag such as `--format json` or `--output json` is a producer because it asks the CLI to emit machine-readable output. A flag such as `--jq <expression>` or `--template <template>` is a transformer because it filters or formats an existing machine-readable stream; it should not by itself create an output contract.
+
+Some CLIs use field selectors instead of a literal mode value. For example, a command may advertise `--json fields` and list valid fields under a `JSON FIELDS` section. In that case the command index should record a safe field subset:
+
+```json
+{
+  "mode": "json",
+  "flag_name": "--json",
+  "argv_fragment": ["--json", "assignees,author,body"],
+  "status": "precondition_blocked",
+  "preconditions": ["local_context_required"]
+}
+```
+
+If the same probe exits before producing output because required operands or flags are missing, the contract is `precondition_blocked` with `fixture_required`. It is not an output parse failure.
 
 ---
 

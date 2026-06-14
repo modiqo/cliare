@@ -242,7 +242,7 @@ Reviewer labels:
 | conditional | Claim is true only under named runtime conditions |
 | out_of_scope | Claim is outside the calibrated subset |
 
-Auth-gated commands should not be labeled false just because they cannot be executed in a clean runtime. They should be labeled conditional with an explicit precondition such as `auth_required`, `profile_required`, or `project_required`.
+Precondition-gated commands should not be labeled false just because they cannot be executed in a clean runtime. They should be labeled conditional with an explicit precondition such as `auth_required`, `profile_required`, or `local_context_required`. The diagnostic text that motivated the label should be stored as calibration evidence, but production classifiers should prefer diagnostic structure, recovery actions, and calibrated token features over one-off phrase lists.
 
 ---
 

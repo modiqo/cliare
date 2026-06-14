@@ -50,7 +50,8 @@ Help text is one weak evidence source. Runtime confirmation is stronger evidence
 5. **Runtime confirmation updates beliefs**
    - Candidate commands should be probed with safe forms such as `<candidate> --help`, `help <candidate>`, and invalid child probes.
    - Acceptance, rejection, help-like output, and diagnostic suggestions update confidence.
-   - Auth/profile precondition diagnostics are not command nonexistence evidence. They should create a `precondition_blocked` runtime state, preserve positive evidence that the dispatcher recognized the command path, and mark the required precondition such as `auth_required`.
+   - Runtime precondition diagnostics are not command nonexistence evidence. They should create a `precondition_blocked` runtime state, preserve positive evidence that the dispatcher recognized the command path, and mark the required precondition such as `auth_required`, `local_context_required`, or `fixture_required`.
+   - Precondition classification must use diagnostic features rather than vendor-specific phrase buckets. Labeled recovery blocks, executable examples, action families, neighboring probes, and weak token classes are acceptable evidence. Exact diagnostic sentences belong in calibration corpora and tests, not in production match lists.
 
 6. **Every emitted shape field carries confidence**
    - The shape catalog must say what is known, how strongly it is known, and which evidence supports it.
@@ -189,7 +190,7 @@ Each field includes:
 - evidence references
 - inference model version
 - whether runtime-confirmed
-- whether runtime-blocked by auth/profile preconditions
+- whether runtime-blocked by auth, local context, fixture/input data, profile, dependency, or other preconditions
 
 ---
 

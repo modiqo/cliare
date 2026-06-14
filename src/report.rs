@@ -9,6 +9,7 @@ use tokio::fs;
 
 use crate::artifact_guide::{self, ArtifactGuideSummary};
 use crate::cli::{ReportArgs, ReportFormat, ReportPersona};
+use crate::context;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 
@@ -62,9 +63,12 @@ impl ReportSummary {
 
 pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
     let persona = Persona::from(args.persona);
-    let artifacts = MeasuredArtifacts::read(&args.out).await?;
-    let issue_ledger = IssueLedger::build(&args.out, &artifacts);
-    let packet = PersonaOutcomePacket::build(persona, &args.out, &artifacts, &issue_ledger);
+    let artifact_dir =
+        context::resolve_measurement_dir(&args.out, args.context.as_deref(), "cliare report")
+            .await?;
+    let artifacts = MeasuredArtifacts::read(&artifact_dir).await?;
+    let issue_ledger = IssueLedger::build(&artifact_dir, &artifacts);
+    let packet = PersonaOutcomePacket::build(persona, &artifact_dir, &artifacts, &issue_ledger);
     let markdown = render_markdown(&packet);
     let json =
         serde_json::to_string_pretty(&packet).map_err(CliareError::SerializePersonaOutcome)?;
@@ -73,15 +77,15 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
         .map_err(CliareError::SerializePersonaOutcome)?;
 
     let (markdown_path, json_path, guide_artifacts) = if args.write {
-        let markdown_path = args.out.join(format!("persona-{}.md", persona.label()));
-        let json_path = args.out.join(format!("persona-{}.json", persona.label()));
-        let issues_markdown_path = args.out.join("issues.md");
-        let issues_json_path = args.out.join("issues.json");
+        let markdown_path = artifact_dir.join(format!("persona-{}.md", persona.label()));
+        let json_path = artifact_dir.join(format!("persona-{}.json", persona.label()));
+        let issues_markdown_path = artifact_dir.join("issues.md");
+        let issues_json_path = artifact_dir.join("issues.json");
         write_persona_artifact(&markdown_path, markdown.as_bytes()).await?;
         write_persona_artifact(&json_path, json.as_bytes()).await?;
         write_persona_artifact(&issues_markdown_path, issues_markdown.as_bytes()).await?;
         write_persona_artifact(&issues_json_path, issues_json.as_bytes()).await?;
-        let guide_artifacts = artifact_guide::write_measurement_guides(&args.out).await?;
+        let guide_artifacts = artifact_guide::write_measurement_guides(&artifact_dir).await?;
         (Some(markdown_path), Some(json_path), Some(guide_artifacts))
     } else {
         (None, None, None)
@@ -104,7 +108,7 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
     Ok(ReportSummary {
         persona,
         format: args.format,
-        artifact_dir: args.out,
+        artifact_dir,
         markdown_path,
         json_path,
         readme_path: guide_artifacts
@@ -337,6 +341,8 @@ struct OutcomeSummary {
     credential_like_side_effects: usize,
     precondition_blocked_probes: usize,
     auth_required_probes: usize,
+    local_context_required_probes: usize,
+    fixture_required_probes: usize,
     observed_max_depth: usize,
     max_depth: usize,
     max_probes: usize,
@@ -370,6 +376,8 @@ impl OutcomeSummary {
             credential_like_side_effects: coverage.credential_like_side_effects,
             precondition_blocked_probes: coverage.precondition_blocked_probes,
             auth_required_probes: coverage.auth_required_probes,
+            local_context_required_probes: coverage.local_context_required_probes,
+            fixture_required_probes: coverage.fixture_required_probes,
             observed_max_depth: coverage.observed_max_depth,
             max_depth: coverage.max_depth,
             max_probes: coverage.max_probes,
@@ -461,6 +469,8 @@ struct CoverageSection {
     probes_failed_to_spawn: usize,
     precondition_blocked_probes: usize,
     auth_required_probes: usize,
+    local_context_required_probes: usize,
+    fixture_required_probes: usize,
     frontier_remaining: usize,
     highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
@@ -506,6 +516,8 @@ impl From<&CoverageArtifact> for CoverageSection {
             probes_failed_to_spawn: coverage.probes_failed_to_spawn,
             precondition_blocked_probes: coverage.precondition_blocked_probes,
             auth_required_probes: coverage.auth_required_probes,
+            local_context_required_probes: coverage.local_context_required_probes,
+            fixture_required_probes: coverage.fixture_required_probes,
             frontier_remaining: coverage.frontier_remaining,
             highest_pending_expected_value: coverage.highest_pending_expected_value,
             candidates_skipped_by_depth: coverage.candidates_skipped_by_depth,
@@ -1029,7 +1041,12 @@ struct CoverageArtifact {
     probes_timed_out: usize,
     probes_failed_to_spawn: usize,
     precondition_blocked_probes: usize,
+    #[serde(default)]
     auth_required_probes: usize,
+    #[serde(default)]
+    local_context_required_probes: usize,
+    #[serde(default)]
+    fixture_required_probes: usize,
     frontier_remaining: usize,
     highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,

@@ -558,12 +558,17 @@ fn command_suitability(
         return (AgentSuitability::Candidate, reasons);
     }
 
-    if command.runtime_state == CommandRuntimeState::PreconditionBlocked
+    let has_precondition_gap = command.runtime_state == CommandRuntimeState::PreconditionBlocked
         || !preconditions.is_empty()
         || gaps
             .iter()
-            .any(|gap| matches!(gap.kind, GapKind::PreconditionBlocked))
-    {
+            .any(|gap| matches!(gap.kind, GapKind::PreconditionBlocked));
+    if has_precondition_gap && preconditions_are_agent_satisfiable(preconditions) {
+        reasons.push(format_preconditions(preconditions));
+        return (AgentSuitability::Conditional, reasons);
+    }
+
+    if has_precondition_gap {
         reasons.push(format_preconditions(preconditions));
         return (AgentSuitability::Blocked, reasons);
     }
@@ -607,6 +612,16 @@ fn command_suitability(
     (AgentSuitability::Ready, reasons)
 }
 
+fn preconditions_are_agent_satisfiable(preconditions: &[PreconditionKind]) -> bool {
+    !preconditions.is_empty()
+        && preconditions.iter().all(|precondition| {
+            matches!(
+                precondition,
+                PreconditionKind::AuthRequired | PreconditionKind::LocalContextRequired
+            )
+        })
+}
+
 fn format_preconditions(preconditions: &[PreconditionKind]) -> String {
     if preconditions.is_empty() {
         "runtime precondition observed; inspect evidence for the exact blocker".to_owned()
@@ -642,9 +657,9 @@ fn render_command_index_markdown(index: &CommandIndex) -> String {
         "| Suitability | Meaning | Harness treatment |".to_owned(),
         "|---|---|---|".to_owned(),
         "| `ready` | Runtime-confirmed command with no blocking gaps. | Candidate for automatic routing, subject to harness permissions and task policy. |".to_owned(),
-        "| `conditional` | Runtime-confirmed command with a remaining quality gap such as unavailable help, unknown grammar, missing diagnostics, or output parse failure. | Expose only with policy or manual review; prefer safer alternatives for unattended actions. |".to_owned(),
+        "| `conditional` | Runtime-confirmed or runtime-recognized command with a satisfiable condition such as auth, local context, unavailable help, unknown grammar, missing diagnostics, or output parse failure. | Expose when the harness can satisfy the condition or policy allows manual review; prefer safer alternatives for unattended actions. |".to_owned(),
         "| `needs_fixture` | Advertised contract or behavior needs safe operands, fixture data, or command-local validation before CLIARE can verify it. | Add fixtures or documented safe operands before routing automatically. |".to_owned(),
-        "| `blocked` | Runtime precondition blocked safe confirmation or use, such as auth, profile, project, config, or local runtime state. | Treat as unavailable unless the harness explicitly satisfies the precondition. |".to_owned(),
+        "| `blocked` | Opaque, infrastructure-level, or currently unsatisfied runtime condition blocked safe confirmation or use. | Treat as unavailable until the runtime condition is provisioned or the diagnostic becomes explicit enough to classify. |".to_owned(),
         "| `candidate` | Inferred from help/layout evidence but not runtime-confirmed. | Keep out of automatic routing until deeper measurement or catalog metadata confirms it. |".to_owned(),
         String::new(),
         "## Commands".to_owned(),
@@ -1065,6 +1080,45 @@ mod tests {
         assert!(!shape.gaps.iter().any(|gap| {
             gap.command_path == ["model"] && matches!(gap.kind, super::GapKind::HelpUnavailable)
         }));
+    }
+
+    #[test]
+    fn local_context_precondition_is_conditional_in_command_index() {
+        let target = target();
+        let root = observation(
+            "e_000003",
+            ProbeIntent::Help,
+            vec![],
+            "Commands:\n  stats  Show workspace statistics\n",
+            Some(0),
+        );
+        let stats = observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["stats".to_owned()],
+            "error: not in a workspace directory\n\nFix:\n  cliare init demo\n  cd workspaces/demo\n\nhint: or list existing: 'cliare ls'\n",
+            Some(1),
+        );
+
+        let index = super::infer_command_index(target, &[root, stats]);
+        let stats = index
+            .commands
+            .iter()
+            .find(|command| command.path == ["stats"])
+            .expect("stats command exists");
+
+        assert!(matches!(
+            stats.runtime_state,
+            super::CommandRuntimeState::PreconditionBlocked
+        ));
+        assert_eq!(
+            stats.agent_suitability,
+            super::AgentSuitability::Conditional
+        );
+        assert_eq!(
+            stats.preconditions,
+            vec![crate::precondition::PreconditionKind::LocalContextRequired]
+        );
     }
 
     #[test]

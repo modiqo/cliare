@@ -1279,11 +1279,93 @@ mod tests {
         assert!(model.confidence() > 0.5);
     }
 
+    #[test]
+    fn output_mode_probe_records_runtime_precondition() {
+        let path = vec!["issue".to_owned(), "list".to_owned()];
+        let observations = vec![
+            observation_with_argv_streams(
+                "e_000011",
+                ProbeIntent::Help,
+                path.clone(),
+                vec![
+                    "gh".to_owned(),
+                    "issue".to_owned(),
+                    "list".to_owned(),
+                    "--help".to_owned(),
+                ],
+                "USAGE\n  gh issue list [flags]\n\nFLAGS\n      --json fields        Output JSON with the specified fields\n",
+                "",
+                Some(0),
+            ),
+            observation_with_argv_streams(
+                "e_000013",
+                ProbeIntent::OutputJson,
+                path.clone(),
+                vec![
+                    "gh".to_owned(),
+                    "issue".to_owned(),
+                    "list".to_owned(),
+                    "--json".to_owned(),
+                    "json".to_owned(),
+                ],
+                "",
+                "gh: To use GitHub CLI in automation, set the GH_TOKEN environment variable.",
+                Some(4),
+            ),
+        ];
+
+        let claims = ClaimSet::from_observations("gh", &observations);
+        let issue_list = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["issue", "list"])
+            .expect("command claim exists");
+        assert!(issue_list.precondition_blocked());
+        assert_eq!(
+            issue_list.preconditions().collect::<Vec<_>>(),
+            vec![PreconditionKind::AuthRequired]
+        );
+
+        let contract = claims
+            .output_contracts()
+            .find(|claim| {
+                claim.command_path().as_slice() == ["issue", "list"]
+                    && claim.flag_name() == "--json"
+            })
+            .expect("output contract exists");
+        assert!(contract.probed());
+        assert!(contract.precondition_blocked());
+        assert!(!contract.parse_success());
+        assert_eq!(
+            contract.preconditions().collect::<Vec<_>>(),
+            vec![PreconditionKind::AuthRequired]
+        );
+    }
+
     fn observation(
         evidence_id: &str,
         intent: ProbeIntent,
         path: Vec<String>,
         stdout: &str,
+        exit_code: Option<i32>,
+    ) -> ShapeObservation {
+        observation_with_argv_streams(
+            evidence_id,
+            intent,
+            path,
+            vec!["cliare".to_owned(), "--help".to_owned()],
+            stdout,
+            "",
+            exit_code,
+        )
+    }
+
+    fn observation_with_argv_streams(
+        evidence_id: &str,
+        intent: ProbeIntent,
+        path: Vec<String>,
+        argv: Vec<String>,
+        stdout: &str,
+        stderr: &str,
         exit_code: Option<i32>,
     ) -> ShapeObservation {
         ShapeObservation {
@@ -1292,11 +1374,11 @@ mod tests {
             path,
             process: ProcessCompleted {
                 probe_id: "p_000001".to_owned(),
-                argv: vec!["cliare".to_owned(), "--help".to_owned()],
+                argv,
                 status: ProcessStatus::Exited { code: exit_code },
                 duration_ms: 1,
                 stdout: output(stdout),
-                stderr: output(""),
+                stderr: output(stderr),
                 side_effects: crate::sandbox::SideEffectSummary::default(),
             },
         }

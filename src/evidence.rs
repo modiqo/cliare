@@ -6,6 +6,7 @@ use time::format_description::well_known::Rfc3339;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
+use crate::context::RuntimeContext;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::process::{OutputCapture, ProbeOutcome};
@@ -106,6 +107,7 @@ pub enum EvidenceKind {
 pub struct RunStarted {
     pub target: TargetFingerprint,
     pub artifact_dir: PathBuf,
+    pub runtime_context: RuntimeContext,
     pub sandbox: SandboxMetadata,
 }
 

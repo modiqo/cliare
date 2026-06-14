@@ -10,6 +10,7 @@ use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::cli::{DescribeArgs, DescribeFormat, JobsArgs, JobsCommand, JobsStatusArgs};
+use crate::context;
 use crate::error::{CliareError, Result};
 
 const ARTIFACT_MAP_SCHEMA_VERSION: &str = "cliare.artifact-map.v1";
@@ -32,24 +33,30 @@ impl DescribeSummary {
 }
 
 pub async fn describe(args: DescribeArgs) -> Result<DescribeSummary> {
-    ensure_directory(&args.folder).await?;
-    let mut map = build_artifact_map(&args.folder).await?;
+    let folder = if args.context.is_some() {
+        context::resolve_measurement_dir(&args.folder, args.context.as_deref(), "cliare describe")
+            .await?
+    } else {
+        args.folder.clone()
+    };
+    ensure_directory(&folder).await?;
+    let mut map = build_artifact_map(&folder).await?;
     let mut artifact_map_json_path = None;
     let mut artifact_map_markdown_path = None;
 
     if args.write {
-        let json_path = args.folder.join("artifact-map.json");
-        let markdown_path = args.folder.join("artifact-map.md");
+        let json_path = folder.join("artifact-map.json");
+        let markdown_path = folder.join("artifact-map.md");
         map.written_files = vec![
-            relative_to(&args.folder, &json_path),
-            relative_to(&args.folder, &markdown_path),
+            relative_to(&folder, &json_path),
+            relative_to(&folder, &markdown_path),
         ];
         write_json(&json_path, &map).await?;
         write_markdown(&markdown_path, &render_markdown(&map)).await?;
-        map = build_artifact_map(&args.folder).await?;
+        map = build_artifact_map(&folder).await?;
         map.written_files = vec![
-            relative_to(&args.folder, &json_path),
-            relative_to(&args.folder, &markdown_path),
+            relative_to(&folder, &json_path),
+            relative_to(&folder, &markdown_path),
         ];
         write_json(&json_path, &map).await?;
         write_markdown(&markdown_path, &render_markdown(&map)).await?;
@@ -65,7 +72,7 @@ pub async fn describe(args: DescribeArgs) -> Result<DescribeSummary> {
     };
 
     Ok(DescribeSummary {
-        folder: args.folder,
+        folder,
         artifact_kind: map.artifact_kind,
         files_total: map.files.len(),
         missing_required: map.missing_required.len(),
@@ -126,7 +133,8 @@ async fn build_artifact_map(folder: &Path) -> Result<ArtifactMap> {
         command_index: command_index_summary(folder).await,
         issues: issues_summary(folder).await,
         benchmark: benchmark_summary(folder).await,
-        job: job_summary(folder),
+        contexts: contexts_summary(folder).await,
+        job: job_summary(folder).await,
     };
 
     Ok(ArtifactMap {
@@ -171,11 +179,15 @@ async fn read_top_level(folder: &Path) -> Result<BTreeSet<String>> {
 fn detect_artifact_kind(top_level: &BTreeSet<String>) -> ArtifactKind {
     let measurement = top_level.contains("scorecard.json") || top_level.contains("evidence.jsonl");
     let benchmark = top_level.contains("benchmark.json");
-    match (measurement, benchmark) {
-        (true, true) => ArtifactKind::Mixed,
-        (true, false) => ArtifactKind::Measurement,
-        (false, true) => ArtifactKind::Benchmark,
-        (false, false) => ArtifactKind::Unknown,
+    let context_suite = top_level.contains("context-suite.json")
+        || top_level.contains("context-compare.md")
+        || top_level.contains("contexts");
+    match (measurement, benchmark, context_suite) {
+        (false, false, true) => ArtifactKind::ContextSuite,
+        (true, true, _) => ArtifactKind::Mixed,
+        (true, false, _) => ArtifactKind::Measurement,
+        (false, true, _) => ArtifactKind::Benchmark,
+        (false, false, false) => ArtifactKind::Unknown,
     }
 }
 
@@ -183,6 +195,7 @@ fn known_file_specs(kind: ArtifactKind) -> Vec<FileSpec> {
     match kind {
         ArtifactKind::Measurement | ArtifactKind::Mixed => measurement_specs(),
         ArtifactKind::Benchmark => benchmark_specs(),
+        ArtifactKind::ContextSuite => context_suite_specs(),
         ArtifactKind::Unknown => common_specs(),
     }
 }
@@ -345,6 +358,35 @@ fn benchmark_specs() -> Vec<FileSpec> {
             false,
             11,
             "Use to guide an agent reviewing this benchmark directory.",
+        ),
+    ]
+}
+
+fn context_suite_specs() -> Vec<FileSpec> {
+    vec![
+        FileSpec::new(
+            "context-suite.json",
+            FileKind::ContextSuite,
+            "Machine-readable comparison of persisted runtime contexts.",
+            true,
+            1,
+            "Start here to see which contexts exist and how scores differ.",
+        ),
+        FileSpec::new(
+            "context-compare.md",
+            FileKind::ContextCompare,
+            "Human-readable context comparison table.",
+            false,
+            2,
+            "Use for a quick review of context-specific scores and preconditions.",
+        ),
+        FileSpec::new(
+            "contexts",
+            FileKind::ContextsDirectory,
+            "Directory containing one complete measurement artifact bundle per runtime context.",
+            true,
+            3,
+            "Choose a context, then inspect its scorecard, persona report, command index, and evidence.",
         ),
     ]
 }
@@ -532,6 +574,7 @@ async fn inspect_entry(folder: &Path, spec: FileSpec) -> ArtifactFile {
             if metadata.is_dir() {
                 entry.kind = match entry.path.as_str() {
                     "sandbox" => FileKind::Sandbox,
+                    "contexts" => FileKind::ContextsDirectory,
                     _ => FileKind::Directory,
                 };
                 return entry;
@@ -673,12 +716,32 @@ async fn benchmark_summary(folder: &Path) -> Option<BenchmarkSummary> {
     })
 }
 
-fn job_summary(folder: &Path) -> Option<JobSummary> {
+async fn contexts_summary(folder: &Path) -> Option<ContextSuiteSummary> {
+    let contexts = context::persisted_contexts(folder).await.ok()?;
+    if contexts.is_empty() {
+        return None;
+    }
+    Some(ContextSuiteSummary {
+        contexts_total: contexts.len() as u64,
+        contexts: contexts
+            .into_iter()
+            .map(|context| ContextSummaryItem {
+                name: context.name,
+                profile: context.profile.map(|profile| profile.label().to_owned()),
+                artifact_dir: relative_to(folder, &context.artifact_dir),
+            })
+            .collect(),
+    })
+}
+
+async fn job_summary(folder: &Path) -> Option<JobSummary> {
     let summary = crate::jobs::jobs(JobsArgs {
         command: JobsCommand::Status(JobsStatusArgs {
             out: folder.to_path_buf(),
+            context: None,
         }),
     })
+    .await
     .ok()?;
     summary.job_id.as_ref()?;
     Some(JobSummary {
@@ -706,7 +769,10 @@ fn health(missing_required: &[String], summaries: &ArtifactSummaries) -> Artifac
             missing_required.len()
         ));
     }
-    if summaries.scorecard.is_none() && summaries.benchmark.is_none() {
+    if summaries.scorecard.is_none()
+        && summaries.benchmark.is_none()
+        && summaries.contexts.is_none()
+    {
         warnings.push("no scorecard.json or benchmark.json summary could be parsed".to_owned());
     }
     if summaries
@@ -776,6 +842,28 @@ fn navigation_plan(kind: ArtifactKind) -> Vec<NavigationStep> {
                 4,
                 "<target>/command-index.json",
                 "Inspect target command surfaces.",
+            ),
+        ],
+        ArtifactKind::ContextSuite => vec![
+            step(
+                1,
+                "context-suite.json",
+                "Read persisted contexts, scores, preconditions, and artifact directories.",
+            ),
+            step(
+                2,
+                "context-compare.md",
+                "Use the human-readable comparison table.",
+            ),
+            step(
+                3,
+                "contexts/<name>/persona-maintainer.md",
+                "Open the persona packet inside the context you want to review.",
+            ),
+            step(
+                4,
+                "contexts/<name>/command-index.json",
+                "Use the command index for context-specific harness navigation.",
             ),
         ],
         ArtifactKind::Unknown => vec![
@@ -913,6 +1001,19 @@ fn render_summaries(map: &ArtifactMap, out: &mut String) {
             optional_u64(benchmark.targets)
         ));
     }
+    if let Some(contexts) = &map.summaries.contexts {
+        out.push_str(&format!(
+            "- Persisted contexts: {}\n",
+            contexts.contexts_total
+        ));
+        for context in &contexts.contexts {
+            out.push_str(&format!("  - `{}`", escape_md(&context.name)));
+            if let Some(profile) = &context.profile {
+                out.push_str(&format!(" (`{}`)", escape_md(profile)));
+            }
+            out.push_str(&format!(": `{}`\n", escape_md(&context.artifact_dir)));
+        }
+    }
     if let Some(job) = &map.summaries.job {
         out.push_str(&format!("- Latest job: `{}`", job.status));
         if let Some(job_id) = &job.job_id {
@@ -972,6 +1073,7 @@ fn timestamp() -> Result<String> {
 pub enum ArtifactKind {
     Measurement,
     Benchmark,
+    ContextSuite,
     Mixed,
     Unknown,
 }
@@ -981,6 +1083,7 @@ impl ArtifactKind {
         match self {
             Self::Measurement => "measurement",
             Self::Benchmark => "benchmark",
+            Self::ContextSuite => "context_suite",
             Self::Mixed => "mixed",
             Self::Unknown => "unknown",
         }
@@ -999,6 +1102,9 @@ pub enum FileKind {
     CiSummary,
     CommandIndex,
     CommandIndexReport,
+    ContextCompare,
+    ContextSuite,
+    ContextsDirectory,
     Directory,
     Evidence,
     Guide,
@@ -1030,6 +1136,9 @@ impl FileKind {
             Self::CiSummary => "ci_summary",
             Self::CommandIndex => "command_index",
             Self::CommandIndexReport => "command_index_report",
+            Self::ContextCompare => "context_compare",
+            Self::ContextSuite => "context_suite",
+            Self::ContextsDirectory => "contexts_directory",
             Self::Directory => "directory",
             Self::Evidence => "evidence",
             Self::Guide => "guide",
@@ -1129,6 +1238,7 @@ pub struct ArtifactSummaries {
     pub command_index: Option<CommandIndexSummary>,
     pub issues: Option<IssuesSummary>,
     pub benchmark: Option<BenchmarkSummary>,
+    pub contexts: Option<ContextSuiteSummary>,
     pub job: Option<JobSummary>,
 }
 
@@ -1165,6 +1275,19 @@ pub struct BenchmarkSummary {
     pub skipped: Option<u64>,
     pub failed: Option<u64>,
     pub passed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSuiteSummary {
+    pub contexts_total: u64,
+    pub contexts: Vec<ContextSummaryItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSummaryItem {
+    pub name: String,
+    pub profile: Option<String>,
+    pub artifact_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1218,6 +1341,7 @@ mod tests {
 
         let summary = super::describe(DescribeArgs {
             folder: folder.clone(),
+            context: None,
             format: DescribeFormat::Markdown,
             write: true,
         })
@@ -1229,6 +1353,53 @@ mod tests {
         assert!(summary.terminal_summary().contains("CLIARE Artifact Map"));
         assert!(folder.join("artifact-map.json").is_file());
         assert!(folder.join("artifact-map.md").is_file());
+
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[tokio::test]
+    async fn describe_context_suite_root_lists_persisted_contexts() {
+        let folder = std::env::temp_dir().join(format!(
+            "cliare-describe-context-suite-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        let clean = folder.join("contexts/clean");
+        let local = folder.join("contexts/local-context");
+        fs::create_dir_all(&clean).expect("creates clean context");
+        fs::create_dir_all(&local).expect("creates local context");
+        fs::write(folder.join("context-suite.json"), "{}").expect("writes suite");
+        fs::write(folder.join("context-compare.md"), "# compare\n").expect("writes comparison");
+        fs::write(clean.join("scorecard.json"), "{}").expect("writes clean scorecard");
+        fs::write(local.join("scorecard.json"), "{}").expect("writes local scorecard");
+        fs::write(
+            clean.join("runtime-context.json"),
+            r#"{"schema_version":"cliare.runtime-context.v1","profile":"clean","name":"clean","auth_state":"absent","local_context_state":"absent","fixture_state":"absent","network_state":"unknown","runtime_dependency_state":"unknown","cwd_policy":"isolated","workdir":null,"declared_by":"cli"}"#,
+        )
+        .expect("writes clean runtime context");
+        fs::write(
+            local.join("runtime-context.json"),
+            r#"{"schema_version":"cliare.runtime-context.v1","profile":"local_context","name":"local-context","auth_state":"unknown","local_context_state":"present","fixture_state":"absent","network_state":"unknown","runtime_dependency_state":"unknown","cwd_policy":"provided","workdir":"/tmp/project","declared_by":"cli"}"#,
+        )
+        .expect("writes local runtime context");
+
+        let summary = super::describe(DescribeArgs {
+            folder: folder.clone(),
+            context: None,
+            format: DescribeFormat::Markdown,
+            write: false,
+        })
+        .await
+        .expect("describe succeeds");
+
+        assert_eq!(summary.artifact_kind, super::ArtifactKind::ContextSuite);
+        assert!(summary.terminal_summary().contains("Persisted contexts: 2"));
+        assert!(summary.terminal_summary().contains("contexts/clean"));
+        assert!(
+            summary
+                .terminal_summary()
+                .contains("contexts/local-context")
+        );
 
         let _ = fs::remove_dir_all(folder);
     }

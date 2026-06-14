@@ -64,6 +64,16 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read context workdir {path}")]
+    ReadContextWorkdir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("context workdir is not a directory: {0}")]
+    ContextWorkdirNotDirectory(PathBuf),
+
     #[error("failed to open evidence log {path}")]
     OpenEvidenceLog {
         path: PathBuf,
@@ -315,6 +325,60 @@ pub enum CliareError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("failed to serialize runtime context")]
+    SerializeRuntimeContext(#[source] serde_json::Error),
+
+    #[error("failed to write runtime context {path}")]
+    WriteRuntimeContext {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to create context suite directory {path}")]
+    CreateContextSuiteDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read context suite directory {path}")]
+    ReadContextSuiteDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read context scorecard {path}")]
+    ReadContextScorecard {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse context scorecard {path}")]
+    ParseContextScorecard {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize context suite")]
+    SerializeContextSuite(#[source] serde_json::Error),
+
+    #[error("failed to write context suite artifact {path}")]
+    WriteContextSuite {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("{message}")]
+    ContextSelectionRequired { message: String },
+
+    #[error("{message}")]
+    ContextSelectionNotFound { message: String },
 
     #[error("failed to read report artifact {path}")]
     ReadReportArtifact {

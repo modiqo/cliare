@@ -7,12 +7,14 @@ use tokio::fs;
 use crate::claims::{
     ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
 };
+use crate::context::RuntimeContext;
+use crate::diagnostic::{self, RecoveryQuality};
 use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
 use crate::output::ObservedOutputKind;
-use crate::precondition::{self, PreconditionKind};
+use crate::precondition::PreconditionKind;
 use crate::sandbox::SandboxMetadata;
 
 const SCHEMA_VERSION: &str = "cliare.scorecard.v1";
@@ -22,6 +24,7 @@ const SCORE_MODEL: &str = "cliare-score-v0";
 pub struct Scorecard {
     schema_version: &'static str,
     target: TargetFingerprint,
+    runtime_context: RuntimeContext,
     score: ScoreSummary,
     subscores: BTreeMap<Dimension, DimensionScore>,
     coverage: Coverage,
@@ -110,6 +113,10 @@ pub struct Coverage {
     probes_failed_to_spawn: usize,
     precondition_blocked_probes: usize,
     auth_required_probes: usize,
+    local_context_required_probes: usize,
+    fixture_required_probes: usize,
+    actionable_precondition_probes: usize,
+    precondition_recovery_rate: f64,
     frontier_remaining: usize,
     highest_pending_expected_value: Option<u16>,
     candidates_skipped_by_depth: usize,
@@ -171,6 +178,10 @@ pub struct ScoreArtifactSummary {
     pub output_mode_precondition_blocked: usize,
     pub precondition_blocked_probes: usize,
     pub auth_required_probes: usize,
+    pub local_context_required_probes: usize,
+    pub fixture_required_probes: usize,
+    pub actionable_precondition_probes: usize,
+    pub precondition_recovery_rate: f64,
     pub side_effect_files_created: usize,
     pub side_effect_files_modified: usize,
     pub side_effect_files_deleted: usize,
@@ -199,6 +210,7 @@ pub struct ScoreArtifactSummary {
     pub sandbox_home: PathBuf,
     pub sandbox_workdir: PathBuf,
     pub sandbox_env_policy: &'static str,
+    pub runtime_context: RuntimeContext,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -216,6 +228,7 @@ pub struct ScoreRunContext {
     pub candidates_skipped_by_depth: usize,
     pub candidates_skipped_by_convergence: usize,
     pub sandbox: SandboxScoreContext,
+    pub runtime_context: RuntimeContext,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -266,6 +279,10 @@ pub async fn write_score_artifacts(
         output_mode_precondition_blocked: scorecard.coverage.output_mode_precondition_blocked,
         precondition_blocked_probes: scorecard.coverage.precondition_blocked_probes,
         auth_required_probes: scorecard.coverage.auth_required_probes,
+        local_context_required_probes: scorecard.coverage.local_context_required_probes,
+        fixture_required_probes: scorecard.coverage.fixture_required_probes,
+        actionable_precondition_probes: scorecard.coverage.actionable_precondition_probes,
+        precondition_recovery_rate: scorecard.coverage.precondition_recovery_rate,
         side_effect_files_created: scorecard.coverage.side_effect_files_created,
         side_effect_files_modified: scorecard.coverage.side_effect_files_modified,
         side_effect_files_deleted: scorecard.coverage.side_effect_files_deleted,
@@ -296,6 +313,7 @@ pub async fn write_score_artifacts(
         sandbox_home: scorecard.coverage.sandbox_home.clone(),
         sandbox_workdir: scorecard.coverage.sandbox_workdir.clone(),
         sandbox_env_policy: scorecard.coverage.sandbox_env_policy,
+        runtime_context: scorecard.runtime_context.clone(),
     })
 }
 
@@ -329,6 +347,7 @@ pub fn scorecard(
 ) -> Scorecard {
     let binary_name = target_binary_name(&target);
     let claims = ClaimSet::from_observations(&binary_name, observations);
+    let runtime_context = run_context.runtime_context.clone();
     let metrics = Metrics::from_claims_and_observations(&claims, observations, run_context);
 
     let subscores = subscores(&metrics);
@@ -338,6 +357,7 @@ pub fn scorecard(
     Scorecard {
         schema_version: SCHEMA_VERSION,
         target,
+        runtime_context,
         score,
         subscores,
         coverage: metrics.coverage,
@@ -471,15 +491,27 @@ fn execution_score(metrics: &Metrics) -> f64 {
 }
 
 fn recovery_score(metrics: &Metrics) -> f64 {
-    if metrics.invalid_probe_count == 0 {
-        return 0.0;
-    }
-
-    100.0
-        * ratio(
+    let invalid_recovery = if metrics.invalid_probe_count == 0 {
+        None
+    } else {
+        Some(ratio(
             metrics.invalid_probe_rejections,
             metrics.invalid_probe_count,
-        )
+        ))
+    };
+    let precondition_recovery = if metrics.coverage.precondition_blocked_probes == 0 {
+        None
+    } else {
+        Some(metrics.coverage.precondition_recovery_rate)
+    };
+
+    100.0
+        * match (invalid_recovery, precondition_recovery) {
+            (Some(invalid), Some(precondition)) => 0.7 * invalid + 0.3 * precondition,
+            (Some(invalid), None) => invalid,
+            (None, Some(precondition)) => precondition,
+            (None, None) => 0.0,
+        }
 }
 
 fn findings(metrics: &Metrics) -> Vec<Finding> {
@@ -646,6 +678,41 @@ fn render_report(scorecard: &Scorecard) -> String {
     ));
     report.push_str(&format!("- Model: `{}`\n\n", scorecard.model.name));
 
+    report.push_str("## Runtime Context\n\n");
+    report.push_str(&format!(
+        "- Profile: `{}`\n",
+        scorecard.runtime_context.profile.label()
+    ));
+    report.push_str(&format!("- Name: `{}`\n", scorecard.runtime_context.name));
+    report.push_str(&format!(
+        "- Authentication: `{}`\n",
+        scorecard.runtime_context.auth_state.label()
+    ));
+    report.push_str(&format!(
+        "- Local context: `{}`\n",
+        scorecard.runtime_context.local_context_state.label()
+    ));
+    report.push_str(&format!(
+        "- Fixture data: `{}`\n",
+        scorecard.runtime_context.fixture_state.label()
+    ));
+    report.push_str(&format!(
+        "- Network: `{}`\n",
+        scorecard.runtime_context.network_state.label()
+    ));
+    report.push_str(&format!(
+        "- Runtime dependencies: `{}`\n",
+        scorecard.runtime_context.runtime_dependency_state.label()
+    ));
+    report.push_str(&format!(
+        "- CWD policy: `{}`\n",
+        scorecard.runtime_context.cwd_policy.label()
+    ));
+    if let Some(workdir) = &scorecard.runtime_context.workdir {
+        report.push_str(&format!("- Context workdir: `{}`\n", workdir.display()));
+    }
+    report.push('\n');
+
     report.push_str("## Runtime Isolation\n\n");
     report.push_str(&format!(
         "- Sandbox profile: `{}`\n",
@@ -809,8 +876,24 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.coverage.precondition_blocked_probes
     ));
     report.push_str(&format!(
-        "- Auth-required probes: `{}`\n\n",
+        "- Auth-required probes: `{}`\n",
         scorecard.coverage.auth_required_probes
+    ));
+    report.push_str(&format!(
+        "- Local-context-required probes: `{}`\n",
+        scorecard.coverage.local_context_required_probes
+    ));
+    report.push_str(&format!(
+        "- Fixture-required probes: `{}`\n",
+        scorecard.coverage.fixture_required_probes
+    ));
+    report.push_str(&format!(
+        "- Actionable precondition diagnostics: `{}`\n",
+        scorecard.coverage.actionable_precondition_probes
+    ));
+    report.push_str(&format!(
+        "- Precondition recovery rate: `{:.1}%`\n\n",
+        scorecard.coverage.precondition_recovery_rate * 100.0
     ));
     report.push_str(&format!(
         "- Frontier remaining: `{}`\n",
@@ -919,6 +1002,7 @@ fn traversal_stop_reason_label(reason: TraversalStopReason) -> &'static str {
 fn env_policy_label(policy: crate::sandbox::EnvPolicy) -> &'static str {
     match policy {
         crate::sandbox::EnvPolicy::ClearedWithAllowlist => "cleared_with_allowlist",
+        crate::sandbox::EnvPolicy::Inherited => "inherited",
     }
 }
 
@@ -1063,6 +1147,13 @@ impl Metrics {
                 probes_failed_to_spawn: process_metrics.failed_to_spawn,
                 precondition_blocked_probes: process_metrics.precondition_blocked,
                 auth_required_probes: process_metrics.auth_required,
+                local_context_required_probes: process_metrics.local_context_required,
+                fixture_required_probes: process_metrics.fixture_required,
+                actionable_precondition_probes: process_metrics.actionable_precondition,
+                precondition_recovery_rate: ratio(
+                    process_metrics.actionable_precondition,
+                    process_metrics.precondition_blocked,
+                ),
                 frontier_remaining: run_context.frontier_remaining,
                 highest_pending_expected_value: run_context.highest_pending_expected_value,
                 candidates_skipped_by_depth: run_context.candidates_skipped_by_depth,
@@ -1197,6 +1288,9 @@ struct ProcessMetrics {
     credential_like_side_effects: usize,
     precondition_blocked: usize,
     auth_required: usize,
+    local_context_required: usize,
+    fixture_required: usize,
+    actionable_precondition: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
 }
@@ -1226,15 +1320,23 @@ impl ProcessMetrics {
                 .filter(|change| credential_like_path(&change.path))
                 .count();
 
-            let precondition = precondition::classify_process(
+            let diagnostic = diagnostic::analyze_process(
                 &observation.process.status,
                 observation.process.stdout.text.as_deref(),
                 observation.process.stderr.text.as_deref(),
             );
+            let precondition = diagnostic.precondition;
             if let Some(precondition) = precondition {
                 metrics.precondition_blocked += 1;
-                if precondition == PreconditionKind::AuthRequired {
-                    metrics.auth_required += 1;
+                match precondition {
+                    PreconditionKind::AuthRequired => metrics.auth_required += 1,
+                    PreconditionKind::LocalContextRequired => metrics.local_context_required += 1,
+                    PreconditionKind::FixtureRequired => metrics.fixture_required += 1,
+                    PreconditionKind::NetworkUnavailable
+                    | PreconditionKind::RuntimeDependencyUnavailable => {}
+                }
+                if diagnostic.recovery.quality == RecoveryQuality::Actionable {
+                    metrics.actionable_precondition += 1;
                 }
             }
 
@@ -1434,6 +1536,65 @@ mod tests {
     }
 
     #[test]
+    fn actionable_precondition_diagnostics_improve_recovery_score() {
+        let observations = vec![observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["stats".to_owned()],
+            "error: not in a workspace directory\n\nFix:\n  cliare init demo\n  cd workspaces/demo\n\nhint: or list existing: 'cliare ls'\n",
+            Some(1),
+        )];
+
+        let scorecard = scorecard(target(), &observations, ScoreRunContext::default());
+
+        assert_eq!(scorecard.coverage.precondition_blocked_probes, 1);
+        assert_eq!(scorecard.coverage.local_context_required_probes, 1);
+        assert_eq!(scorecard.coverage.actionable_precondition_probes, 1);
+        assert_eq!(scorecard.coverage.precondition_recovery_rate, 1.0);
+        assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
+
+        let report = render_report(&scorecard);
+        assert!(report.contains("- Local-context-required probes: `1`"));
+        assert!(report.contains("- Actionable precondition diagnostics: `1`"));
+        assert!(report.contains("- Precondition recovery rate: `100.0%`"));
+    }
+
+    #[test]
+    fn fixture_required_output_probes_are_not_output_parse_failures() {
+        let observations = vec![
+            observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec!["project".to_owned(), "item-list".to_owned()],
+                "List items\n\nUSAGE\n  acmectl project item-list [<number>] [flags]\n\nFLAGS\n  --format string  Output format: {json}\n",
+                Some(0),
+            ),
+            observation(
+                "e_000005",
+                ProbeIntent::OutputJson,
+                vec!["project".to_owned(), "item-list".to_owned()],
+                "owner is required when not running interactively",
+                Some(1),
+            ),
+        ];
+
+        let scorecard = scorecard(target(), &observations, ScoreRunContext::default());
+
+        assert_eq!(scorecard.coverage.precondition_blocked_probes, 1);
+        assert_eq!(scorecard.coverage.fixture_required_probes, 1);
+        assert_eq!(scorecard.coverage.output_mode_precondition_blocked, 1);
+        assert!(
+            scorecard
+                .findings
+                .iter()
+                .all(|finding| { finding.id != "finding.output.unparseable_mode" })
+        );
+
+        let report = render_report(&scorecard);
+        assert!(report.contains("- Fixture-required probes: `1`"));
+    }
+
+    #[test]
     fn report_renders_scorecard_summary_and_unmeasured_dimensions() {
         let scorecard = scorecard(
             target(),
@@ -1458,6 +1619,7 @@ mod tests {
                 candidates_skipped_by_depth: 0,
                 candidates_skipped_by_convergence: 0,
                 sandbox: test_sandbox(),
+                runtime_context: crate::context::RuntimeContext::default(),
             },
         );
 
@@ -1467,6 +1629,8 @@ mod tests {
         assert!(report.contains("| output | 0.0 | 0.05 | measured |"));
         assert!(report.contains("experimental partial"));
         assert!(report.contains("- Output contracts discovered: `0`"));
+        assert!(report.contains("## Runtime Context"));
+        assert!(report.contains("- Profile: `single`"));
         assert!(report.contains("- Traversal profile: `standard`"));
         assert!(report.contains("- Depth budget: `5`"));
         assert!(report.contains("- Minimum expected probe value: `150`"));

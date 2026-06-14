@@ -13,6 +13,7 @@ use crate::artifact_guide::{self, ArtifactGuideSummary};
 use crate::ci::{self, CiArtifactSummary};
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
+use crate::context::{self, RuntimeContext, RuntimeContextInput};
 use crate::error::{CliareError, Result};
 use crate::evidence::{
     EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled, ProcessCompleted, ProcessStatus,
@@ -73,6 +74,10 @@ pub struct MeasurementSummary {
     pub output_mode_precondition_blocked: usize,
     pub precondition_blocked_probes: usize,
     pub auth_required_probes: usize,
+    pub local_context_required_probes: usize,
+    pub fixture_required_probes: usize,
+    pub actionable_precondition_probes: usize,
+    pub precondition_recovery_rate: f64,
     pub side_effect_files_created: usize,
     pub side_effect_files_modified: usize,
     pub side_effect_files_deleted: usize,
@@ -97,6 +102,11 @@ pub struct MeasurementSummary {
     pub traversal_stop_reason: String,
     pub traversal_complete: bool,
     pub cache_hit: bool,
+    pub runtime_context: RuntimeContext,
+    pub suite_root_path: PathBuf,
+    pub runtime_context_path: Option<PathBuf>,
+    pub context_suite_path: Option<PathBuf>,
+    pub context_compare_path: Option<PathBuf>,
 }
 
 impl MeasurementSummary {
@@ -146,6 +156,16 @@ impl MeasurementSummary {
             format!("  commands blocked: {}", self.commands_precondition_blocked),
             format!("  probes blocked: {}", self.precondition_blocked_probes),
             format!("  auth required: {}", self.auth_required_probes),
+            format!(
+                "  local context required: {}",
+                self.local_context_required_probes
+            ),
+            format!("  fixture required: {}", self.fixture_required_probes),
+            format!(
+                "  actionable recovery: {} ({:.1}%)",
+                self.actionable_precondition_probes,
+                self.precondition_recovery_rate * 100.0
+            ),
             "output contracts:".to_owned(),
             format!("  discovered: {}", self.output_contracts_discovered),
             format!(
@@ -171,6 +191,22 @@ impl MeasurementSummary {
             format!("  sandbox root: {}", self.sandbox_root.display()),
             format!("  sandbox home: {}", self.sandbox_home.display()),
             format!("  sandbox workdir: {}", self.sandbox_workdir.display()),
+            "runtime context:".to_owned(),
+            format!("  profile: {}", self.runtime_context.profile.label()),
+            format!("  name: {}", self.runtime_context.name),
+            format!("  auth: {}", self.runtime_context.auth_state.label()),
+            format!(
+                "  local context: {}",
+                self.runtime_context.local_context_state.label()
+            ),
+            format!("  fixture: {}", self.runtime_context.fixture_state.label()),
+            format!("  network: {}", self.runtime_context.network_state.label()),
+            format!(
+                "  runtime dependency: {}",
+                self.runtime_context.runtime_dependency_state.label()
+            ),
+            format!("  cwd policy: {}", self.runtime_context.cwd_policy.label()),
+            format!("  suite root: {}", self.suite_root_path.display()),
             "coverage pressure:".to_owned(),
             format!("  profile: {}", self.traversal_profile),
             format!(
@@ -229,12 +265,32 @@ impl MeasurementSummary {
             format!("  readme: {}", self.readme_path.display()),
             format!("  agent guide: {}", self.agent_skill_path.display()),
         ]);
+        if let Some(path) = &self.runtime_context_path {
+            lines.push(format!("  runtime context: {}", path.display()));
+        }
+        if let Some(path) = &self.context_suite_path {
+            lines.push(format!("  context suite: {}", path.display()));
+        }
+        if let Some(path) = &self.context_compare_path {
+            lines.push(format!("  context comparison: {}", path.display()));
+        }
 
         format!("{}\n", lines.join("\n"))
     }
 }
 
 pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
+    let runtime_context = RuntimeContext::from_input(RuntimeContextInput {
+        profile: args.context,
+        name: args.context_name.clone(),
+        auth_state: args.auth_state,
+        local_context_state: args.local_context_state,
+        fixture_state: args.fixture_state,
+        network_state: args.network_state,
+        runtime_dependency_state: args.runtime_dependency_state,
+        workdir: args.context_workdir.clone(),
+    });
+    let artifact_dir = context::measurement_dir(&args.out, &runtime_context);
     let target = fingerprint_target(&args.target).await?;
     let max_depth = args.resolved_max_depth();
     let max_probes = args.resolved_max_probes();
@@ -246,21 +302,31 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         max_probes,
         min_expected_value,
         concurrency_limit,
-        crate::sandbox::SandboxProfile::Isolated.label(),
+        args.execution_mode.label(),
+        runtime_context.clone(),
     );
 
     if !args.refresh
-        && let Some(mut summary) = cached_summary(&args.out, &target, &profile).await?
+        && let Some(mut summary) = cached_summary(&artifact_dir, &target, &profile).await?
     {
-        let persona_artifacts = report::write_all_persona_reports(&args.out).await?;
+        summary.suite_root_path = args.out.clone();
+        let runtime_context_path =
+            context::write_runtime_context(&artifact_dir, &runtime_context).await?;
+        summary.runtime_context_path = Some(runtime_context_path);
+        let persona_artifacts = report::write_all_persona_reports(&artifact_dir).await?;
         summary.set_persona_artifacts(persona_artifacts);
-        let guides = artifact_guide::write_measurement_guides(&args.out).await?;
+        let guides = artifact_guide::write_measurement_guides(&artifact_dir).await?;
         summary.set_artifact_guides(guides);
+        if runtime_context.is_context_suite_measurement() {
+            let _ = context::refresh_context_suite(&args.out).await?;
+            summary.context_suite_path = Some(args.out.join("context-suite.json"));
+            summary.context_compare_path = Some(args.out.join("context-compare.md"));
+        }
         return Ok(summary);
     }
 
     let mut progress = ProgressLog::create(
-        &args.out,
+        &artifact_dir,
         &target,
         &profile,
         concurrency_limit,
@@ -296,7 +362,26 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         )
         .await?;
 
-    let sandbox = Sandbox::create(&args.out).await?;
+    let runtime_context_path =
+        context::write_runtime_context(&artifact_dir, &runtime_context).await?;
+    progress
+        .message(
+            0,
+            format!(
+                "runtime_context_written profile={} name={} path={}",
+                runtime_context.profile.label(),
+                runtime_context.name,
+                runtime_context_path.display()
+            ),
+        )
+        .await?;
+
+    let sandbox = Sandbox::create_with_profile(
+        &artifact_dir,
+        runtime_context.workdir.as_deref(),
+        args.execution_mode,
+    )
+    .await?;
     progress
         .message(
             0,
@@ -307,13 +392,14 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             ),
         )
         .await?;
-    let mut evidence = EvidenceWriter::create(&args.out).await?;
+    let mut evidence = EvidenceWriter::create(&artifact_dir).await?;
     progress.message(0, "evidence_log_created").await?;
 
     evidence
         .append(EvidenceKind::RunStarted(RunStarted {
             target: target.clone(),
-            artifact_dir: args.out.clone(),
+            artifact_dir: artifact_dir.clone(),
+            runtime_context: runtime_context.clone(),
             sandbox: sandbox.metadata().clone(),
         }))
         .await?;
@@ -371,7 +457,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .message(traversal.probes_completed, "run_finished_evidence_written")
         .await?;
 
-    shape::write_shape(&args.out, target.clone(), &traversal.observations).await?;
+    shape::write_shape(&artifact_dir, target.clone(), &traversal.observations).await?;
     progress
         .message(traversal.probes_completed, "shape_artifacts_written")
         .await?;
@@ -390,9 +476,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         candidates_skipped_by_depth: planner_stats.candidates_skipped_by_depth,
         candidates_skipped_by_convergence: planner_stats.candidates_skipped_by_convergence,
         sandbox: score::SandboxScoreContext::from(sandbox.metadata()),
+        runtime_context: runtime_context.clone(),
     };
     let score_artifacts = score::write_score_artifacts(
-        &args.out,
+        &artifact_dir,
         target.clone(),
         &traversal.observations,
         run_context,
@@ -408,11 +495,11 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             ),
         )
         .await?;
-    let ci_artifacts = ci::write_ci_artifacts(&args.out, None).await?;
+    let ci_artifacts = ci::write_ci_artifacts(&artifact_dir, None).await?;
     progress
         .message(traversal.probes_completed, "ci_artifacts_written")
         .await?;
-    let persona_artifacts = report::write_all_persona_reports(&args.out).await?;
+    let persona_artifacts = report::write_all_persona_reports(&artifact_dir).await?;
     progress
         .message(
             traversal.probes_completed,
@@ -430,10 +517,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         job_id: Some(progress.job_id().to_owned()),
         job_log_path: Some(progress.path().to_path_buf()),
         probes_completed: traversal.probes_completed,
-        evidence_path: args.out.join("evidence.jsonl"),
-        shape_path: args.out.join("shape.json"),
-        command_index_json_path: args.out.join("command-index.json"),
-        command_index_markdown_path: args.out.join("command-index.md"),
+        evidence_path: artifact_dir.join("evidence.jsonl"),
+        shape_path: artifact_dir.join("shape.json"),
+        command_index_json_path: artifact_dir.join("command-index.json"),
+        command_index_markdown_path: artifact_dir.join("command-index.md"),
         scorecard_path: score_artifacts.scorecard_path,
         report_path: score_artifacts.report_path,
         ci_summary_path: ci_artifacts.summary_path,
@@ -442,8 +529,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         issues_markdown_path: persona_artifacts.issues_markdown_path,
         issues_json_path: persona_artifacts.issues_json_path,
         persona_report_count,
-        readme_path: args.out.join("README.md"),
-        agent_skill_path: args.out.join("AGENT_SKILL.md"),
+        readme_path: artifact_dir.join("README.md"),
+        agent_skill_path: artifact_dir.join("AGENT_SKILL.md"),
         sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
         sandbox_root: score_artifacts.sandbox_root,
         sandbox_home: score_artifacts.sandbox_home,
@@ -463,6 +550,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         output_mode_precondition_blocked: score_artifacts.output_mode_precondition_blocked,
         precondition_blocked_probes: score_artifacts.precondition_blocked_probes,
         auth_required_probes: score_artifacts.auth_required_probes,
+        local_context_required_probes: score_artifacts.local_context_required_probes,
+        fixture_required_probes: score_artifacts.fixture_required_probes,
+        actionable_precondition_probes: score_artifacts.actionable_precondition_probes,
+        precondition_recovery_rate: score_artifacts.precondition_recovery_rate,
         side_effect_files_created: score_artifacts.side_effect_files_created,
         side_effect_files_modified: score_artifacts.side_effect_files_modified,
         side_effect_files_deleted: score_artifacts.side_effect_files_deleted,
@@ -487,16 +578,29 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         traversal_stop_reason: score_artifacts.traversal_stop_reason.to_owned(),
         traversal_complete: score_artifacts.traversal_complete,
         cache_hit: false,
+        runtime_context: runtime_context.clone(),
+        suite_root_path: args.out.clone(),
+        runtime_context_path: Some(runtime_context_path),
+        context_suite_path: None,
+        context_compare_path: None,
     };
-    let guides = artifact_guide::write_measurement_guides(&args.out).await?;
+    let guides = artifact_guide::write_measurement_guides(&artifact_dir).await?;
     summary.set_artifact_guides(guides);
     progress
         .message(traversal.probes_completed, "artifact_guides_written")
         .await?;
-    write_cache_manifest(&args.out, &summary, profile).await?;
+    write_cache_manifest(&artifact_dir, &summary, profile).await?;
     progress
         .message(traversal.probes_completed, "measure_cache_written")
         .await?;
+    if runtime_context.is_context_suite_measurement() {
+        let _ = context::refresh_context_suite(&args.out).await?;
+        summary.context_suite_path = Some(args.out.join("context-suite.json"));
+        summary.context_compare_path = Some(args.out.join("context-compare.md"));
+        progress
+            .message(traversal.probes_completed, "context_suite_written")
+            .await?;
+    }
     progress.finished(&summary).await?;
 
     Ok(summary)
@@ -926,6 +1030,8 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
 struct ProbeProfile {
     traversal_profile: crate::cli::TraversalProfile,
     sandbox_profile: String,
+    #[serde(default)]
+    runtime_context: RuntimeContext,
     timeout_ms: u64,
     output_limit_bytes: usize,
     max_depth: usize,
@@ -943,10 +1049,12 @@ impl ProbeProfile {
         min_expected_value: u16,
         concurrency_limit: usize,
         sandbox_profile: &str,
+        runtime_context: RuntimeContext,
     ) -> Self {
         Self {
             traversal_profile: args.profile,
             sandbox_profile: sandbox_profile.to_owned(),
+            runtime_context,
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
             max_depth,
@@ -993,6 +1101,14 @@ struct CachedMeasurementSummary {
     precondition_blocked_probes: usize,
     #[serde(default)]
     auth_required_probes: usize,
+    #[serde(default)]
+    local_context_required_probes: usize,
+    #[serde(default)]
+    fixture_required_probes: usize,
+    #[serde(default)]
+    actionable_precondition_probes: usize,
+    #[serde(default)]
+    precondition_recovery_rate: f64,
     side_effect_files_created: usize,
     side_effect_files_modified: usize,
     side_effect_files_deleted: usize,
@@ -1096,6 +1212,10 @@ impl MeasurementCacheManifest {
             output_mode_precondition_blocked: self.summary.output_mode_precondition_blocked,
             precondition_blocked_probes: self.summary.precondition_blocked_probes,
             auth_required_probes: self.summary.auth_required_probes,
+            local_context_required_probes: self.summary.local_context_required_probes,
+            fixture_required_probes: self.summary.fixture_required_probes,
+            actionable_precondition_probes: self.summary.actionable_precondition_probes,
+            precondition_recovery_rate: self.summary.precondition_recovery_rate,
             side_effect_files_created: self.summary.side_effect_files_created,
             side_effect_files_modified: self.summary.side_effect_files_modified,
             side_effect_files_deleted: self.summary.side_effect_files_deleted,
@@ -1120,6 +1240,11 @@ impl MeasurementCacheManifest {
             traversal_stop_reason: self.summary.traversal_stop_reason,
             traversal_complete: self.summary.traversal_complete,
             cache_hit: true,
+            runtime_context: self.profile.runtime_context,
+            suite_root_path: out_dir.to_path_buf(),
+            runtime_context_path: Some(out_dir.join("runtime-context.json")),
+            context_suite_path: None,
+            context_compare_path: None,
         }
     }
 }
@@ -1182,6 +1307,10 @@ async fn write_cache_manifest(
             output_mode_precondition_blocked: summary.output_mode_precondition_blocked,
             precondition_blocked_probes: summary.precondition_blocked_probes,
             auth_required_probes: summary.auth_required_probes,
+            local_context_required_probes: summary.local_context_required_probes,
+            fixture_required_probes: summary.fixture_required_probes,
+            actionable_precondition_probes: summary.actionable_precondition_probes,
+            precondition_recovery_rate: summary.precondition_recovery_rate,
             side_effect_files_created: summary.side_effect_files_created,
             side_effect_files_modified: summary.side_effect_files_modified,
             side_effect_files_deleted: summary.side_effect_files_deleted,
@@ -1437,6 +1566,10 @@ mod tests {
             output_mode_precondition_blocked: 0,
             precondition_blocked_probes: 1,
             auth_required_probes: 1,
+            local_context_required_probes: 0,
+            fixture_required_probes: 0,
+            actionable_precondition_probes: 1,
+            precondition_recovery_rate: 1.0,
             side_effect_files_created: 0,
             side_effect_files_modified: 0,
             side_effect_files_deleted: 0,
@@ -1461,6 +1594,11 @@ mod tests {
             traversal_stop_reason: "converged".to_owned(),
             traversal_complete: true,
             cache_hit: false,
+            runtime_context: crate::context::RuntimeContext::default(),
+            suite_root_path: PathBuf::from(".cliare"),
+            runtime_context_path: Some(PathBuf::from(".cliare/runtime-context.json")),
+            context_suite_path: None,
+            context_compare_path: None,
         };
 
         let text = summary.terminal_summary();
@@ -1474,6 +1612,8 @@ mod tests {
         assert!(text.contains("commands blocked: 1"));
         assert!(text.contains("probes blocked: 1"));
         assert!(text.contains("auth required: 1"));
+        assert!(text.contains("local context required: 0"));
+        assert!(text.contains("actionable recovery: 1 (100.0%)"));
         assert!(text.contains("output contracts:"));
         assert!(text.contains("machine-readable: 1"));
         assert!(text.contains("blocked: 0"));
@@ -1481,6 +1621,9 @@ mod tests {
         assert!(text.contains("file changes: 0"));
         assert!(text.contains("sandbox profile: isolated"));
         assert!(text.contains("env policy: cleared_with_allowlist"));
+        assert!(text.contains("runtime context:"));
+        assert!(text.contains("profile: single"));
+        assert!(text.contains("suite root: .cliare"));
         assert!(text.contains("depth: observed 1 / budget 5"));
         assert!(text.contains("min expected value: 150"));
         assert!(text.contains("concurrency limit: 4"));
@@ -1500,6 +1643,7 @@ mod tests {
         assert!(text.contains("  persona reports: 7 markdown/json pairs"));
         assert!(text.contains("  readme: .cliare/README.md"));
         assert!(text.contains("  agent guide: .cliare/AGENT_SKILL.md"));
+        assert!(text.contains("  runtime context: .cliare/runtime-context.json"));
     }
 
     #[cfg(unix)]
@@ -1550,10 +1694,19 @@ EOF
             timeout_ms: 5_000,
             output_limit_bytes: 16 * 1024,
             profile: TraversalProfile::Quick,
+            execution_mode: crate::sandbox::SandboxProfile::Isolated,
             max_depth: Some(1),
             max_probes: Some(1),
             min_expected_value: Some(1),
             concurrency: None,
+            context: None,
+            context_name: None,
+            auth_state: None,
+            local_context_state: None,
+            fixture_state: None,
+            network_state: None,
+            runtime_dependency_state: None,
+            context_workdir: None,
             refresh: true,
             detach: false,
             detached_worker: false,

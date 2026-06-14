@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::cli::{JobsArgs, JobsCommand, MeasureArgs};
+use crate::context::{self, RuntimeContext, RuntimeContextInput};
 use crate::error::{CliareError, Result};
 
 #[derive(Debug)]
@@ -103,7 +104,18 @@ impl JobStatus {
 }
 
 pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummary> {
-    let jobs_dir = args.out.join("jobs");
+    let runtime_context = RuntimeContext::from_input(RuntimeContextInput {
+        profile: args.context,
+        name: args.context_name.clone(),
+        auth_state: args.auth_state,
+        local_context_state: args.local_context_state,
+        fixture_state: args.fixture_state,
+        network_state: args.network_state,
+        runtime_dependency_state: args.runtime_dependency_state,
+        workdir: args.context_workdir.clone(),
+    });
+    let artifact_dir = context::measurement_dir(&args.out, &runtime_context);
+    let jobs_dir = artifact_dir.join("jobs");
     fs::create_dir_all(&jobs_dir).map_err(|source| CliareError::CreateProgressDir {
         path: jobs_dir.clone(),
         source,
@@ -133,7 +145,7 @@ pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummar
         &progress_log,
         &stdout_log,
         &stderr_log,
-        &args.out,
+        &artifact_dir,
     )?;
 
     Ok(DetachedMeasureSummary {
@@ -142,7 +154,7 @@ pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummar
         progress_log: progress_log.clone(),
         stdout_log,
         stderr_log,
-        status_command: format!("cliare jobs status --out {}", shell_arg_path(&args.out)),
+        status_command: format!("cliare jobs status --out {}", shell_arg_path(&artifact_dir)),
         watch_command: format!("tail -f {}", shell_arg_path(&progress_log)),
     })
 }
@@ -165,9 +177,17 @@ fn configure_detached_process(command: &mut Command) {
     }
 }
 
-pub fn jobs(args: JobsArgs) -> Result<JobsSummary> {
+pub async fn jobs(args: JobsArgs) -> Result<JobsSummary> {
     match args.command {
-        JobsCommand::Status(args) => job_status(args.out),
+        JobsCommand::Status(args) => {
+            let artifact_dir = context::resolve_measurement_dir(
+                &args.out,
+                args.context.as_deref(),
+                "cliare jobs status",
+            )
+            .await?;
+            job_status(artifact_dir)
+        }
     }
 }
 
@@ -195,11 +215,35 @@ fn measure_worker_args(args: &MeasureArgs, job_id: &str) -> Vec<String> {
         args.output_limit_bytes.to_string(),
         "--profile".to_owned(),
         args.profile.label().to_owned(),
+        "--execution-mode".to_owned(),
+        args.execution_mode.label().to_owned(),
     ];
     push_optional(&mut values, "--max-depth", args.max_depth);
     push_optional(&mut values, "--max-probes", args.max_probes);
     push_optional(&mut values, "--min-expected-value", args.min_expected_value);
     push_optional(&mut values, "--concurrency", args.concurrency);
+    push_optional_context_profile(&mut values, "--context", args.context);
+    if let Some(name) = &args.context_name {
+        values.push("--context-name".to_owned());
+        values.push(name.to_owned());
+    }
+    push_optional_context_state(&mut values, "--auth-state", args.auth_state);
+    push_optional_context_state(
+        &mut values,
+        "--local-context-state",
+        args.local_context_state,
+    );
+    push_optional_context_state(&mut values, "--fixture-state", args.fixture_state);
+    push_optional_context_state(&mut values, "--network-state", args.network_state);
+    push_optional_context_state(
+        &mut values,
+        "--runtime-dependency-state",
+        args.runtime_dependency_state,
+    );
+    if let Some(workdir) = &args.context_workdir {
+        values.push("--context-workdir".to_owned());
+        values.push(workdir.display().to_string());
+    }
     if args.refresh {
         values.push("--refresh".to_owned());
     }
@@ -207,6 +251,28 @@ fn measure_worker_args(args: &MeasureArgs, job_id: &str) -> Vec<String> {
     values.push("--__cliare-job-id".to_owned());
     values.push(job_id.to_owned());
     values
+}
+
+fn push_optional_context_profile(
+    values: &mut Vec<String>,
+    flag: &str,
+    value: Option<crate::context::RuntimeContextProfile>,
+) {
+    if let Some(value) = value {
+        values.push(flag.to_owned());
+        values.push(value.cli_value().to_owned());
+    }
+}
+
+fn push_optional_context_state(
+    values: &mut Vec<String>,
+    flag: &str,
+    value: Option<crate::context::RuntimeContextState>,
+) {
+    if let Some(value) = value {
+        values.push(flag.to_owned());
+        values.push(value.cli_value().to_owned());
+    }
 }
 
 fn push_optional<T>(values: &mut Vec<String>, flag: &str, value: Option<T>)

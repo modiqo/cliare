@@ -283,7 +283,7 @@ The Markdown should be readable without opening JSON. JSON remains the authorita
 An unprobed output contract is not automatically a failure. It should become one of three issue types:
 
 1. `needs_fixture`: the command requires operands or external state that CLIARE did not synthesize.
-2. `blocked`: the runtime reported auth/profile/project preconditions.
+2. `blocked`: the runtime reported preconditions such as auth, local context, profile, dependency, or another runtime requirement.
 3. `coverage`: traversal or probe budget ended before safe validation.
 
 For maintainers, `needs_fixture` is actionable: provide a documented safe fixture, a dry-run command, or a read-only list/show command that exercises the same output contract.

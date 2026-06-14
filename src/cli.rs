@@ -4,6 +4,9 @@ use std::time::Duration;
 use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
 use serde::{Deserialize, Serialize};
 
+use crate::context::{ContextArgs, RuntimeContextProfile, RuntimeContextState};
+use crate::sandbox::SandboxProfile;
+
 pub const QUICK_MAX_DEPTH: usize = 3;
 pub const QUICK_MAX_PROBES: usize = 64;
 pub const QUICK_MIN_EXPECTED_VALUE: u16 = 300;
@@ -40,6 +43,8 @@ pub enum Command {
     Guard(GuardArgs),
     /// Run a benchmark corpus and produce calibration reports.
     Benchmark(BenchmarkArgs),
+    /// Compare measurements across runtime contexts.
+    Context(ContextArgs),
     /// Generate a persona-specific outcome packet from measurement artifacts.
     Report(ReportArgs),
     /// Describe a CLIARE artifact directory for humans and agents.
@@ -212,6 +217,10 @@ pub struct ReportArgs {
     #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
     pub out: PathBuf,
 
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
     /// Representation to print to stdout.
     #[arg(long, value_enum, default_value_t = ReportFormat::Markdown)]
     pub format: ReportFormat,
@@ -275,6 +284,10 @@ pub struct DescribeArgs {
     #[arg(value_name = "FOLDER", default_value = ".cliare", value_hint = ValueHint::DirPath)]
     pub folder: PathBuf,
 
+    /// Context name to describe when FOLDER points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
     /// Representation to print to stdout.
     #[arg(long, value_enum, default_value_t = DescribeFormat::Markdown)]
     pub format: DescribeFormat,
@@ -317,6 +330,10 @@ pub struct JobsStatusArgs {
     /// Measurement artifact directory containing jobs/current.
     #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
     pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -341,6 +358,10 @@ pub struct MeasureArgs {
     #[arg(long, value_enum, default_value_t = TraversalProfile::Standard)]
     pub profile: TraversalProfile,
 
+    /// Probe execution environment.
+    #[arg(long, value_enum, default_value_t = SandboxProfile::Isolated)]
+    pub execution_mode: SandboxProfile,
+
     /// Maximum command-path depth to recursively confirm.
     #[arg(long, value_name = "N")]
     pub max_depth: Option<usize>,
@@ -356,6 +377,38 @@ pub struct MeasureArgs {
     /// Maximum probes to run concurrently.
     #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
     pub concurrency: Option<usize>,
+
+    /// Runtime context profile. When set, --out is a suite root and artifacts are written under contexts/<context>.
+    #[arg(long, value_enum)]
+    pub context: Option<RuntimeContextProfile>,
+
+    /// Override the context folder/display name.
+    #[arg(long, value_name = "NAME")]
+    pub context_name: Option<String>,
+
+    /// Declared authentication state for this runtime context.
+    #[arg(long, value_enum)]
+    pub auth_state: Option<RuntimeContextState>,
+
+    /// Declared local workspace/project/repository context state.
+    #[arg(long, value_enum)]
+    pub local_context_state: Option<RuntimeContextState>,
+
+    /// Declared fixture-data state for this runtime context.
+    #[arg(long, value_enum)]
+    pub fixture_state: Option<RuntimeContextState>,
+
+    /// Declared network state for this runtime context.
+    #[arg(long, value_enum)]
+    pub network_state: Option<RuntimeContextState>,
+
+    /// Declared local runtime dependency state for this runtime context.
+    #[arg(long, value_enum)]
+    pub runtime_dependency_state: Option<RuntimeContextState>,
+
+    /// Working directory that supplies the local context under test.
+    #[arg(long, value_name = "DIR", value_hint = ValueHint::DirPath)]
+    pub context_workdir: Option<PathBuf>,
 
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
@@ -434,6 +487,10 @@ pub struct GuardArgs {
     #[arg(long, value_enum, default_value_t = TraversalProfile::Standard)]
     pub profile: TraversalProfile,
 
+    /// Probe execution environment.
+    #[arg(long, value_enum, default_value_t = SandboxProfile::Isolated)]
+    pub execution_mode: SandboxProfile,
+
     /// Maximum command-path depth to recursively confirm.
     #[arg(long, value_name = "N")]
     pub max_depth: Option<usize>,
@@ -450,6 +507,38 @@ pub struct GuardArgs {
     #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
     pub concurrency: Option<usize>,
 
+    /// Runtime context profile. When set, --out is a suite root and artifacts are written under contexts/<context>.
+    #[arg(long, value_enum)]
+    pub context: Option<RuntimeContextProfile>,
+
+    /// Override the context folder/display name.
+    #[arg(long, value_name = "NAME")]
+    pub context_name: Option<String>,
+
+    /// Declared authentication state for this runtime context.
+    #[arg(long, value_enum)]
+    pub auth_state: Option<RuntimeContextState>,
+
+    /// Declared local workspace/project/repository context state.
+    #[arg(long, value_enum)]
+    pub local_context_state: Option<RuntimeContextState>,
+
+    /// Declared fixture-data state for this runtime context.
+    #[arg(long, value_enum)]
+    pub fixture_state: Option<RuntimeContextState>,
+
+    /// Declared network state for this runtime context.
+    #[arg(long, value_enum)]
+    pub network_state: Option<RuntimeContextState>,
+
+    /// Declared local runtime dependency state for this runtime context.
+    #[arg(long, value_enum)]
+    pub runtime_dependency_state: Option<RuntimeContextState>,
+
+    /// Working directory that supplies the local context under test.
+    #[arg(long, value_name = "DIR", value_hint = ValueHint::DirPath)]
+    pub context_workdir: Option<PathBuf>,
+
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
@@ -463,10 +552,19 @@ impl From<&GuardArgs> for MeasureArgs {
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
             profile: args.profile,
+            execution_mode: args.execution_mode,
             max_depth: args.max_depth,
             max_probes: args.max_probes,
             min_expected_value: args.min_expected_value,
             concurrency: args.concurrency,
+            context: args.context,
+            context_name: args.context_name.clone(),
+            auth_state: args.auth_state,
+            local_context_state: args.local_context_state,
+            fixture_state: args.fixture_state,
+            network_state: args.network_state,
+            runtime_dependency_state: args.runtime_dependency_state,
+            context_workdir: args.context_workdir.clone(),
             refresh: args.refresh,
             detach: false,
             detached_worker: false,
@@ -566,6 +664,7 @@ mod tests {
         assert!(help.contains("report"));
         assert!(help.contains("describe"));
         assert!(help.contains("skills"));
+        assert!(help.contains("context"));
         assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
     }
@@ -591,6 +690,7 @@ mod tests {
             Command::Guard(_)
             | Command::Jobs(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
@@ -617,6 +717,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Context(_)
             | Command::Metadata(_) => {
                 panic!("expected guard command")
             }
@@ -640,6 +741,7 @@ mod tests {
             Command::Measure(_)
             | Command::Jobs(_)
             | Command::Guard(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
@@ -657,6 +759,8 @@ mod tests {
             "security",
             "--out",
             ".cliare-current",
+            "--context",
+            "clean",
             "--format",
             "json",
             "--write",
@@ -667,6 +771,7 @@ mod tests {
             Command::Report(args) => {
                 assert_eq!(args.persona, super::ReportPersona::Security);
                 assert_eq!(args.out, std::path::PathBuf::from(".cliare-current"));
+                assert_eq!(args.context.as_deref(), Some("clean"));
                 assert_eq!(args.format, super::ReportFormat::Json);
                 assert!(args.write);
             }
@@ -674,6 +779,7 @@ mod tests {
             | Command::Jobs(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Metadata(_) => {
@@ -712,6 +818,7 @@ mod tests {
             | Command::Jobs(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Metadata(_) => {
@@ -739,6 +846,7 @@ mod tests {
             | Command::Jobs(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_) => {
@@ -769,6 +877,29 @@ mod tests {
             Command::Jobs(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected measure command")
+            }
+        }
+    }
+
+    #[test]
+    fn measure_accepts_host_execution_mode() {
+        let cli = Cli::try_parse_from(["cliare", "measure", "target", "--execution-mode", "host"])
+            .expect("valid host execution mode");
+
+        match cli.command {
+            Command::Measure(args) => {
+                assert_eq!(args.execution_mode, crate::sandbox::SandboxProfile::Host);
+            }
+            Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
@@ -780,18 +911,28 @@ mod tests {
 
     #[test]
     fn jobs_status_accepts_output_directory() {
-        let cli = Cli::try_parse_from(["cliare", "jobs", "status", "--out", ".cliare-target"])
-            .expect("valid jobs status command");
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "jobs",
+            "status",
+            "--out",
+            ".cliare-target",
+            "--context",
+            "clean",
+        ])
+        .expect("valid jobs status command");
 
         match cli.command {
             Command::Jobs(args) => match args.command {
                 super::JobsCommand::Status(args) => {
                     assert_eq!(args.out, std::path::PathBuf::from(".cliare-target"));
+                    assert_eq!(args.context.as_deref(), Some("clean"));
                 }
             },
             Command::Measure(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
@@ -807,6 +948,8 @@ mod tests {
             "cliare",
             "describe",
             ".cliare-current",
+            "--context",
+            "clean",
             "--format",
             "json",
             "--write",
@@ -816,6 +959,7 @@ mod tests {
         match cli.command {
             Command::Describe(args) => {
                 assert_eq!(args.folder, std::path::PathBuf::from(".cliare-current"));
+                assert_eq!(args.context.as_deref(), Some("clean"));
                 assert_eq!(args.format, super::DescribeFormat::Json);
                 assert!(args.write);
             }
@@ -823,6 +967,7 @@ mod tests {
             | Command::Jobs(_)
             | Command::Guard(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Skills(_)
             | Command::Metadata(_) => {
@@ -892,6 +1037,7 @@ mod tests {
             Command::Guard(_)
             | Command::Jobs(_)
             | Command::Benchmark(_)
+            | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
