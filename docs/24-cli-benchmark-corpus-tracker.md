@@ -47,7 +47,7 @@ These are the first CLIs to measure. They cover the most common operational surf
 
 | Priority | CLI | Category | Why Harnesses Use It | Benchmark Folder | Latest Score | Traversal Status | Findings / Follow-Up |
 |---:|---|---|---|---|---:|---|---|
-| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. |  |  |  |  |
+| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. | `benchmarks/corpus/gh` | `94.4` | Complete: converged; 185 commands indexed; 184 runtime-confirmed; 792/5000 probes; depth 3/12; frontier 0; no side effects. | High: 34 advertised output modes did not parse. Medium: 8 output modes need fixtures; 1 help-unavailable command. Low: 1 flag-grammar gap. |
 | 2 | `aws` | Cloud | AWS resource inspection, provisioning, service APIs, auth profiles, and deployment workflows. |  |  |  |  |
 | 3 | `gcloud` | Cloud | Google Cloud resource management, auth, projects, config, deployments, and logs. |  |  |  |  |
 | 4 | `az` | Cloud | Azure resource management, deployments, identity, storage, containers, and app services. |  |  |  |  |
