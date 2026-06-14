@@ -418,13 +418,11 @@ fn line_looks_like_command_example(line: &str) -> bool {
 }
 
 fn trim_shell_prefix(line: &str) -> &str {
-    let trimmed = line
-        .trim_start_matches(|ch: char| ch == '-' || ch == '*' || ch == '>' || ch == '$')
-        .trim_start();
-    if let Some((_, command)) = trimmed.split_once("  ") {
-        if command.split_whitespace().next().is_some_and(command_head) {
-            return command.trim_start();
-        }
+    let trimmed = line.trim_start_matches(['-', '*', '>', '$']).trim_start();
+    if let Some((_, command)) = trimmed.split_once("  ")
+        && command.split_whitespace().next().is_some_and(command_head)
+    {
+        return command.trim_start();
     }
     trimmed
 }
