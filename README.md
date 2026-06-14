@@ -168,6 +168,34 @@ Claude receives persona commands such as:
 
 Codex and Cursor receive the shared CLIARE artifact-review workflow. Ask them to review the artifact directory from a specific persona, for example: `Review /absolute/path/to/.cliare/mycli from the harness persona and list the highest-priority fixes before drilling into evidence.`
 
+## Persona Reports
+
+`cliare measure` writes every persona report automatically. Use `cliare report <persona>` when you want to regenerate one report from an existing artifact directory, print a packet to stdout, or produce JSON for another system. With `--write`, CLIARE writes both `persona-<persona>.md` and `persona-<persona>.json`.
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile standard --refresh
+cliare describe .cliare/mycli --write
+```
+
+| Persona | Command | Actionable Output |
+|---|---|---|
+| Maintainer | `cliare report maintainer --out .cliare/mycli --write` | Implementation work queue: command discovery gaps, help defects, flag and positional grammar issues, output-contract gaps, recovery problems, and verification commands for confirming fixes. |
+| Harness builder | `cliare report harness --out .cliare/mycli --write` | Agent-routing packet: ready, conditional, blocked, fixture-required, and candidate commands, with command-index pointers, preconditions, output contracts, and unsafe paths to avoid. |
+| Platform | `cliare report platform --out .cliare/mycli --write` | CI adoption packet: score posture, traversal completeness, budget pressure, policy recommendations, guard thresholds, baseline/drift actions, and release-gate readiness. |
+| Security | `cliare report security --out .cliare/mycli --write` | Review packet for side effects and runtime risk: persistent filesystem changes, credential-like paths, auth preconditions, unsafe probe behavior, and policy allowlist decisions. |
+| OSS maintainer | `cliare report oss --out .cliare/mycli --write` | Public-readiness packet: what can be claimed from the scorecard, what caveats must be attached, which artifacts to publish, and what should be fixed before badges or announcements. |
+| DevRel | `cliare report devrel --out .cliare/mycli --write` | Documentation and onboarding packet: confusing command surfaces, missing examples, output-mode education, agent-facing navigation guidance, and release-note material grounded in measured evidence. |
+| Research | `cliare report research --out .cliare/mycli --write` | Calibration packet: candidate truth labels, benchmark suitability, uncertainty notes, evidence quality, and gaps that prevent leaderboard or model-training use. |
+
+For automation, request JSON instead of Markdown:
+
+```sh
+cliare report harness --out .cliare/mycli --format json
+cliare report security --out .cliare/mycli --format json
+```
+
+Every persona packet starts with score context and a prioritized action table, then provides drill-down sections only where the reviewer needs evidence. The intended review flow is: read the persona table, choose the highest-priority row, use `command-index.json` for affected commands and parameters, and open `evidence.jsonl` only when a finding needs proof or dispute resolution.
+
 ## CLI
 
 ```sh
