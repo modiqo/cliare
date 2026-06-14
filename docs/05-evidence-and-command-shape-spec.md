@@ -338,6 +338,88 @@ Files:
 
 `command-index.md` is the same information rendered as a review table. Agents should use the JSON artifact when they need exact fields and the Markdown artifact when they need a quick human-facing command inventory.
 
+### Agent Suitability
+
+`agent_suitability` is the harness-facing routing classification for a command. It is derived from runtime state, preconditions, gaps, and output-contract status. It is not the same as issue confidence. Issue confidence describes how strongly CLIARE believes a finding; command suitability describes whether an agent harness should expose or route to a command.
+
+| Suitability | Meaning | Harness Treatment |
+|---|---|---|
+| `ready` | The command is runtime-confirmed and has no blocking gaps. If it also has a parseable machine-readable output contract, it is especially suitable for agent routing. | Candidate for automatic routing, subject to the harness's own permissions and task policy. |
+| `conditional` | The command is runtime-confirmed, but some command-quality gap remains: unavailable help, unknown flags, unknown arity, missing invalid-command diagnostics, missing invalid-flag diagnostics, or output parse failure. | Expose only with policy or manual review. Prefer safer alternatives when planning unattended actions. |
+| `needs_fixture` | The command has an advertised output contract or behavior that CLIARE could not safely validate without fixture operands, command-local data, or a safe runtime setup. | Do not treat the missing validation as a CLI defect. Add fixtures or documented safe operands before routing automatically. |
+| `blocked` | A runtime precondition blocked safe confirmation or use. Examples include `auth_required`, `profile_required`, `project_required`, or missing local runtime state. | Treat as unavailable unless the harness can explicitly satisfy the precondition. Do not confuse this with command absence. |
+| `candidate` | The command is inferred from help/layout or related evidence, but has not accumulated enough runtime evidence to be confirmed. | Keep out of automatic routing. Confirm with deeper measurement, clearer help, or explicit catalog metadata. |
+
+Example:
+
+```json
+{
+  "commands": [
+    {
+      "command": "project list",
+      "runtime_state": "runtime_confirmed",
+      "agent_suitability": "ready",
+      "suitability_reasons": [
+        "runtime-confirmed with parseable machine-readable output"
+      ],
+      "output_contracts": [
+        {
+          "mode": "json",
+          "status": "parse_success"
+        }
+      ],
+      "gaps": []
+    },
+    {
+      "command": "project delete",
+      "runtime_state": "runtime_confirmed",
+      "agent_suitability": "conditional",
+      "suitability_reasons": [
+        "invalid_flag_diagnostics_unknown: invalid flag rejection has not been runtime-confirmed"
+      ],
+      "gaps": [
+        {
+          "kind": "invalid_flag_diagnostics_unknown"
+        }
+      ]
+    },
+    {
+      "command": "project export",
+      "runtime_state": "runtime_confirmed",
+      "agent_suitability": "needs_fixture",
+      "suitability_reasons": [
+        "machine-readable output contract needs fixture or command-local validation"
+      ],
+      "output_contracts": [
+        {
+          "mode": "json",
+          "status": "unprobed"
+        }
+      ]
+    },
+    {
+      "command": "project billing",
+      "runtime_state": "precondition_blocked",
+      "agent_suitability": "blocked",
+      "suitability_reasons": [
+        "requires runtime precondition: auth_required"
+      ],
+      "preconditions": ["auth_required"]
+    },
+    {
+      "command": "project internal",
+      "runtime_state": "unconfirmed",
+      "agent_suitability": "candidate",
+      "suitability_reasons": [
+        "command existence is inferred but not runtime-confirmed"
+      ]
+    }
+  ]
+}
+```
+
+For the example above, an agent harness can consider `project list` for routing, should treat `project delete` as policy-gated, should ask for fixture support before relying on `project export`, should avoid `project billing` unless auth is provisioned, and should ignore `project internal` until a later measurement confirms it.
+
 ---
 
 ## Artifact Map

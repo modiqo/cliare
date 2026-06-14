@@ -48,6 +48,12 @@ async fn custom_help_tree_confirms_nested_commands_and_aliases() {
             .command_index_report
             .contains("| Command | Suitability |")
     );
+    assert!(
+        artifacts
+            .command_index_report
+            .contains("## Suitability Legend")
+    );
+    assert!(artifacts.command_index_report.contains("`needs_fixture`"));
     assert!(artifacts.command_index_report.contains("`project list`"));
 
     let rm = command(&artifacts.shape, &["rm"]);
