@@ -9,7 +9,17 @@ async fn main() -> miette::Result<()> {
 
     match cli.command {
         Command::Measure(args) => {
+            if args.detach && !args.detached_worker {
+                let summary = cliare::jobs::spawn_detached_measure(args).into_diagnostic()?;
+                print!("{}", summary.terminal_summary());
+                return Ok(());
+            }
             let summary = cliare::measure::measure(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
+        Command::Jobs(args) => {
+            let summary = cliare::jobs::jobs(args).into_diagnostic()?;
             print!("{}", summary.terminal_summary());
             Ok(())
         }
@@ -21,6 +31,21 @@ async fn main() -> miette::Result<()> {
             } else {
                 Err(miette::miette!("benchmark failed calibration checks"))
             }
+        }
+        Command::Report(args) => {
+            let summary = cliare::report::report(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
+        Command::Describe(args) => {
+            let summary = cliare::describe::describe(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
+        Command::Skills(args) => {
+            let summary = cliare::skills::skills(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
         }
         Command::Guard(args) => {
             let summary = cliare::guard::guard(args).await.into_diagnostic()?;
@@ -49,7 +74,7 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
                 "name": "cliare",
                 "version": env!("CARGO_PKG_VERSION"),
                 "formats": ["text", "json"],
-                "commands": ["measure", "guard", "benchmark", "metadata"],
+                "commands": ["measure", "jobs", "guard", "benchmark", "report", "describe", "skills", "metadata"],
             });
             println!(
                 "{}",
@@ -68,5 +93,5 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
 }
 
 fn metadata_help() -> &'static str {
-    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
+    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nCommands: measure, jobs, guard, benchmark, report, describe, skills, metadata\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
 }

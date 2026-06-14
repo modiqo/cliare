@@ -166,6 +166,81 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to create progress directory {path}")]
+    CreateProgressDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to open progress log {path}")]
+    OpenProgressLog {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write progress log {path}")]
+    WriteProgressLog {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to locate current CLIARE executable")]
+    CurrentExecutable(#[source] std::io::Error),
+
+    #[error("failed to open detached job stream {path}")]
+    OpenDetachedJobStream {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to spawn detached measure job")]
+    SpawnDetachedMeasure(#[source] std::io::Error),
+
+    #[error("failed to read job pointer {path}")]
+    ReadJobPointer {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read job progress log {path}")]
+    ReadJobProgressLog {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read detached job stream {path}")]
+    ReadJobStream {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("artifact path is not a directory: {path}")]
+    ArtifactPathNotDirectory { path: PathBuf },
+
+    #[error("failed to read artifact directory {path}")]
+    ReadArtifactDirectory {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to serialize artifact map")]
+    SerializeArtifactMap(#[source] serde_json::Error),
+
+    #[error("failed to write artifact map {path}")]
+    WriteArtifactMap {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read baseline scorecard {path}")]
     ReadBaselineScorecard {
         path: PathBuf,
@@ -236,6 +311,75 @@ pub enum CliareError {
 
     #[error("failed to write benchmark markdown {path}")]
     WriteBenchmarkMarkdown {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read report artifact {path}")]
+    ReadReportArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse report artifact {path}")]
+    ParseReportArtifact {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to parse report evidence {path}:{line}")]
+    ParseReportEvidence {
+        path: PathBuf,
+        line: usize,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize persona outcome packet")]
+    SerializePersonaOutcome(#[source] serde_json::Error),
+
+    #[error("failed to write persona outcome packet {path}")]
+    WritePersonaOutcome {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write artifact guide {path}")]
+    WriteArtifactGuide {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("home directory is unavailable; pass --home for user-scope skill installation")]
+    HomeDirectoryUnavailable,
+
+    #[error("failed to resolve current directory")]
+    CurrentDirectory(#[source] std::io::Error),
+
+    #[error("failed to serialize skill catalog")]
+    SerializeSkillCatalog(#[source] serde_json::Error),
+
+    #[error("failed to create skill installation directory {path}")]
+    CreateSkillDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read installed skill artifact {path}")]
+    ReadInstalledSkill {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write installed skill artifact {path}")]
+    WriteInstalledSkill {
         path: PathBuf,
         #[source]
         source: std::io::Error,

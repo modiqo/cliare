@@ -34,12 +34,116 @@ pub struct Cli {
 pub enum Command {
     /// Run safe bootstrap probes and write an evidence log.
     Measure(MeasureArgs),
+    /// Inspect detached CLIARE jobs.
+    Jobs(JobsArgs),
     /// Measure a target and fail when score regresses against a baseline.
     Guard(GuardArgs),
     /// Run a benchmark corpus and produce calibration reports.
     Benchmark(BenchmarkArgs),
+    /// Generate a persona-specific outcome packet from measurement artifacts.
+    Report(ReportArgs),
+    /// Describe a CLIARE artifact directory for humans and agents.
+    Describe(DescribeArgs),
+    /// Install CLIARE artifact-review skills for coding agents.
+    Skills(SkillsArgs),
     /// Print CLIARE implementation metadata.
     Metadata(MetadataArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SkillsArgs {
+    #[command(subcommand)]
+    pub command: SkillsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SkillsCommand {
+    /// List installable CLIARE agent skill targets.
+    List(SkillsListArgs),
+    /// Install CLIARE skills into a local agent configuration directory.
+    Install(SkillsInstallArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SkillsListArgs {
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = SkillsListFormat::Text)]
+    pub format: SkillsListFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SkillsListFormat {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Args)]
+pub struct SkillsInstallArgs {
+    /// Agent integration to install.
+    #[arg(long, value_enum, default_value_t = SkillAgent::All)]
+    pub agent: SkillAgent,
+
+    /// Install into user-level or project-level agent directories.
+    #[arg(long, value_enum, default_value_t = SkillInstallScope::User)]
+    pub scope: SkillInstallScope,
+
+    /// User home directory override for user-scope installs.
+    #[arg(long, value_name = "DIR", value_hint = ValueHint::DirPath)]
+    pub home: Option<PathBuf>,
+
+    /// Project directory override for project-scope installs.
+    #[arg(long, value_name = "DIR", value_hint = ValueHint::DirPath)]
+    pub project_dir: Option<PathBuf>,
+
+    /// Show planned writes without changing files.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SkillAgent {
+    All,
+    Claude,
+    Codex,
+    Cursor,
+}
+
+impl SkillAgent {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Cursor => "cursor",
+        }
+    }
+}
+
+impl std::fmt::Display for SkillAgent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SkillInstallScope {
+    User,
+    Project,
+}
+
+impl SkillInstallScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Project => "project",
+        }
+    }
+}
+
+impl std::fmt::Display for SkillInstallScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
 }
 
 #[derive(Debug, Args)]
@@ -99,6 +203,123 @@ pub struct BenchmarkArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ReportArgs {
+    /// Persona packet to generate.
+    #[arg(value_enum)]
+    pub persona: ReportPersona,
+
+    /// Measurement artifact directory containing scorecard.json, command-index.json, shape.json, and evidence.jsonl.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Representation to print to stdout.
+    #[arg(long, value_enum, default_value_t = ReportFormat::Markdown)]
+    pub format: ReportFormat,
+
+    /// Write persona-<persona>.json and persona-<persona>.md into the artifact directory.
+    #[arg(long)]
+    pub write: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportPersona {
+    Maintainer,
+    Harness,
+    Platform,
+    Security,
+    Oss,
+    Devrel,
+    Research,
+}
+
+impl ReportPersona {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Maintainer => "maintainer",
+            Self::Harness => "harness",
+            Self::Platform => "platform",
+            Self::Security => "security",
+            Self::Oss => "oss",
+            Self::Devrel => "devrel",
+            Self::Research => "research",
+        }
+    }
+}
+
+impl std::fmt::Display for ReportPersona {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportFormat {
+    Markdown,
+    Json,
+}
+
+impl ReportFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Markdown => "markdown",
+            Self::Json => "json",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct DescribeArgs {
+    /// CLIARE measurement or benchmark artifact directory.
+    #[arg(value_name = "FOLDER", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub folder: PathBuf,
+
+    /// Representation to print to stdout.
+    #[arg(long, value_enum, default_value_t = DescribeFormat::Markdown)]
+    pub format: DescribeFormat,
+
+    /// Write artifact-map.json and artifact-map.md into the artifact directory.
+    #[arg(long)]
+    pub write: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum DescribeFormat {
+    Markdown,
+    Json,
+}
+
+impl DescribeFormat {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Markdown => "markdown",
+            Self::Json => "json",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct JobsArgs {
+    #[command(subcommand)]
+    pub command: JobsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum JobsCommand {
+    /// Print the latest detached or foreground measurement progress state.
+    Status(JobsStatusArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct JobsStatusArgs {
+    /// Measurement artifact directory containing jobs/current.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+}
+
+#[derive(Debug, Clone, Args)]
 pub struct MeasureArgs {
     /// Path or PATH-resolved command name for the target CLI.
     #[arg(value_name = "TARGET", value_hint = ValueHint::CommandName)]
@@ -139,6 +360,18 @@ pub struct MeasureArgs {
     /// Ignore reusable artifacts and run probes again.
     #[arg(long)]
     pub refresh: bool,
+
+    /// Start the measurement in the background and return immediately with a job id.
+    #[arg(long)]
+    pub detach: bool,
+
+    /// Internal worker mode used by `measure --detach`.
+    #[arg(long = "__cliare-detached-worker", hide = true)]
+    pub detached_worker: bool,
+
+    /// Internal job id supplied by `measure --detach`.
+    #[arg(long = "__cliare-job-id", hide = true)]
+    pub job_id: Option<String>,
 }
 
 impl MeasureArgs {
@@ -235,6 +468,9 @@ impl From<&GuardArgs> for MeasureArgs {
             min_expected_value: args.min_expected_value,
             concurrency: args.concurrency,
             refresh: args.refresh,
+            detach: false,
+            detached_worker: false,
+            job_id: None,
         }
     }
 }
@@ -324,8 +560,12 @@ mod tests {
 
         assert!(help.contains("Usage: cliare"));
         assert!(help.contains("measure"));
+        assert!(help.contains("jobs"));
         assert!(help.contains("guard"));
         assert!(help.contains("benchmark"));
+        assert!(help.contains("report"));
+        assert!(help.contains("describe"));
+        assert!(help.contains("skills"));
         assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
     }
@@ -348,7 +588,13 @@ mod tests {
                 );
                 assert_eq!(args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
-            Command::Guard(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+            Command::Guard(_)
+            | Command::Jobs(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
         }
@@ -365,7 +611,13 @@ mod tests {
                 );
                 assert_eq!(measure_args.resolved_concurrency(), STANDARD_CONCURRENCY);
             }
-            Command::Measure(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
                 panic!("expected guard command")
             }
         }
@@ -385,8 +637,85 @@ mod tests {
                 assert_eq!(args.target_concurrency, None);
                 assert!(!args.refresh);
             }
-            Command::Measure(_) | Command::Guard(_) | Command::Metadata(_) => {
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
                 panic!("expected benchmark command")
+            }
+        }
+    }
+
+    #[test]
+    fn report_accepts_persona_and_output_options() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "report",
+            "security",
+            "--out",
+            ".cliare-current",
+            "--format",
+            "json",
+            "--write",
+        ])
+        .expect("valid report command");
+
+        match cli.command {
+            Command::Report(args) => {
+                assert_eq!(args.persona, super::ReportPersona::Security);
+                assert_eq!(args.out, std::path::PathBuf::from(".cliare-current"));
+                assert_eq!(args.format, super::ReportFormat::Json);
+                assert!(args.write);
+            }
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected report command")
+            }
+        }
+    }
+
+    #[test]
+    fn skills_install_accepts_agent_scope_and_dry_run() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "skills",
+            "install",
+            "--agent",
+            "claude",
+            "--scope",
+            "project",
+            "--project-dir",
+            ".",
+            "--dry-run",
+        ])
+        .expect("valid skills install command");
+
+        match cli.command {
+            Command::Skills(args) => match args.command {
+                super::SkillsCommand::Install(args) => {
+                    assert_eq!(args.agent, super::SkillAgent::Claude);
+                    assert_eq!(args.scope, super::SkillInstallScope::Project);
+                    assert_eq!(args.project_dir, Some(std::path::PathBuf::from(".")));
+                    assert!(args.dry_run);
+                }
+                super::SkillsCommand::List(_) => panic!("expected install command"),
+            },
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Metadata(_) => {
+                panic!("expected skills command")
             }
         }
     }
@@ -406,8 +735,98 @@ mod tests {
                 assert_eq!(args.format, super::MetadataFormat::Json);
                 assert!(args.help);
             }
-            Command::Measure(_) | Command::Guard(_) | Command::Benchmark(_) => {
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_) => {
                 panic!("expected metadata command")
+            }
+        }
+    }
+
+    #[test]
+    fn measure_accepts_detached_job_mode() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "measure",
+            "target",
+            "--out",
+            ".cliare-target",
+            "--detach",
+        ])
+        .expect("valid detached measure command");
+
+        match cli.command {
+            Command::Measure(args) => {
+                assert_eq!(args.out, std::path::PathBuf::from(".cliare-target"));
+                assert!(args.detach);
+                assert!(!args.detached_worker);
+                assert_eq!(args.job_id, None);
+            }
+            Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected measure command")
+            }
+        }
+    }
+
+    #[test]
+    fn jobs_status_accepts_output_directory() {
+        let cli = Cli::try_parse_from(["cliare", "jobs", "status", "--out", ".cliare-target"])
+            .expect("valid jobs status command");
+
+        match cli.command {
+            Command::Jobs(args) => match args.command {
+                super::JobsCommand::Status(args) => {
+                    assert_eq!(args.out, std::path::PathBuf::from(".cliare-target"));
+                }
+            },
+            Command::Measure(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected jobs command")
+            }
+        }
+    }
+
+    #[test]
+    fn describe_accepts_folder_format_and_write_options() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "describe",
+            ".cliare-current",
+            "--format",
+            "json",
+            "--write",
+        ])
+        .expect("valid describe command");
+
+        match cli.command {
+            Command::Describe(args) => {
+                assert_eq!(args.folder, std::path::PathBuf::from(".cliare-current"));
+                assert_eq!(args.format, super::DescribeFormat::Json);
+                assert!(args.write);
+            }
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected describe command")
             }
         }
     }
@@ -470,7 +889,13 @@ mod tests {
                 assert_eq!(args.resolved_min_expected_value(), min_expected_value);
                 assert_eq!(args.resolved_concurrency(), concurrency);
             }
-            Command::Guard(_) | Command::Benchmark(_) | Command::Metadata(_) => {
+            Command::Guard(_)
+            | Command::Jobs(_)
+            | Command::Benchmark(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
         }

@@ -23,6 +23,32 @@ async fn custom_help_tree_confirms_nested_commands_and_aliases() {
     let format = flag(&artifacts.shape, &["project", "list"], "--format");
     assert_eq!(format["value_kind"].as_str(), Some("required"));
     assert_eq!(format["value_name"].as_str(), Some("kind"));
+    let project_list_index = indexed_command(&artifacts.command_index, &["project", "list"]);
+    assert_eq!(project_list_index["command"].as_str(), Some("project list"));
+    assert_eq!(
+        project_list_index["runtime_state"].as_str(),
+        Some("runtime_confirmed")
+    );
+    assert!(
+        ["ready", "needs_fixture", "conditional"].contains(
+            &project_list_index["agent_suitability"]
+                .as_str()
+                .expect("indexed command has suitability")
+        )
+    );
+    assert!(
+        project_list_index["parameters"]["flags"]
+            .as_array()
+            .expect("indexed flags are an array")
+            .iter()
+            .any(|flag| flag["name"].as_str() == Some("--format"))
+    );
+    assert!(
+        artifacts
+            .command_index_report
+            .contains("| Command | Suitability |")
+    );
+    assert!(artifacts.command_index_report.contains("`project list`"));
 
     let rm = command(&artifacts.shape, &["rm"]);
     assert!(rm["runtime_confirmed"].as_bool().unwrap_or(false));
@@ -148,6 +174,7 @@ async fn measure_writes_ci_artifacts_from_scorecard() {
     assert!(artifacts.ci_summary.contains("# CLIARE CI Summary"));
     assert!(artifacts.ci_summary.contains("| Score |"));
     assert!(artifacts.ci_summary.contains("Machine-readable outputs"));
+    assert!(artifacts.ci_summary.contains("`command-index.json`"));
     assert!(
         artifacts
             .ci_summary
@@ -209,8 +236,18 @@ async fn output_mode_probe_confirms_parseable_json_contract() {
     assert_eq!(contract["probed"].as_bool(), Some(true));
     assert_eq!(contract["parse_success"].as_bool(), Some(true));
     assert_eq!(contract["observed_kind"].as_str(), Some("json"));
+    assert_eq!(contract["help_probed"].as_bool(), Some(true));
+    assert_eq!(
+        contract["help_behavior"].as_str(),
+        Some("machine_readable_help")
+    );
 
     assert!(artifacts.evidence.contains("\"intent\":\"output_json\""));
+    assert!(
+        artifacts
+            .evidence
+            .contains("\"intent\":\"output_json_help\"")
+    );
     assert_eq!(
         artifacts.scorecard["coverage"]["machine_readable_output_contracts"].as_u64(),
         Some(1)
@@ -237,6 +274,7 @@ async fn malformed_output_mode_records_parse_gap_and_finding() {
     let contract = output_contract(&artifacts.shape, &["inspect"], "json");
     assert_eq!(contract["probed"].as_bool(), Some(true));
     assert_eq!(contract["parse_success"].as_bool(), Some(false));
+    assert_eq!(contract["observed_kind"].as_str(), Some("unparseable"));
     assert!(has_gap(
         &artifacts.shape,
         &["inspect"],
@@ -349,6 +387,9 @@ async fn concurrent_traversal_matches_serial_shape_and_score() {
         min_expected_value: None,
         concurrency: Some(1),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("serial measurement succeeds");
@@ -363,6 +404,9 @@ async fn concurrent_traversal_matches_serial_shape_and_score() {
         min_expected_value: None,
         concurrency: Some(4),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("concurrent measurement succeeds");
@@ -412,6 +456,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: false,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("first measurement succeeds");
@@ -426,6 +473,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: false,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("second measurement succeeds");
@@ -440,6 +490,9 @@ async fn measure_reuses_matching_cache_until_refresh_is_requested() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("refreshed measurement succeeds");
@@ -469,6 +522,9 @@ async fn guard_passes_against_same_score_baseline() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: false,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -566,6 +622,9 @@ async fn guard_policy_allows_expected_cache_side_effects() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -621,6 +680,9 @@ async fn guard_policy_denies_credential_like_side_effects() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -684,6 +746,9 @@ async fn guard_policy_fails_output_subscore_threshold() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -742,6 +807,9 @@ async fn guard_policy_fails_total_score_threshold() {
         min_expected_value: None,
         concurrency: Some(2),
         refresh: true,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("baseline measurement succeeds");
@@ -925,11 +993,17 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
         min_expected_value: None,
         concurrency: Some(2),
         refresh: false,
+        detach: false,
+        detached_worker: false,
+        job_id: None,
     })
     .await
     .expect("measurement succeeds");
 
     let shape = read_json(&out.join("shape.json"));
+    let command_index = read_json(&out.join("command-index.json"));
+    let command_index_report =
+        fs::read_to_string(out.join("command-index.md")).expect("command index is readable");
     let scorecard = read_json(&out.join("scorecard.json"));
     let sarif = read_json(&out.join("findings.sarif"));
     let report = fs::read_to_string(out.join("report.md")).expect("report is readable");
@@ -941,6 +1015,8 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
     MeasuredFixture {
         _workspace: workspace,
         shape,
+        command_index,
+        command_index_report,
         scorecard,
         sarif,
         report,
@@ -953,6 +1029,8 @@ async fn measure_fixture(name: &str, script: &str, max_probes: usize) -> Measure
 struct MeasuredFixture {
     _workspace: TempWorkspace,
     shape: Value,
+    command_index: Value,
+    command_index_report: String,
     scorecard: Value,
     sarif: Value,
     report: String,
@@ -1028,6 +1106,15 @@ fn command<'a>(shape: &'a Value, path: &[&str]) -> &'a Value {
         .iter()
         .find(|command| path_matches(&command["path"], path))
         .unwrap_or_else(|| panic!("command path not found: {path:?}"))
+}
+
+fn indexed_command<'a>(index: &'a Value, path: &[&str]) -> &'a Value {
+    index["commands"]
+        .as_array()
+        .expect("command index commands is an array")
+        .iter()
+        .find(|command| path_matches(&command["path"], path))
+        .unwrap_or_else(|| panic!("indexed command path not found: {path:?}"))
 }
 
 fn flag<'a>(shape: &'a Value, command_path: &[&str], name: &str) -> &'a Value {
@@ -1324,14 +1411,14 @@ case "$1" in
     esac
     ;;
   "inspect")
-    case "$2 $3" in
-      "--format json")
-        case "$4" in
-          "--help")
-            printf '{"usage":"fixture-cli inspect","format":"json"}\n'
-            exit 0
-            ;;
-        esac
+    case "$2 $3 $4" in
+      "--format json --help")
+        printf '{"usage":"fixture-cli inspect","format":"json"}\n'
+        exit 0
+        ;;
+      "--format json ")
+        printf '{"workspace":"fixture","format":"json"}\n'
+        exit 0
         ;;
     esac
     case "$2" in
@@ -1402,8 +1489,8 @@ case "$1" in
     esac
     ;;
   "inspect")
-    case "$2 $3" in
-      "--json --help")
+    case "$2" in
+      "--json")
         printf '{not-json\n'
         exit 0
         ;;

@@ -8,6 +8,7 @@ use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
+use crate::artifact_guide;
 use crate::cli::{BenchmarkArgs, MeasureArgs, TraversalProfile};
 use crate::error::{CliareError, Result};
 use crate::measure::{self, MeasurementSummary};
@@ -20,6 +21,8 @@ pub struct BenchmarkSummary {
     pub manifest_path: PathBuf,
     pub report_path: PathBuf,
     pub markdown_path: PathBuf,
+    pub readme_path: PathBuf,
+    pub agent_skill_path: PathBuf,
     pub targets_total: usize,
     pub measured: usize,
     pub skipped: usize,
@@ -60,6 +63,8 @@ impl BenchmarkSummary {
             "artifacts:".to_owned(),
             format!("  report: {}", self.report_path.display()),
             format!("  markdown: {}", self.markdown_path.display()),
+            format!("  readme: {}", self.readme_path.display()),
+            format!("  agent guide: {}", self.agent_skill_path.display()),
         ];
 
         format!("{}\n", lines.join("\n"))
@@ -114,11 +119,14 @@ pub async fn benchmark(args: BenchmarkArgs) -> Result<BenchmarkSummary> {
     );
     let report_path = write_json_report(&args.out, &report).await?;
     let markdown_path = write_markdown_report(&args.out, &report).await?;
+    let guide_artifacts = artifact_guide::write_benchmark_guides(&args.out).await?;
 
     Ok(BenchmarkSummary {
         manifest_path: args.manifest,
         report_path,
         markdown_path,
+        readme_path: guide_artifacts.readme_path,
+        agent_skill_path: guide_artifacts.agent_skill_path,
         targets_total: report.totals.targets,
         measured: report.totals.measured,
         skipped: report.totals.skipped,
@@ -219,6 +227,7 @@ async fn write_progress_report(
     );
     write_json_report(out_dir, &report).await?;
     write_markdown_report(out_dir, &report).await?;
+    artifact_guide::write_benchmark_guides(out_dir).await?;
     Ok(())
 }
 
@@ -781,6 +790,9 @@ impl BenchmarkTarget {
             min_expected_value: self.min_expected_value.or(defaults.min_expected_value),
             concurrency: self.concurrency.or(defaults.concurrency),
             refresh,
+            detach: false,
+            detached_worker: false,
+            job_id: None,
         }
     }
 }

@@ -78,6 +78,7 @@ cliare score <shape-or-evidence>
 cliare guard <binary> --baseline <scorecard>
 cliare certify <binary>
 cliare report <scorecard-or-workdir>
+cliare describe <artifact-dir>
 cliare rescore <evidence>
 cliare publish <scorecard>
 ```

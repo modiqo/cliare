@@ -146,6 +146,10 @@ pub enum ProbeIntent {
     OutputYaml,
     OutputTable,
     OutputPlain,
+    OutputJsonHelp,
+    OutputYamlHelp,
+    OutputTableHelp,
+    OutputPlainHelp,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -4,15 +4,17 @@ use serde::Serialize;
 use tokio::fs;
 
 use crate::claims::{
-    ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, PositionalClaim,
+    ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
+    PositionalClaim,
 };
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
-use crate::output::{ObservedOutputKind, OutputMode};
+use crate::output::{ObservedOutputKind, OutputHelpBehavior, OutputMode};
 use crate::precondition::PreconditionKind;
 
 const SCHEMA_VERSION: &str = "cliare.command-shape.v1";
+const COMMAND_INDEX_SCHEMA_VERSION: &str = "cliare.command-index.v1";
 const INFERENCE_MODEL: &str = "cliare-generic-claims-v0";
 
 #[derive(Debug, Serialize)]
@@ -56,7 +58,7 @@ pub struct FlagCandidate {
     evidence: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PositionalArgument {
     name: String,
     required: bool,
@@ -70,6 +72,7 @@ pub struct OutputContractCandidate {
     mode: OutputMode,
     flag_name: String,
     argv_fragment: Vec<String>,
+    scope: OutputContractScope,
     advertised: bool,
     probed: bool,
     parse_success: bool,
@@ -77,6 +80,107 @@ pub struct OutputContractCandidate {
     preconditions: Vec<PreconditionKind>,
     observed_kind: Option<ObservedOutputKind>,
     diagnostic: Option<String>,
+    help_probed: bool,
+    help_behavior: Option<OutputHelpBehavior>,
+    help_parse_success: bool,
+    help_diagnostic: Option<String>,
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndex {
+    schema_version: &'static str,
+    source_schema_version: &'static str,
+    target: TargetFingerprint,
+    summary: CommandIndexSummary,
+    commands: Vec<CommandIndexEntry>,
+    model: InferenceModel,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndexSummary {
+    commands_total: usize,
+    ready: usize,
+    conditional: usize,
+    needs_fixture: usize,
+    blocked: usize,
+    candidate: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndexEntry {
+    id: String,
+    command: String,
+    path: Vec<String>,
+    argv: Vec<String>,
+    summary: Option<String>,
+    runtime_state: CommandRuntimeState,
+    agent_suitability: AgentSuitability,
+    suitability_reasons: Vec<String>,
+    confidence: f64,
+    usage_observed: bool,
+    parameters: CommandParameters,
+    preconditions: Vec<PreconditionKind>,
+    output_contracts: Vec<CommandIndexOutputContract>,
+    gaps: Vec<CommandIndexGap>,
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandParameters {
+    positionals: Vec<PositionalArgument>,
+    flags: Vec<CommandIndexFlag>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndexFlag {
+    name: String,
+    short: Option<String>,
+    summary: Option<String>,
+    value_kind: FlagValueKindShape,
+    value_name: Option<String>,
+    required: bool,
+    repeatable: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndexOutputContract {
+    mode: OutputMode,
+    flag_name: String,
+    argv_fragment: Vec<String>,
+    scope: OutputContractScope,
+    status: OutputContractStatus,
+    preconditions: Vec<PreconditionKind>,
+    observed_kind: Option<ObservedOutputKind>,
+    diagnostic: Option<String>,
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSuitability {
+    Ready,
+    Conditional,
+    NeedsFixture,
+    Blocked,
+    Candidate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputContractStatus {
+    ParseSuccess,
+    PreconditionBlocked,
+    Unprobed,
+    HelpText,
+    Unvalidated,
+    ParseFailed,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommandIndexGap {
+    kind: GapKind,
+    reason: String,
     evidence: Vec<String>,
 }
 
@@ -96,7 +200,7 @@ pub struct Gap {
     evidence: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GapKind {
     ExistenceUnconfirmed,
@@ -107,6 +211,7 @@ pub enum GapKind {
     InvalidChildDiagnosticsUnknown,
     InvalidFlagDiagnosticsUnknown,
     OutputModeUnprobed,
+    OutputModeUnvalidated,
     OutputModeParseFailed,
 }
 
@@ -130,11 +235,33 @@ pub async fn write_shape(
     observations: &[ShapeObservation],
 ) -> Result<()> {
     let shape = infer_shape(target, observations);
-    let path = out_dir.join("shape.json");
-    let bytes = serde_json::to_vec_pretty(&shape).map_err(CliareError::SerializeShape)?;
-    fs::write(&path, bytes)
+    let index = command_index(&shape);
+
+    let shape_path = out_dir.join("shape.json");
+    let shape_bytes = serde_json::to_vec_pretty(&shape).map_err(CliareError::SerializeShape)?;
+    fs::write(&shape_path, shape_bytes)
         .await
-        .map_err(|source| CliareError::WriteShape { path, source })
+        .map_err(|source| CliareError::WriteShape {
+            path: shape_path,
+            source,
+        })?;
+
+    let index_path = out_dir.join("command-index.json");
+    let index_bytes = serde_json::to_vec_pretty(&index).map_err(CliareError::SerializeShape)?;
+    fs::write(&index_path, index_bytes)
+        .await
+        .map_err(|source| CliareError::WriteShape {
+            path: index_path,
+            source,
+        })?;
+
+    let index_markdown_path = out_dir.join("command-index.md");
+    fs::write(&index_markdown_path, render_command_index_markdown(&index))
+        .await
+        .map_err(|source| CliareError::WriteShape {
+            path: index_markdown_path,
+            source,
+        })
 }
 
 pub fn infer_shape(target: TargetFingerprint, observations: &[ShapeObservation]) -> CommandShape {
@@ -161,6 +288,35 @@ pub fn infer_shape(target: TargetFingerprint, observations: &[ShapeObservation])
         model: InferenceModel {
             name: INFERENCE_MODEL,
             source: "generic claim store with layout evidence, runtime confirmation, and diagnostic probes",
+        },
+    }
+}
+
+pub fn infer_command_index(
+    target: TargetFingerprint,
+    observations: &[ShapeObservation],
+) -> CommandIndex {
+    let shape = infer_shape(target, observations);
+    command_index(&shape)
+}
+
+fn command_index(shape: &CommandShape) -> CommandIndex {
+    let commands = shape
+        .commands
+        .iter()
+        .map(|command| command_index_entry(command, shape))
+        .collect::<Vec<_>>();
+    let summary = command_index_summary(&commands);
+
+    CommandIndex {
+        schema_version: COMMAND_INDEX_SCHEMA_VERSION,
+        source_schema_version: SCHEMA_VERSION,
+        target: shape.target.clone(),
+        summary,
+        commands,
+        model: InferenceModel {
+            name: INFERENCE_MODEL,
+            source: "command-centric index derived from command shape, runtime gaps, output contracts, and preconditions",
         },
     }
 }
@@ -236,6 +392,7 @@ fn output_contract_candidate(contract: &OutputContractClaim) -> OutputContractCa
         mode: contract.mode(),
         flag_name: contract.flag_name().to_owned(),
         argv_fragment: contract.argv_fragment().to_vec(),
+        scope: contract.scope(),
         advertised: contract.advertised(),
         probed: contract.probed(),
         parse_success: contract.parse_success(),
@@ -243,8 +400,415 @@ fn output_contract_candidate(contract: &OutputContractClaim) -> OutputContractCa
         preconditions: contract.preconditions().collect(),
         observed_kind: contract.observed_kind(),
         diagnostic: contract.diagnostic().map(str::to_owned),
+        help_probed: contract.help_probed(),
+        help_behavior: contract.help_behavior(),
+        help_parse_success: contract.help_parse_success(),
+        help_diagnostic: contract.help_diagnostic().map(str::to_owned),
         evidence: contract.evidence().to_vec(),
     }
+}
+
+fn command_index_entry(command: &CommandCandidate, shape: &CommandShape) -> CommandIndexEntry {
+    let flags = shape
+        .flags
+        .iter()
+        .filter(|flag| flag.command_path == command.path)
+        .map(command_index_flag)
+        .collect::<Vec<_>>();
+    let output_contracts = shape
+        .output_contracts
+        .iter()
+        .filter(|contract| contract.command_path == command.path)
+        .map(command_index_output_contract)
+        .collect::<Vec<_>>();
+    let gaps = shape
+        .gaps
+        .iter()
+        .filter(|gap| gap.command_path == command.path)
+        .map(command_index_gap)
+        .collect::<Vec<_>>();
+    let preconditions = command_preconditions(command, &output_contracts, &gaps);
+    let (agent_suitability, suitability_reasons) =
+        command_suitability(command, &output_contracts, &gaps, &preconditions);
+
+    CommandIndexEntry {
+        id: command.id.clone(),
+        command: command_display(&command.path),
+        path: command.path.clone(),
+        argv: command.argv.clone(),
+        summary: command.summary.clone(),
+        runtime_state: command.runtime_state,
+        agent_suitability,
+        suitability_reasons,
+        confidence: command.confidence,
+        usage_observed: command.usage_observed,
+        parameters: CommandParameters {
+            positionals: command.positionals.clone(),
+            flags,
+        },
+        preconditions,
+        output_contracts,
+        gaps,
+        evidence: command.evidence.clone(),
+    }
+}
+
+fn command_index_summary(commands: &[CommandIndexEntry]) -> CommandIndexSummary {
+    CommandIndexSummary {
+        commands_total: commands.len(),
+        ready: commands
+            .iter()
+            .filter(|command| command.agent_suitability == AgentSuitability::Ready)
+            .count(),
+        conditional: commands
+            .iter()
+            .filter(|command| command.agent_suitability == AgentSuitability::Conditional)
+            .count(),
+        needs_fixture: commands
+            .iter()
+            .filter(|command| command.agent_suitability == AgentSuitability::NeedsFixture)
+            .count(),
+        blocked: commands
+            .iter()
+            .filter(|command| command.agent_suitability == AgentSuitability::Blocked)
+            .count(),
+        candidate: commands
+            .iter()
+            .filter(|command| command.agent_suitability == AgentSuitability::Candidate)
+            .count(),
+    }
+}
+
+fn command_index_flag(flag: &FlagCandidate) -> CommandIndexFlag {
+    CommandIndexFlag {
+        name: flag.name.clone(),
+        short: flag.short.clone(),
+        summary: flag.summary.clone(),
+        value_kind: flag.value_kind,
+        value_name: flag.value_name.clone(),
+        required: flag.required,
+        repeatable: flag.repeatable,
+    }
+}
+
+fn command_index_output_contract(contract: &OutputContractCandidate) -> CommandIndexOutputContract {
+    CommandIndexOutputContract {
+        mode: contract.mode,
+        flag_name: contract.flag_name.clone(),
+        argv_fragment: contract.argv_fragment.clone(),
+        scope: contract.scope,
+        status: output_contract_status(contract),
+        preconditions: contract.preconditions.clone(),
+        observed_kind: contract.observed_kind,
+        diagnostic: contract.diagnostic.clone(),
+        evidence: contract.evidence.clone(),
+    }
+}
+
+fn output_contract_status(contract: &OutputContractCandidate) -> OutputContractStatus {
+    if contract.parse_success {
+        OutputContractStatus::ParseSuccess
+    } else if contract.precondition_blocked {
+        OutputContractStatus::PreconditionBlocked
+    } else if !contract.probed {
+        OutputContractStatus::Unprobed
+    } else if contract.observed_kind == Some(ObservedOutputKind::HelpText) {
+        OutputContractStatus::HelpText
+    } else if contract.scope.is_global_only() {
+        OutputContractStatus::Unvalidated
+    } else {
+        OutputContractStatus::ParseFailed
+    }
+}
+
+fn command_index_gap(gap: &Gap) -> CommandIndexGap {
+    CommandIndexGap {
+        kind: gap.kind,
+        reason: gap.reason.clone(),
+        evidence: gap.evidence.clone(),
+    }
+}
+
+fn command_preconditions(
+    command: &CommandCandidate,
+    output_contracts: &[CommandIndexOutputContract],
+    _gaps: &[CommandIndexGap],
+) -> Vec<PreconditionKind> {
+    let mut preconditions = command.preconditions.clone();
+    for contract in output_contracts {
+        for precondition in &contract.preconditions {
+            if !preconditions.contains(precondition) {
+                preconditions.push(*precondition);
+            }
+        }
+    }
+    preconditions
+}
+
+fn command_suitability(
+    command: &CommandCandidate,
+    output_contracts: &[CommandIndexOutputContract],
+    gaps: &[CommandIndexGap],
+    preconditions: &[PreconditionKind],
+) -> (AgentSuitability, Vec<String>) {
+    let mut reasons = Vec::new();
+
+    if command.runtime_state == CommandRuntimeState::Unconfirmed {
+        reasons.push("command existence is inferred but not runtime-confirmed".to_owned());
+        return (AgentSuitability::Candidate, reasons);
+    }
+
+    if command.runtime_state == CommandRuntimeState::PreconditionBlocked
+        || !preconditions.is_empty()
+        || gaps
+            .iter()
+            .any(|gap| matches!(gap.kind, GapKind::PreconditionBlocked))
+    {
+        reasons.push(format_preconditions(preconditions));
+        return (AgentSuitability::Blocked, reasons);
+    }
+
+    if gaps.iter().any(|gap| {
+        matches!(
+            gap.kind,
+            GapKind::OutputModeUnprobed | GapKind::OutputModeUnvalidated
+        )
+    }) {
+        reasons.push(
+            "machine-readable output contract needs fixture or command-local validation".to_owned(),
+        );
+        return (AgentSuitability::NeedsFixture, reasons);
+    }
+
+    let blocking_gap = gaps.iter().find(|gap| {
+        matches!(
+            gap.kind,
+            GapKind::HelpUnavailable
+                | GapKind::FlagsUnknown
+                | GapKind::ArgumentArityUnknown
+                | GapKind::InvalidChildDiagnosticsUnknown
+                | GapKind::InvalidFlagDiagnosticsUnknown
+                | GapKind::OutputModeParseFailed
+        )
+    });
+    if let Some(gap) = blocking_gap {
+        reasons.push(format!("{}: {}", gap_kind_label(gap.kind), gap.reason));
+        return (AgentSuitability::Conditional, reasons);
+    }
+
+    if output_contracts
+        .iter()
+        .any(|contract| contract.status == OutputContractStatus::ParseSuccess)
+    {
+        reasons.push("runtime-confirmed with parseable machine-readable output".to_owned());
+    } else {
+        reasons.push("runtime-confirmed command shape".to_owned());
+    }
+    (AgentSuitability::Ready, reasons)
+}
+
+fn format_preconditions(preconditions: &[PreconditionKind]) -> String {
+    if preconditions.is_empty() {
+        "runtime precondition observed; inspect evidence for the exact blocker".to_owned()
+    } else {
+        format!(
+            "requires runtime precondition: {}",
+            preconditions
+                .iter()
+                .map(|precondition| precondition.label())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+fn render_command_index_markdown(index: &CommandIndex) -> String {
+    let mut lines = vec![
+        "# CLIARE Command Index".to_owned(),
+        String::new(),
+        "Command-centric reference generated from `shape.json`. Use it as the first-pass index for selecting commands, understanding parameters, and identifying runtime constraints before invoking a CLI from an agent harness.".to_owned(),
+        String::new(),
+        format!("- Target: `{}`", index.target.requested.display()),
+        format!("- Resolved: `{}`", index.target.resolved.display()),
+        format!("- Commands: `{}`", index.summary.commands_total),
+        format!("- Ready: `{}`", index.summary.ready),
+        format!("- Conditional: `{}`", index.summary.conditional),
+        format!("- Needs fixture: `{}`", index.summary.needs_fixture),
+        format!("- Blocked: `{}`", index.summary.blocked),
+        format!("- Candidate only: `{}`", index.summary.candidate),
+        String::new(),
+        "| Command | Suitability | Runtime | Parameters | Preconditions | Output | Gaps | Summary |".to_owned(),
+        "|---|---|---|---|---|---|---|---|".to_owned(),
+    ];
+
+    for command in &index.commands {
+        lines.push(format!(
+            "| `{}` | `{}` | `{}` | {} | {} | {} | {} | {} |",
+            escape_markdown_table(&command.command),
+            suitability_label(command.agent_suitability),
+            runtime_state_label(command.runtime_state),
+            escape_markdown_table(&parameters_summary(&command.parameters)),
+            escape_markdown_table(&preconditions_summary(&command.preconditions)),
+            escape_markdown_table(&output_summary(&command.output_contracts)),
+            escape_markdown_table(&gaps_summary(&command.gaps)),
+            escape_markdown_table(command.summary.as_deref().unwrap_or(""))
+        ));
+    }
+
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+fn parameters_summary(parameters: &CommandParameters) -> String {
+    let positionals = parameters
+        .positionals
+        .iter()
+        .map(format_positional)
+        .collect::<Vec<_>>();
+    let flags = parameters.flags.iter().map(format_flag).collect::<Vec<_>>();
+
+    match (positionals.is_empty(), flags.is_empty()) {
+        (true, true) => "none".to_owned(),
+        (false, true) => format!("args: {}", positionals.join(", ")),
+        (true, false) => format!("flags: {}", flags.join(", ")),
+        (false, false) => format!(
+            "args: {}; flags: {}",
+            positionals.join(", "),
+            flags.join(", ")
+        ),
+    }
+}
+
+fn format_positional(positional: &PositionalArgument) -> String {
+    let mut name = positional.name.clone();
+    if positional.variadic {
+        name.push_str("...");
+    }
+    if positional.required {
+        format!("<{name}>")
+    } else {
+        format!("[{name}]")
+    }
+}
+
+fn format_flag(flag: &CommandIndexFlag) -> String {
+    let mut rendered = flag.name.clone();
+    if let Some(value_name) = &flag.value_name {
+        match flag.value_kind {
+            FlagValueKindShape::Boolean => {}
+            FlagValueKindShape::Required => {
+                rendered.push(' ');
+                rendered.push_str(value_name);
+            }
+            FlagValueKindShape::Optional => {
+                rendered.push_str(" [");
+                rendered.push_str(value_name);
+                rendered.push(']');
+            }
+        }
+    }
+    if flag.repeatable {
+        rendered.push_str("...");
+    }
+    rendered
+}
+
+fn preconditions_summary(preconditions: &[PreconditionKind]) -> String {
+    if preconditions.is_empty() {
+        "none".to_owned()
+    } else {
+        preconditions
+            .iter()
+            .map(|precondition| precondition.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn output_summary(contracts: &[CommandIndexOutputContract]) -> String {
+    if contracts.is_empty() {
+        return "none".to_owned();
+    }
+    contracts
+        .iter()
+        .map(|contract| {
+            format!(
+                "{}:{}",
+                contract.mode.label(),
+                output_status_label(contract.status)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn gaps_summary(gaps: &[CommandIndexGap]) -> String {
+    if gaps.is_empty() {
+        return "none".to_owned();
+    }
+    gaps.iter()
+        .map(|gap| gap_kind_label(gap.kind))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn command_display(path: &[String]) -> String {
+    if path.is_empty() {
+        "<root>".to_owned()
+    } else {
+        path.join(" ")
+    }
+}
+
+fn suitability_label(suitability: AgentSuitability) -> &'static str {
+    match suitability {
+        AgentSuitability::Ready => "ready",
+        AgentSuitability::Conditional => "conditional",
+        AgentSuitability::NeedsFixture => "needs_fixture",
+        AgentSuitability::Blocked => "blocked",
+        AgentSuitability::Candidate => "candidate",
+    }
+}
+
+fn runtime_state_label(state: CommandRuntimeState) -> &'static str {
+    match state {
+        CommandRuntimeState::RuntimeConfirmed => "runtime_confirmed",
+        CommandRuntimeState::PreconditionBlocked => "precondition_blocked",
+        CommandRuntimeState::Unconfirmed => "unconfirmed",
+    }
+}
+
+fn output_status_label(status: OutputContractStatus) -> &'static str {
+    match status {
+        OutputContractStatus::ParseSuccess => "parse_success",
+        OutputContractStatus::PreconditionBlocked => "precondition_blocked",
+        OutputContractStatus::Unprobed => "unprobed",
+        OutputContractStatus::HelpText => "help_text",
+        OutputContractStatus::Unvalidated => "unvalidated",
+        OutputContractStatus::ParseFailed => "parse_failed",
+    }
+}
+
+fn gap_kind_label(kind: GapKind) -> &'static str {
+    match kind {
+        GapKind::ExistenceUnconfirmed => "existence_unconfirmed",
+        GapKind::HelpUnavailable => "help_unavailable",
+        GapKind::PreconditionBlocked => "precondition_blocked",
+        GapKind::FlagsUnknown => "flags_unknown",
+        GapKind::ArgumentArityUnknown => "argument_arity_unknown",
+        GapKind::InvalidChildDiagnosticsUnknown => "invalid_child_diagnostics_unknown",
+        GapKind::InvalidFlagDiagnosticsUnknown => "invalid_flag_diagnostics_unknown",
+        GapKind::OutputModeUnprobed => "output_mode_unprobed",
+        GapKind::OutputModeUnvalidated => "output_mode_unvalidated",
+        GapKind::OutputModeParseFailed => "output_mode_parse_failed",
+    }
+}
+
+fn escape_markdown_table(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('|', "\\|")
+        .replace('\n', " ")
 }
 
 fn flag_value_kind(kind: FlagValueKind) -> FlagValueKindShape {
@@ -338,6 +902,24 @@ fn gap_items<'a>(
                 kind: GapKind::PreconditionBlocked,
                 command_path: contract.command_path.clone(),
                 reason: "advertised output mode was blocked by a runtime precondition".to_owned(),
+                evidence: contract.evidence.clone(),
+            });
+        } else if !contract.parse_success
+            && matches!(contract.observed_kind, Some(ObservedOutputKind::HelpText))
+        {
+            gaps.push(Gap {
+                kind: GapKind::OutputModeUnvalidated,
+                command_path: contract.command_path.clone(),
+                reason: "advertised output mode resolved to help text under a safe probe"
+                    .to_owned(),
+                evidence: contract.evidence.clone(),
+            });
+        } else if !contract.parse_success && contract.scope.is_global_only() {
+            gaps.push(Gap {
+                kind: GapKind::OutputModeUnvalidated,
+                command_path: contract.command_path.clone(),
+                reason: "global output flag did not establish command-specific machine output"
+                    .to_owned(),
                 evidence: contract.evidence.clone(),
             });
         } else if !contract.parse_success {

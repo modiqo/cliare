@@ -1,16 +1,22 @@
-use std::path::PathBuf;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
 
+use crate::artifact_guide::{self, ArtifactGuideSummary};
 use crate::ci::{self, CiArtifactSummary};
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
 use crate::error::{CliareError, Result};
 use crate::evidence::{
-    EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled, ProcessCompleted, RunFinished,
-    RunStarted,
+    EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled, ProcessCompleted, ProcessStatus,
+    RunFinished, RunStarted,
 };
 use crate::fingerprint::{TargetFingerprint, fingerprint_target};
 use crate::observation::ShapeObservation;
@@ -19,24 +25,35 @@ use crate::planner::{
     bootstrap_invalid_flag_token,
 };
 use crate::process::{ProbeSpec, TargetProcess};
+use crate::report::{self, PersonaArtifactSummary};
 use crate::sandbox::Sandbox;
 use crate::score::{self, ScoreRunContext};
 use crate::shape;
 
 const MEASUREMENT_CACHE_SCHEMA_VERSION: &str = "cliare.measure-cache.v1";
 const MEASUREMENT_ENGINE: &str = "cliare-measure-v0";
+static MEASURE_JOB_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct MeasurementSummary {
     pub target: TargetFingerprint,
+    pub job_id: Option<String>,
+    pub job_log_path: Option<PathBuf>,
     pub probes_completed: usize,
     pub evidence_path: PathBuf,
     pub shape_path: PathBuf,
+    pub command_index_json_path: PathBuf,
+    pub command_index_markdown_path: PathBuf,
     pub scorecard_path: PathBuf,
     pub report_path: PathBuf,
     pub ci_summary_path: PathBuf,
     pub sarif_path: PathBuf,
     pub junit_path: PathBuf,
+    pub issues_markdown_path: PathBuf,
+    pub issues_json_path: PathBuf,
+    pub persona_report_count: usize,
+    pub readme_path: PathBuf,
+    pub agent_skill_path: PathBuf,
     pub sandbox_profile: String,
     pub sandbox_root: PathBuf,
     pub sandbox_home: PathBuf,
@@ -89,8 +106,20 @@ impl MeasurementSummary {
         self.junit_path = artifacts.junit_path;
     }
 
+    pub fn set_artifact_guides(&mut self, guides: ArtifactGuideSummary) {
+        self.readme_path = guides.readme_path;
+        self.agent_skill_path = guides.agent_skill_path;
+    }
+
+    pub fn set_persona_artifacts(&mut self, artifacts: PersonaArtifactSummary) {
+        let persona_report_count = artifacts.persona_count();
+        self.issues_markdown_path = artifacts.issues_markdown_path;
+        self.issues_json_path = artifacts.issues_json_path;
+        self.persona_report_count = persona_report_count;
+    }
+
     pub fn terminal_summary(&self) -> String {
-        let lines = [
+        let mut lines = vec![
             "CLIARE measure complete".to_owned(),
             format!("target: {}", self.target.requested.display()),
             format!("resolved: {}", self.target.resolved.display()),
@@ -103,6 +132,14 @@ impl MeasurementSummary {
                 self.score_model
             ),
             format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
+        ];
+        if let Some(job_id) = &self.job_id {
+            lines.push(format!("job_id: {job_id}"));
+        }
+        if let Some(path) = &self.job_log_path {
+            lines.push(format!("progress log: {}", path.display()));
+        }
+        lines.extend([
             format!("probes: {}", self.probes_completed),
             format!("findings: {}", self.findings),
             "preconditions:".to_owned(),
@@ -170,12 +207,28 @@ impl MeasurementSummary {
             "artifacts:".to_owned(),
             format!("  evidence: {}", self.evidence_path.display()),
             format!("  shape: {}", self.shape_path.display()),
+            format!(
+                "  command index: {}",
+                self.command_index_json_path.display()
+            ),
+            format!(
+                "  command index report: {}",
+                self.command_index_markdown_path.display()
+            ),
             format!("  scorecard: {}", self.scorecard_path.display()),
             format!("  report: {}", self.report_path.display()),
             format!("  ci summary: {}", self.ci_summary_path.display()),
             format!("  sarif: {}", self.sarif_path.display()),
             format!("  junit: {}", self.junit_path.display()),
-        ];
+            format!("  issues: {}", self.issues_json_path.display()),
+            format!("  issue report: {}", self.issues_markdown_path.display()),
+            format!(
+                "  persona reports: {} markdown/json pairs",
+                self.persona_report_count
+            ),
+            format!("  readme: {}", self.readme_path.display()),
+            format!("  agent guide: {}", self.agent_skill_path.display()),
+        ]);
 
         format!("{}\n", lines.join("\n"))
     }
@@ -197,13 +250,65 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     );
 
     if !args.refresh
-        && let Some(summary) = cached_summary(&args.out, &target, &profile).await?
+        && let Some(mut summary) = cached_summary(&args.out, &target, &profile).await?
     {
+        let persona_artifacts = report::write_all_persona_reports(&args.out).await?;
+        summary.set_persona_artifacts(persona_artifacts);
+        let guides = artifact_guide::write_measurement_guides(&args.out).await?;
+        summary.set_artifact_guides(guides);
         return Ok(summary);
     }
 
+    let mut progress = ProgressLog::create(
+        &args.out,
+        &target,
+        &profile,
+        concurrency_limit,
+        args.job_id.clone(),
+    )
+    .await?;
+    if !args.detached_worker {
+        progress.announce();
+    }
+    progress.created().await?;
+    progress
+        .message(
+            0,
+            format!(
+                "target_fingerprinted resolved={} sha256={} size_bytes={}",
+                target.resolved.display(),
+                target.binary_sha256,
+                target.size_bytes
+            ),
+        )
+        .await?;
+    progress
+        .message(
+            0,
+            format!(
+                "cache_miss refresh={} profile={} max_depth={} max_probes={} concurrency={}",
+                args.refresh,
+                args.profile.label(),
+                max_depth,
+                max_probes,
+                concurrency_limit
+            ),
+        )
+        .await?;
+
     let sandbox = Sandbox::create(&args.out).await?;
+    progress
+        .message(
+            0,
+            format!(
+                "sandbox_created root={} profile={}",
+                sandbox.metadata().root.display(),
+                sandbox.metadata().profile.label()
+            ),
+        )
+        .await?;
     let mut evidence = EvidenceWriter::create(&args.out).await?;
+    progress.message(0, "evidence_log_created").await?;
 
     evidence
         .append(EvidenceKind::RunStarted(RunStarted {
@@ -212,6 +317,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             sandbox: sandbox.metadata().clone(),
         }))
         .await?;
+    progress.message(0, "run_started_evidence_written").await?;
 
     let binary_name = target_binary_name(&target);
     let mut planner = DeterministicPlanner::with_policy(
@@ -225,11 +331,12 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         args.timeout(),
         args.output_limit_bytes,
     );
-    let traversal = run_traversal(TraversalContext {
+    let traversal = match run_traversal(TraversalContext {
         target: &target,
         sandbox: &sandbox,
         process: &process,
         evidence: &mut evidence,
+        progress: &mut progress,
         planner: &mut planner,
         binary_name: &binary_name,
         limits: TraversalLimits {
@@ -237,15 +344,37 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             concurrency_limit,
         },
     })
-    .await?;
+    .await
+    {
+        Ok(traversal) => traversal,
+        Err(error) => {
+            let _ = progress.failed(0, &error).await;
+            return Err(error);
+        }
+    };
+    progress
+        .message(
+            traversal.probes_completed,
+            format!(
+                "traversal_finished probes_completed={} probes_scheduled={} rounds={}",
+                traversal.probes_completed, traversal.probes_scheduled, traversal.rounds
+            ),
+        )
+        .await?;
 
     evidence
         .append(EvidenceKind::RunFinished(RunFinished {
             probes_completed: traversal.probes_completed,
         }))
         .await?;
+    progress
+        .message(traversal.probes_completed, "run_finished_evidence_written")
+        .await?;
 
     shape::write_shape(&args.out, target.clone(), &traversal.observations).await?;
+    progress
+        .message(traversal.probes_completed, "shape_artifacts_written")
+        .await?;
     let planner_stats = planner.stats();
     let run_context = ScoreRunContext {
         max_depth: planner_stats.max_depth,
@@ -269,18 +398,52 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         run_context,
     )
     .await?;
+    progress
+        .message(
+            traversal.probes_completed,
+            format!(
+                "score_artifacts_written score={:.1} scorecard={}",
+                score_artifacts.total,
+                score_artifacts.scorecard_path.display()
+            ),
+        )
+        .await?;
     let ci_artifacts = ci::write_ci_artifacts(&args.out, None).await?;
+    progress
+        .message(traversal.probes_completed, "ci_artifacts_written")
+        .await?;
+    let persona_artifacts = report::write_all_persona_reports(&args.out).await?;
+    progress
+        .message(
+            traversal.probes_completed,
+            format!(
+                "persona_reports_written personas={} issues={}",
+                persona_artifacts.persona_count(),
+                persona_artifacts.issues_json_path.display()
+            ),
+        )
+        .await?;
+    let persona_report_count = persona_artifacts.persona_count();
 
-    let summary = MeasurementSummary {
+    let mut summary = MeasurementSummary {
         target,
+        job_id: Some(progress.job_id().to_owned()),
+        job_log_path: Some(progress.path().to_path_buf()),
         probes_completed: traversal.probes_completed,
         evidence_path: args.out.join("evidence.jsonl"),
         shape_path: args.out.join("shape.json"),
+        command_index_json_path: args.out.join("command-index.json"),
+        command_index_markdown_path: args.out.join("command-index.md"),
         scorecard_path: score_artifacts.scorecard_path,
         report_path: score_artifacts.report_path,
         ci_summary_path: ci_artifacts.summary_path,
         sarif_path: ci_artifacts.sarif_path,
         junit_path: ci_artifacts.junit_path,
+        issues_markdown_path: persona_artifacts.issues_markdown_path,
+        issues_json_path: persona_artifacts.issues_json_path,
+        persona_report_count,
+        readme_path: args.out.join("README.md"),
+        agent_skill_path: args.out.join("AGENT_SKILL.md"),
         sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
         sandbox_root: score_artifacts.sandbox_root,
         sandbox_home: score_artifacts.sandbox_home,
@@ -325,7 +488,16 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         traversal_complete: score_artifacts.traversal_complete,
         cache_hit: false,
     };
+    let guides = artifact_guide::write_measurement_guides(&args.out).await?;
+    summary.set_artifact_guides(guides);
+    progress
+        .message(traversal.probes_completed, "artifact_guides_written")
+        .await?;
     write_cache_manifest(&args.out, &summary, profile).await?;
+    progress
+        .message(traversal.probes_completed, "measure_cache_written")
+        .await?;
+    progress.finished(&summary).await?;
 
     Ok(summary)
 }
@@ -351,6 +523,7 @@ struct TraversalContext<'a> {
     sandbox: &'a Sandbox,
     process: &'a TargetProcess,
     evidence: &'a mut EvidenceWriter,
+    progress: &'a mut ProgressLog,
     planner: &'a mut DeterministicPlanner,
     binary_name: &'a str,
     limits: TraversalLimits,
@@ -360,6 +533,279 @@ struct TraversalContext<'a> {
 struct TraversalLimits {
     max_probes: usize,
     concurrency_limit: usize,
+}
+
+#[derive(Debug)]
+struct ProgressLog {
+    job_id: String,
+    path: PathBuf,
+    file: File,
+    max_probes: usize,
+}
+
+impl ProgressLog {
+    async fn create(
+        out_dir: &Path,
+        target: &TargetFingerprint,
+        profile: &ProbeProfile,
+        concurrency_limit: usize,
+        job_id: Option<String>,
+    ) -> Result<Self> {
+        let jobs_dir = out_dir.join("jobs");
+        fs::create_dir_all(&jobs_dir)
+            .await
+            .map_err(|source| CliareError::CreateProgressDir {
+                path: jobs_dir.clone(),
+                source,
+            })?;
+
+        let job_id = match job_id {
+            Some(job_id) => job_id,
+            None => new_measure_job_id()?,
+        };
+        let path = jobs_dir.join(format!("{job_id}.log"));
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)
+            .await
+            .map_err(|source| CliareError::OpenProgressLog {
+                path: path.clone(),
+                source,
+            })?;
+
+        let mut log = Self {
+            job_id,
+            path,
+            file,
+            max_probes: profile.max_probes,
+        };
+        log.write_header(target, profile, concurrency_limit, out_dir)
+            .await?;
+        log.write_current_pointer(&jobs_dir).await?;
+        Ok(log)
+    }
+
+    fn job_id(&self) -> &str {
+        &self.job_id
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn announce(&self) {
+        use std::io::IsTerminal as _;
+
+        let stdout = std::io::stdout();
+        if !stdout.is_terminal() {
+            return;
+        }
+        let mut stdout = stdout.lock();
+        let _ = writeln!(stdout, "CLIARE measure job created");
+        let _ = writeln!(stdout, "job_id: {}", self.job_id);
+        let _ = writeln!(stdout, "progress log: {}", self.path.display());
+        let _ = writeln!(stdout, "tail: tail -f {}", self.path.display());
+        let _ = writeln!(stdout);
+        let _ = stdout.flush();
+    }
+
+    async fn write_header(
+        &mut self,
+        target: &TargetFingerprint,
+        profile: &ProbeProfile,
+        concurrency_limit: usize,
+        out_dir: &Path,
+    ) -> Result<()> {
+        let header = format!(
+            "# CLIARE measure progress\n\
+             job_id: {}\n\
+             target: {}\n\
+             resolved: {}\n\
+             out: {}\n\
+             profile: {}\n\
+             max_depth: {}\n\
+             max_probes: {}\n\
+             min_expected_value: {}\n\
+             concurrency_limit: {}\n\
+             progress: probe-budget percentage while traversal is running; final completion is 100.0%.\n\
+             tail: tail -f {}\n\n",
+            self.job_id,
+            target.requested.display(),
+            target.resolved.display(),
+            out_dir.display(),
+            profile.traversal_profile.label(),
+            profile.max_depth,
+            profile.max_probes,
+            profile.min_expected_value,
+            concurrency_limit,
+            self.path.display()
+        );
+        self.write_raw(header.as_bytes()).await
+    }
+
+    async fn write_current_pointer(&mut self, jobs_dir: &Path) -> Result<()> {
+        let path = jobs_dir.join("current");
+        let mut contents = format!(
+            "job_id={}\nprogress_log={}\ntail=tail -f {}\n",
+            self.job_id,
+            self.path.display(),
+            self.path.display()
+        );
+        if let Ok(existing) = fs::read_to_string(&path).await
+            && pointer_job_id(&existing).as_deref() == Some(self.job_id.as_str())
+        {
+            for key in ["pid", "stdout_log", "stderr_log", "status_command"] {
+                if let Some(value) = pointer_value(&existing, key) {
+                    contents.push_str(key);
+                    contents.push('=');
+                    contents.push_str(&value);
+                    contents.push('\n');
+                }
+            }
+        }
+        fs::write(&path, contents)
+            .await
+            .map_err(|source| CliareError::WriteProgressLog { path, source })
+    }
+
+    async fn created(&mut self) -> Result<()> {
+        self.log(0.0, "job_created").await
+    }
+
+    async fn message(&mut self, completed: usize, message: impl AsRef<str>) -> Result<()> {
+        self.log(progress_percent(completed, self.max_probes), message)
+            .await
+    }
+
+    async fn scheduled(
+        &mut self,
+        probe_id: &str,
+        probe: &ProbeSpec,
+        probes_scheduled: usize,
+        probes_completed: usize,
+    ) -> Result<()> {
+        self.message(
+            probes_completed,
+            format!(
+                "scheduled probe={} intent={} path={} argv_suffix={} scheduled={} completed={}",
+                probe_id,
+                intent_label(probe.intent),
+                path_label(&probe.path),
+                args_label(&probe.args),
+                probes_scheduled,
+                probes_completed
+            ),
+        )
+        .await
+    }
+
+    async fn round_started(
+        &mut self,
+        round: usize,
+        inflight: usize,
+        probes_scheduled: usize,
+        probes_completed: usize,
+    ) -> Result<()> {
+        self.message(
+            probes_completed,
+            format!(
+                "round_started round={} inflight={} scheduled={} completed={}",
+                round, inflight, probes_scheduled, probes_completed
+            ),
+        )
+        .await
+    }
+
+    async fn completed(
+        &mut self,
+        probe_id: &str,
+        probe: &ProbeSpec,
+        completed: &ProcessCompleted,
+        counters: ProgressCounters,
+        planner_stats: crate::planner::PlannerStats,
+    ) -> Result<()> {
+        self.message(
+            counters.probes_completed,
+            format!(
+                "completed probe={} intent={} path={} status={} duration_ms={} side_effects={} completed={} scheduled={} round={} frontier_remaining={} highest_pending_expected_value={}",
+                probe_id,
+                intent_label(probe.intent),
+                path_label(&probe.path),
+                status_label(&completed.status),
+                completed.duration_ms,
+                completed.side_effects.total,
+                counters.probes_completed,
+                counters.probes_scheduled,
+                counters.round,
+                planner_stats.frontier_remaining,
+                planner_stats
+                    .highest_pending_expected_value
+                    .map_or_else(|| "none".to_owned(), |value| value.to_string())
+            ),
+        )
+        .await
+    }
+
+    async fn failed(&mut self, completed: usize, error: &CliareError) -> Result<()> {
+        self.log(
+            progress_percent(completed, self.max_probes),
+            format!("failed error={error}"),
+        )
+        .await
+    }
+
+    async fn finished(&mut self, summary: &MeasurementSummary) -> Result<()> {
+        self.log(
+            100.0,
+            format!(
+                "complete score={:.1} probes_completed={} traversal_complete={} stop_reason={} scorecard={} shape={} evidence={}",
+                summary.score_total,
+                summary.probes_completed,
+                summary.traversal_complete,
+                summary.traversal_stop_reason,
+                summary.scorecard_path.display(),
+                summary.shape_path.display(),
+                summary.evidence_path.display()
+            ),
+        )
+        .await
+    }
+
+    async fn log(&mut self, percent: f64, message: impl AsRef<str>) -> Result<()> {
+        let line = format!(
+            "[{}] {:>5.1}% {}\n",
+            progress_timestamp()?,
+            percent,
+            message.as_ref()
+        );
+        self.write_raw(line.as_bytes()).await
+    }
+
+    async fn write_raw(&mut self, bytes: &[u8]) -> Result<()> {
+        self.file
+            .write_all(bytes)
+            .await
+            .map_err(|source| CliareError::WriteProgressLog {
+                path: self.path.clone(),
+                source,
+            })?;
+        self.file
+            .flush()
+            .await
+            .map_err(|source| CliareError::WriteProgressLog {
+                path: self.path.clone(),
+                source,
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProgressCounters {
+    probes_scheduled: usize,
+    probes_completed: usize,
+    round: usize,
 }
 
 async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
@@ -390,6 +836,10 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
                     sandbox: context.sandbox.probe_evidence_for(&execution),
                 }))
                 .await?;
+            context
+                .progress
+                .scheduled(&probe_id, &probe, probes_scheduled, probes_completed)
+                .await?;
 
             let process = context.process.clone();
             let task_probe = probe.clone();
@@ -405,6 +855,10 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
             break;
         }
         rounds += 1;
+        context
+            .progress
+            .round_started(rounds, round.len(), probes_scheduled, probes_completed)
+            .await?;
 
         let mut round_error = None;
         for scheduled in round {
@@ -420,7 +874,9 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
                 }
             };
             probes_completed += 1;
-            let completed = ProcessCompleted::from_outcome(scheduled.probe_id, outcome);
+            let probe_id = scheduled.probe_id.clone();
+            let probe = scheduled.probe.clone();
+            let completed = ProcessCompleted::from_outcome(probe_id.clone(), outcome);
             let event_id = context
                 .evidence
                 .append(EvidenceKind::ProcessCompleted(completed.clone()))
@@ -428,16 +884,31 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
 
             observations.push(ShapeObservation {
                 evidence_id: event_id,
-                intent: scheduled.probe.intent,
-                path: scheduled.probe.path,
-                process: completed,
+                intent: probe.intent,
+                path: probe.path.clone(),
+                process: completed.clone(),
             });
 
             let claims = ClaimSet::from_observations(context.binary_name, &observations);
             context.planner.extend_from_claims(&claims);
+            context
+                .progress
+                .completed(
+                    &probe_id,
+                    &probe,
+                    &completed,
+                    ProgressCounters {
+                        probes_scheduled,
+                        probes_completed,
+                        round: rounds,
+                    },
+                    context.planner.stats(),
+                )
+                .await?;
         }
 
         if let Some(error) = round_error {
+            let _ = context.progress.failed(probes_completed, &error).await;
             return Err(error);
         }
     }
@@ -589,14 +1060,23 @@ impl MeasurementCacheManifest {
     fn into_summary(self, out_dir: &std::path::Path) -> MeasurementSummary {
         MeasurementSummary {
             target: self.target,
+            job_id: None,
+            job_log_path: None,
             probes_completed: self.summary.probes_completed,
             evidence_path: out_dir.join("evidence.jsonl"),
             shape_path: out_dir.join("shape.json"),
+            command_index_json_path: out_dir.join("command-index.json"),
+            command_index_markdown_path: out_dir.join("command-index.md"),
             scorecard_path: out_dir.join("scorecard.json"),
             report_path: out_dir.join("report.md"),
             ci_summary_path: out_dir.join("summary.md"),
             sarif_path: out_dir.join("findings.sarif"),
             junit_path: out_dir.join("junit.xml"),
+            issues_markdown_path: out_dir.join("issues.md"),
+            issues_json_path: out_dir.join("issues.json"),
+            persona_report_count: report::Persona::all().len(),
+            readme_path: out_dir.join("README.md"),
+            agent_skill_path: out_dir.join("AGENT_SKILL.md"),
             score_total: self.summary.score_total,
             score_measured_weight: self.summary.score_measured_weight,
             score_max_weight: self.summary.score_max_weight,
@@ -648,6 +1128,8 @@ async fn artifacts_exist(out_dir: &std::path::Path) -> Result<bool> {
     for name in [
         "evidence.jsonl",
         "shape.json",
+        "command-index.json",
+        "command-index.md",
         "scorecard.json",
         "report.md",
         "summary.md",
@@ -765,6 +1247,100 @@ fn invalid_token_seed(binary_name: &str) -> String {
     binary_name.replace('-', "_")
 }
 
+fn pointer_job_id(contents: &str) -> Option<String> {
+    pointer_value(contents, "job_id")
+}
+
+fn pointer_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let (candidate, value) = line.split_once('=')?;
+        (candidate.trim() == key).then(|| value.trim().to_owned())
+    })
+}
+
+pub fn new_measure_job_id() -> Result<String> {
+    let timestamp = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(CliareError::TimeFormat)?;
+    let sanitized = timestamp
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_owned();
+    let sequence = MEASURE_JOB_COUNTER.fetch_add(1, Ordering::Relaxed);
+    Ok(format!(
+        "measure-{sanitized}-{}-{sequence}",
+        std::process::id()
+    ))
+}
+
+fn progress_timestamp() -> Result<String> {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(CliareError::TimeFormat)
+}
+
+fn progress_percent(completed: usize, max_probes: usize) -> f64 {
+    if max_probes == 0 {
+        return 0.0;
+    }
+    ((completed as f64 / max_probes as f64) * 100.0).min(99.0)
+}
+
+fn intent_label(intent: ProbeIntent) -> &'static str {
+    match intent {
+        ProbeIntent::Help => "help",
+        ProbeIntent::Version => "version",
+        ProbeIntent::InvalidCommand => "invalid_command",
+        ProbeIntent::InvalidChild => "invalid_child",
+        ProbeIntent::InvalidFlag => "invalid_flag",
+        ProbeIntent::OutputJson => "output_json",
+        ProbeIntent::OutputYaml => "output_yaml",
+        ProbeIntent::OutputTable => "output_table",
+        ProbeIntent::OutputPlain => "output_plain",
+        ProbeIntent::OutputJsonHelp => "output_json_help",
+        ProbeIntent::OutputYamlHelp => "output_yaml_help",
+        ProbeIntent::OutputTableHelp => "output_table_help",
+        ProbeIntent::OutputPlainHelp => "output_plain_help",
+    }
+}
+
+fn status_label(status: &ProcessStatus) -> String {
+    match status {
+        ProcessStatus::Exited { code } => {
+            format!(
+                "exited:{}",
+                code.map_or_else(|| "none".to_owned(), |code| code.to_string())
+            )
+        }
+        ProcessStatus::TimedOut => "timed_out".to_owned(),
+        ProcessStatus::SpawnFailed { error } => format!("spawn_failed:{error}"),
+    }
+}
+
+fn path_label(path: &[String]) -> String {
+    if path.is_empty() {
+        "<root>".to_owned()
+    } else {
+        path.join(" ")
+    }
+}
+
+fn args_label(args: &[String]) -> String {
+    if args.is_empty() {
+        "<none>".to_owned()
+    } else {
+        args.join(" ")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -799,6 +1375,24 @@ mod tests {
     }
 
     #[test]
+    fn progress_percent_is_probe_budget_bounded_until_finish() {
+        assert_eq!(super::progress_percent(0, 5000), 0.0);
+        assert_eq!(super::progress_percent(2500, 5000), 50.0);
+        assert_eq!(super::progress_percent(5000, 5000), 99.0);
+        assert_eq!(super::progress_percent(1, 0), 0.0);
+    }
+
+    #[test]
+    fn measure_job_ids_are_unique_inside_one_process() {
+        let first = super::new_measure_job_id().expect("first job id");
+        let second = super::new_measure_job_id().expect("second job id");
+
+        assert_ne!(first, second);
+        assert!(first.starts_with("measure-"));
+        assert!(second.starts_with("measure-"));
+    }
+
+    #[test]
     fn terminal_summary_lists_score_and_artifacts() {
         let summary = super::MeasurementSummary {
             target: TargetFingerprint {
@@ -807,14 +1401,23 @@ mod tests {
                 binary_sha256: "abc".to_owned(),
                 size_bytes: 1,
             },
+            job_id: Some("measure-test".to_owned()),
+            job_log_path: Some(PathBuf::from(".cliare/jobs/measure-test.log")),
             probes_completed: 7,
             evidence_path: PathBuf::from(".cliare/evidence.jsonl"),
             shape_path: PathBuf::from(".cliare/shape.json"),
+            command_index_json_path: PathBuf::from(".cliare/command-index.json"),
+            command_index_markdown_path: PathBuf::from(".cliare/command-index.md"),
             scorecard_path: PathBuf::from(".cliare/scorecard.json"),
             report_path: PathBuf::from(".cliare/report.md"),
             ci_summary_path: PathBuf::from(".cliare/summary.md"),
             sarif_path: PathBuf::from(".cliare/findings.sarif"),
             junit_path: PathBuf::from(".cliare/junit.xml"),
+            issues_markdown_path: PathBuf::from(".cliare/issues.md"),
+            issues_json_path: PathBuf::from(".cliare/issues.json"),
+            persona_report_count: 7,
+            readme_path: PathBuf::from(".cliare/README.md"),
+            agent_skill_path: PathBuf::from(".cliare/AGENT_SKILL.md"),
             sandbox_profile: "isolated".to_owned(),
             sandbox_root: PathBuf::from(".cliare/sandbox"),
             sandbox_home: PathBuf::from(".cliare/sandbox/home"),
@@ -865,6 +1468,8 @@ mod tests {
         assert!(text.contains("CLIARE measure complete"));
         assert!(text.contains("score: 82.4/100"));
         assert!(text.contains("cache: miss"));
+        assert!(text.contains("job_id: measure-test"));
+        assert!(text.contains("progress log: .cliare/jobs/measure-test.log"));
         assert!(text.contains("preconditions:"));
         assert!(text.contains("commands blocked: 1"));
         assert!(text.contains("probes blocked: 1"));
@@ -884,10 +1489,17 @@ mod tests {
         assert!(text.contains("probes cancelled: 0"));
         assert!(text.contains("stop reason: converged"));
         assert!(text.contains("  scorecard: .cliare/scorecard.json"));
+        assert!(text.contains("  command index: .cliare/command-index.json"));
+        assert!(text.contains("  command index report: .cliare/command-index.md"));
         assert!(text.contains("  report: .cliare/report.md"));
         assert!(text.contains("  ci summary: .cliare/summary.md"));
         assert!(text.contains("  sarif: .cliare/findings.sarif"));
         assert!(text.contains("  junit: .cliare/junit.xml"));
+        assert!(text.contains("  issues: .cliare/issues.json"));
+        assert!(text.contains("  issue report: .cliare/issues.md"));
+        assert!(text.contains("  persona reports: 7 markdown/json pairs"));
+        assert!(text.contains("  readme: .cliare/README.md"));
+        assert!(text.contains("  agent guide: .cliare/AGENT_SKILL.md"));
     }
 
     #[cfg(unix)]
@@ -943,12 +1555,54 @@ EOF
             min_expected_value: Some(1),
             concurrency: None,
             refresh: true,
+            detach: false,
+            detached_worker: false,
+            job_id: None,
         })
         .await
         .expect("measurement succeeds");
 
         assert_eq!(summary.sandbox_profile, "isolated");
         assert_eq!(summary.sandbox_env_policy, "cleared_with_allowlist");
+        assert!(
+            summary
+                .job_id
+                .as_ref()
+                .is_some_and(|id| id.starts_with("measure-"))
+        );
+        let job_log_path = summary
+            .job_log_path
+            .as_ref()
+            .expect("fresh measurement exposes progress log");
+        assert!(job_log_path.is_file());
+        let progress = fs::read_to_string(job_log_path).expect("reads progress log");
+        assert!(progress.contains("job_created"));
+        assert!(progress.contains("scheduled probe=p_000001"));
+        assert!(progress.contains("completed probe=p_000001"));
+        assert!(progress.contains("persona_reports_written personas=7"));
+        assert!(progress.contains("100.0% complete"));
+        let current = fs::read_to_string(out_dir.join("jobs/current"))
+            .expect("reads current progress pointer");
+        assert!(current.contains("job_id=measure-"));
+        assert!(current.contains("tail=tail -f"));
+        assert!(out_dir.join("issues.json").is_file());
+        assert!(out_dir.join("issues.md").is_file());
+        for persona in crate::report::Persona::all() {
+            assert!(
+                out_dir
+                    .join(format!("persona-{}.json", persona.label()))
+                    .is_file()
+            );
+            assert!(
+                out_dir
+                    .join(format!("persona-{}.md", persona.label()))
+                    .is_file()
+            );
+        }
+        assert_eq!(
+            summary.persona_report_count,
+            crate::report::Persona::all().len()
+        );
         assert!(
             out_dir
                 .join("sandbox/probes/p_000001/home/home-marker")

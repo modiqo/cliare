@@ -1,6 +1,6 @@
 # CLIARE Progress Scorecard
 
-> Last updated: after checkpoint `ci: CLIARE on CLIARE score and documentation hardening`
+> Last updated: after checkpoint `detached measurement jobs and status inspection`
 
 This scorecard tracks implementation progress for the reference CLIARE runner. It is not the public CLI readiness score model; it records implementation progress toward the first stable release.
 
@@ -11,22 +11,22 @@ This scorecard tracks implementation progress for the reference CLIARE runner. I
 | Area | Status | Notes |
 |---|---:|---|
 | Repository and package foundation | 100% | Rust project, license, README, design docs, GitHub repository |
-| CLI surface | 76% | `measure`, `guard`, `benchmark`, `metadata`, traversal profiles, cache bypass, CI artifacts, and policy files; baseline/publish/certify still planned |
+| CLI surface | 82% | `measure`, `measure --detach`, `jobs status`, `guard`, `benchmark`, `report`, `describe`, `skills`, `metadata`, traversal profiles, cache bypass, CI artifacts, and policy files; baseline/publish/certify still planned |
 | Runtime probing | 82% | Safe bootstrap, bounded output, timeouts, recursive probes, per-probe isolated HOME/PWD/XDG config-cache-data/TMP, sanitized env, per-probe filesystem diffs, transient-file-safe snapshots, and inherited pipe drain protection |
 | Generic inference | 69% | Layout claims, runtime confirmation, precondition-blocked runtime state, Bayesian confidence, usage positionals, aliases, flag grammar, output-mode claims, format-context output filtering, structural command-row extraction, and manpage false-positive suppression exist; value domains still planned |
-| Command shape artifact | 72% | Commands, runtime states, auth preconditions, aliases, positionals, flags, flag arity, output contracts, gaps, confidence, and evidence references exist; richer value domains still planned |
+| Artifact contracts | 76% | Command shape, command index, issue ledger, persona packets, CI artifacts, and artifact maps exist; richer value domains and formal JSON schemas still planned |
 | Scoring | 62% | v0 dimensions for discovery, grammar, execution, recovery, output, and initial safety; Bayesian claim confidence and implemented formulas are now documented; full calibration and confidence intervals still planned |
 | CI guard | 90% | Baseline comparison, policy evaluation, SARIF, JUnit, Markdown CI summary, GitHub Action wrapper, and CLIARE-on-CLIARE workflow exist; richer policy ergonomics still planned |
-| Cache and fingerprinting | 65% | Binary/profile/version/sandbox-profile/concurrency/artifact-set cache reuse exists; replay/resume checkpoints still planned |
+| Cache, fingerprinting, and jobs | 70% | Binary/profile/version/sandbox-profile/concurrency/artifact-set cache reuse exists; foreground and detached progress jobs exist; replay/resume checkpoints still planned |
 | Traversal control | 86% | quick/standard/deep profiles, expected-value scheduling, convergence thresholds, stop reasons, pressure reporting, bounded async probe rounds, and corpus-level target parallelism exist; richer cancellation policy still planned |
 | QA and calibration | 77% | Synthetic fixture tests cover command inference, precondition-blocked probes, cache, guard, policies, sandbox isolation, parseable JSON, malformed JSON, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-vs-concurrent traversal equivalence; real CLI benchmark corpus and calibration bands now run locally; public authority plan now defines truth sets, calibration metrics, certified profiles, and false-safe-rate requirements |
 | Public publishing | 5% | Designed but not implemented |
 
 ## Implementation Completion
 
-Estimated initial-release completion: **97%**
+Estimated initial-release completion: **98%**
 
-Estimated initial-release work remaining: **3%**
+Estimated initial-release work remaining: **2%**
 
 The current implementation is useful for local measurement, CI regression checks, and real CLI corpus calibration. The remaining initial-release work is mostly hardening public command surfaces and replay/resume support for long deep-profile runs.
 
@@ -57,12 +57,14 @@ The current implementation is useful for local measurement, CI regression checks
 21. Calibration authority documentation that defines truth corpus layers, human-reviewed labels, proper scoring metrics, false-safe-rate reporting, repeated-run stability, confidence intervals, certified profiles, provenance, verification levels, anti-gaming fixtures, `calibrate` artifacts, and `cliare-score-v1` freeze criteria.
 22. GitHub Actions CLIARE-on-CLIARE workflow that builds the project, measures the freshly built binary with the local composite action, publishes a job-summary score, uploads CLIARE artifacts, runs `quick` on pull requests, `standard` on `main`, and `deep` on the weekly schedule.
 23. Public documentation and CLIARE-on-CLIARE score hardening with mature README/docs language, renamed CI workflow/artifacts, an explicit parseable `metadata --format json` contract, stricter output-contract inference that rejects file defaults and unrelated help text, and a standard-profile CLIARE-on-CLIARE score of 97.4/100 with zero findings, one machine-readable output contract, one successful output parse, zero side effects, and complete traversal.
+24. Detached measurement jobs with `measure --detach`, worker re-exec, Unix process-group isolation, child PID reporting, stdout/stderr job streams, preserved `jobs/current` metadata, `jobs status --out <dir>`, and live verification against CLIARE measuring CLIARE.
+25. Artifact directory description with `cliare describe <folder>`, `cliare.artifact-map.v1`, typed file roles, health/missing-required checks, current job status, score/issue/command summaries, Markdown and JSON output, `--write` support, agent skill updates, and documentation/paper coverage.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 24: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 26: Baseline Accept, Rescore, Certify, and Replay
 
 Goal: turn the current measurement and benchmark core into a complete user-facing release flow for maintainers and CI.
 
@@ -72,7 +74,7 @@ Acceptance criteria:
 - Add evidence replay/rescore so score-model changes can be evaluated without re-running every probe.
 - Add a `certify` surface that composes measure, guard policy, benchmark metadata, and profile labeling.
 - Add resumable checkpoints for long deep-profile runs and benchmark corpuses.
-- Keep every new command artifact-compatible with existing `scorecard.json`, `shape.json`, `evidence.jsonl`, and benchmark reports.
+- Keep every new command artifact-compatible with existing `scorecard.json`, `command-index.json`, `shape.json`, `evidence.jsonl`, and benchmark reports.
 
 Why this is next:
 

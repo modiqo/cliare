@@ -4,11 +4,14 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tokio::fs;
 
-use crate::claims::{ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim};
+use crate::claims::{
+    ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
+};
 use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
 use crate::observation::ShapeObservation;
+use crate::output::ObservedOutputKind;
 use crate::precondition::{self, PreconditionKind};
 use crate::sandbox::SandboxMetadata;
 
@@ -84,6 +87,7 @@ pub struct Coverage {
     output_mode_probes_completed: usize,
     output_mode_parse_successes: usize,
     output_mode_precondition_blocked: usize,
+    output_mode_help_text_probes: usize,
     side_effect_files_created: usize,
     side_effect_files_modified: usize,
     side_effect_files_deleted: usize,
@@ -557,9 +561,10 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
                 "{} of {} non-blocked output-mode probes parsed successfully.",
                 metrics.coverage.output_mode_parse_successes,
                 metrics
-                    .coverage
-                    .output_mode_probes_completed
-                    .saturating_sub(metrics.coverage.output_mode_precondition_blocked)
+                    .output_mode_probe_count
+                    .saturating_sub(metrics.output_mode_precondition_blocked)
+                    .saturating_sub(metrics.output_mode_help_text_probes)
+                    .saturating_sub(metrics.output_mode_global_scope_failures)
             ),
             recommendation: "Ensure documented machine-readable modes produce valid output for safe help or diagnostic probes.",
         });
@@ -567,16 +572,16 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
 
     if metrics.coverage.precondition_blocked_probes > 0 {
         findings.push(Finding {
-            id: "finding.precondition.auth_required",
+            id: "finding.precondition.runtime_blocked",
             dimension: Dimension::Discovery,
             severity: Severity::Medium,
             title: "Some probes were blocked by runtime preconditions",
             detail: format!(
-                "{} probes were blocked by auth/profile preconditions across {} command candidates.",
+                "{} probes were blocked by runtime preconditions across {} command candidates.",
                 metrics.coverage.precondition_blocked_probes,
                 metrics.coverage.commands_precondition_blocked
             ),
-            recommendation: "Expose unauthenticated help where practical, or document required auth/profile preconditions separately from command existence.",
+            recommendation: "Document required runtime preconditions separately from command existence, and keep help paths available where practical.",
         });
     }
 
@@ -927,9 +932,12 @@ struct Metrics {
     grammar_gap_count: usize,
     flags_with_known_grammar: usize,
     machine_readable_output_contracts: usize,
+    output_mode_scored_contracts: usize,
     output_mode_probe_count: usize,
     output_mode_parse_successes: usize,
     output_mode_precondition_blocked: usize,
+    output_mode_help_text_probes: usize,
+    output_mode_global_scope_failures: usize,
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
@@ -968,6 +976,15 @@ impl Metrics {
             .iter()
             .filter(|contract| machine_readable_output_contract(contract))
             .count();
+        let output_mode_scored_contracts = outputs
+            .iter()
+            .filter(|contract| {
+                machine_readable_output_contract(contract)
+                    && !contract.precondition_blocked()
+                    && contract.observed_kind() != Some(ObservedOutputKind::HelpText)
+                    && (!contract.scope().is_global_only() || contract.parse_success())
+            })
+            .count();
         let output_mode_probe_count = outputs.iter().filter(|contract| contract.probed()).count();
         let output_mode_parse_successes = outputs
             .iter()
@@ -976,6 +993,20 @@ impl Metrics {
         let output_mode_precondition_blocked = outputs
             .iter()
             .filter(|contract| contract.precondition_blocked())
+            .count();
+        let output_mode_help_text_probes = outputs
+            .iter()
+            .filter(|contract| contract.observed_kind() == Some(ObservedOutputKind::HelpText))
+            .count();
+        let output_mode_global_scope_failures = outputs
+            .iter()
+            .filter(|contract| {
+                contract.probed()
+                    && !contract.parse_success()
+                    && !contract.precondition_blocked()
+                    && contract.observed_kind() != Some(ObservedOutputKind::HelpText)
+                    && contract.scope() == OutputContractScope::GlobalFlag
+            })
             .count();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
@@ -1009,6 +1040,7 @@ impl Metrics {
                 output_mode_probes_completed: output_mode_probe_count,
                 output_mode_parse_successes,
                 output_mode_precondition_blocked,
+                output_mode_help_text_probes,
                 side_effect_files_created: process_metrics.side_effect_files_created,
                 side_effect_files_modified: process_metrics.side_effect_files_modified,
                 side_effect_files_deleted: process_metrics.side_effect_files_deleted,
@@ -1046,9 +1078,12 @@ impl Metrics {
             grammar_gap_count,
             flags_with_known_grammar,
             machine_readable_output_contracts,
+            output_mode_scored_contracts,
             output_mode_probe_count,
             output_mode_parse_successes,
             output_mode_precondition_blocked,
+            output_mode_help_text_probes,
+            output_mode_global_scope_failures,
             side_effect_files_total: process_metrics.side_effect_files_total,
             side_effect_probe_count: process_metrics.side_effect_probe_count,
             credential_like_side_effects: process_metrics.credential_like_side_effects,
@@ -1080,6 +1115,8 @@ impl Metrics {
         self.output_mode_probe_count
             .saturating_sub(self.output_mode_parse_successes)
             .saturating_sub(self.output_mode_precondition_blocked)
+            .saturating_sub(self.output_mode_help_text_probes)
+            .saturating_sub(self.output_mode_global_scope_failures)
     }
 }
 
@@ -1091,9 +1128,11 @@ fn output_score(metrics: &Metrics) -> f64 {
     let advertised_score = 40.0;
     let non_blocked_probe_count = metrics
         .output_mode_probe_count
-        .saturating_sub(metrics.output_mode_precondition_blocked);
+        .saturating_sub(metrics.output_mode_precondition_blocked)
+        .saturating_sub(metrics.output_mode_help_text_probes)
+        .saturating_sub(metrics.output_mode_global_scope_failures);
     let denominator = metrics
-        .machine_readable_output_contracts
+        .output_mode_scored_contracts
         .max(non_blocked_probe_count);
     advertised_score + 60.0 * ratio(metrics.output_mode_parse_successes, denominator)
 }
@@ -1384,7 +1423,7 @@ mod tests {
         assert_eq!(scorecard.coverage.auth_required_probes, 2);
         assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 0.0);
         assert!(scorecard.findings.iter().any(|finding| {
-            finding.id == "finding.precondition.auth_required"
+            finding.id == "finding.precondition.runtime_blocked"
                 && finding.title == "Some probes were blocked by runtime preconditions"
         }));
 

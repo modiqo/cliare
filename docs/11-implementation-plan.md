@@ -240,7 +240,7 @@ Compute initial CLIARE score and produce human report.
 
 ### Current Checkpoint
 
-The current implementation emits experimental partial `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` artifacts from `measure`.
+The current implementation emits experimental partial `scorecard.json`, `shape.json`, `command-index.json`, `command-index.md`, `issues.json`, `issues.md`, persona packets, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` artifacts from `measure`. `cliare describe <folder> --write` can add `artifact-map.json` and `artifact-map.md` as a directory-level navigation manifest for agents and humans.
 
 - Discovery, grammar, execution, recovery, output, and initial safety are scored from current evidence.
 - Output scoring credits advertised JSON/YAML contracts and safe parse-probe success; CLIs with no machine-readable mode now receive output findings.
@@ -328,7 +328,7 @@ Measurement cache reuse is now implemented:
 
 - successful measurement writes `measure-cache.json`
 - cache matching requires the same target fingerprint, traversal profile, resolved probe budget, expected-value threshold, concurrency limit, CLIARE package version, and measurement engine
-- reusable cache requires `evidence.jsonl`, `shape.json`, `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` to still exist
+- reusable cache requires `evidence.jsonl`, `shape.json`, `command-index.json`, `command-index.md`, `scorecard.json`, `report.md`, `summary.md`, `findings.sarif`, and `junit.xml` to still exist
 - terminal summaries print `cache: hit` or `cache: miss`
 - `--refresh` bypasses cache reuse for both `measure` and `guard`
 

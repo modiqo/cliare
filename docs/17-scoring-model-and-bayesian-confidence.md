@@ -337,6 +337,20 @@ This is enough to support:
 
 ---
 
+## Artifact Maps Are Non-Scoring Metadata
+
+`cliare describe <folder>` produces `cliare.artifact-map.v1`, a navigability contract for CLIARE output directories. It records the artifact kind, known files, schemas, missing required artifacts, current job state, score/issue/command summaries, and an ordered navigation plan for agents.
+
+The artifact map does not change `cliare-score-v0`. It is derived metadata over already-produced artifacts:
+
+- It helps an agent decide whether to open `scorecard.json`, `issues.json`, `command-index.json`, a persona packet, or `evidence.jsonl` first.
+- It makes partial or failed runs explicit by listing missing required files and job failures.
+- It improves artifact consumption without adding new runtime observations.
+
+This distinction matters for score governance. A CLI should not receive a higher readiness score because CLIARE produced a better folder manifest. The score moves only when runtime evidence, inferred command shape, output contracts, safety behavior, recovery behavior, or precondition handling improves. The artifact map improves review efficiency and agent navigation; it is an output contract for consumers, not an input to the quality model.
+
+---
+
 ## Certification Boundary
 
 Public ranking requires calibration beyond the current deterministic score. The v1 certification boundary includes:

@@ -1,14 +1,56 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use crate::belief::Belief;
 use crate::evidence::{ProbeIntent, ProcessStatus};
-use crate::layout;
+use crate::layout::{self, CandidateOutputModeScope};
 use crate::observation::ShapeObservation;
 use crate::output::{self, ObservedOutputKind, OutputMode};
 use crate::precondition::{self, PreconditionKind};
 
 const COMMAND_PRIOR: f64 = 0.08;
 const FLAG_PRIOR: f64 = 0.12;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputContractScope {
+    GlobalFlag,
+    CommandFlag,
+    Example,
+    RuntimeProbe,
+}
+
+impl OutputContractScope {
+    fn from_candidate(scope: CandidateOutputModeScope) -> Self {
+        match scope {
+            CandidateOutputModeScope::CommandFlag => Self::CommandFlag,
+            CandidateOutputModeScope::GlobalFlag => Self::GlobalFlag,
+            CandidateOutputModeScope::Example => Self::Example,
+        }
+    }
+
+    fn merge(self, other: Self) -> Self {
+        if other.rank() > self.rank() {
+            other
+        } else {
+            self
+        }
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            Self::GlobalFlag => 0,
+            Self::RuntimeProbe => 1,
+            Self::CommandFlag => 2,
+            Self::Example => 3,
+        }
+    }
+
+    pub fn is_global_only(self) -> bool {
+        self == Self::GlobalFlag
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CommandPath(Vec<String>);
@@ -77,7 +119,11 @@ impl ClaimSet {
             ProbeIntent::OutputJson
             | ProbeIntent::OutputYaml
             | ProbeIntent::OutputTable
-            | ProbeIntent::OutputPlain => self.apply_output_mode_observation(observation),
+            | ProbeIntent::OutputPlain
+            | ProbeIntent::OutputJsonHelp
+            | ProbeIntent::OutputYamlHelp
+            | ProbeIntent::OutputTableHelp
+            | ProbeIntent::OutputPlainHelp => self.apply_output_mode_observation(observation),
             ProbeIntent::Version | ProbeIntent::InvalidCommand => {}
         }
     }
@@ -86,33 +132,61 @@ impl ClaimSet {
         let help_like = successful_help_like(observation);
         let precondition = precondition_for_observation(observation);
         let current_path = CommandPath::new(observation.path.clone());
+        let alias_paths = self.alias_paths_for(current_path.as_slice());
+        let text = observation.process.stdout.text.as_deref();
+        let help_matches_current_path = help_like
+            && text.is_some_and(|stdout| {
+                layout::help_matches_command_path(stdout, binary_name, current_path.as_slice())
+                    || alias_paths.iter().any(|path| {
+                        layout::help_matches_command_path(stdout, binary_name, path.as_slice())
+                    })
+            });
 
         if !current_path.is_empty() {
             self.command_mut(current_path.clone()).apply_runtime_help(
                 &observation.evidence_id,
                 help_like,
+                help_matches_current_path,
                 precondition,
             );
         }
 
-        let Some(text) = observation.process.stdout.text.as_deref() else {
+        let Some(text) = text else {
             return;
         };
         if !help_like && !current_path.is_empty() {
             return;
         }
 
-        if !current_path.is_empty() {
-            let arguments = layout::usage_arguments(text, binary_name, current_path.as_slice());
-            self.command_mut(current_path.clone())
+        let command_candidates = if current_path.is_empty() || !layout::is_manpage_like(text) {
+            layout::command_candidates(text, binary_name)
+        } else {
+            Vec::new()
+        };
+        let relative_candidate_scope =
+            relative_candidate_scope(current_path.as_slice(), &command_candidates);
+        let usage_scope = CommandPath::new(
+            layout::usage_command_path(text, binary_name, current_path.as_slice())
+                .unwrap_or(relative_candidate_scope.clone()),
+        );
+
+        if !usage_scope.is_empty() {
+            let arguments = layout::usage_arguments(text, binary_name, usage_scope.as_slice());
+            self.command_mut(usage_scope.clone())
                 .apply_usage_arguments(arguments, &observation.evidence_id);
         }
+        let feature_scope = if usage_scope.is_empty() {
+            current_path.clone()
+        } else {
+            usage_scope.clone()
+        };
 
-        if current_path.is_empty() || !layout::is_manpage_like(text) {
-            for candidate in layout::command_candidates(text, binary_name) {
+        if !command_candidates.is_empty() {
+            for candidate in command_candidates {
                 let path = CommandPath::new(absolutize_candidate_path(
-                    current_path.as_slice(),
+                    relative_candidate_scope.as_slice(),
                     candidate.path,
+                    candidate.absolute,
                 ));
                 if path == current_path {
                     continue;
@@ -132,16 +206,16 @@ impl ClaimSet {
         }
 
         for candidate in layout::flag_candidates(text) {
-            let key = (current_path.clone(), candidate.name.clone());
+            let key = (feature_scope.clone(), candidate.name.clone());
             self.flags
                 .entry(key)
-                .or_insert_with(|| FlagClaim::new(current_path.clone(), candidate.name.clone()))
+                .or_insert_with(|| FlagClaim::new(feature_scope.clone(), candidate.name.clone()))
                 .apply_layout_candidate(candidate, &observation.evidence_id);
         }
 
         for candidate in layout::output_mode_candidates(text) {
             let key = OutputContractKey {
-                command_path: current_path.clone(),
+                command_path: feature_scope.clone(),
                 mode: candidate.mode,
                 argv_fragment: candidate.argv_fragment.clone(),
             };
@@ -149,13 +223,18 @@ impl ClaimSet {
                 .entry(key)
                 .or_insert_with(|| {
                     OutputContractClaim::new(
-                        current_path.clone(),
+                        feature_scope.clone(),
                         candidate.mode,
                         candidate.flag_name.clone(),
                         candidate.argv_fragment.clone(),
+                        OutputContractScope::from_candidate(candidate.scope),
                     )
                 })
-                .apply_advertised(&observation.evidence_id, &candidate.evidence_detail);
+                .apply_advertised(
+                    &observation.evidence_id,
+                    &candidate.evidence_detail,
+                    OutputContractScope::from_candidate(candidate.scope),
+                );
         }
     }
 
@@ -193,9 +272,10 @@ impl ClaimSet {
         let Some(mode) = output_mode_for_intent(observation.intent) else {
             return;
         };
+        let help_probe = output_help_probe(observation.intent);
         let path = CommandPath::new(observation.path.clone());
         let precondition = precondition_for_observation(observation);
-        if let Some(precondition) = precondition {
+        if let Some(precondition) = precondition.filter(|_| !help_probe) {
             self.command_mut(path.clone())
                 .apply_precondition_blocked(&observation.evidence_id, precondition);
         }
@@ -219,10 +299,27 @@ impl ClaimSet {
                 argv_fragment: argv_fragment.clone(),
             };
             let claim = self.outputs.entry(key).or_insert_with(|| {
-                OutputContractClaim::new(path, mode, mode.label().to_owned(), argv_fragment)
+                OutputContractClaim::new(
+                    path,
+                    mode,
+                    mode.label().to_owned(),
+                    argv_fragment,
+                    OutputContractScope::RuntimeProbe,
+                )
             });
-            if let Some(precondition) = precondition {
+            if help_probe && let Some(precondition) = precondition {
+                claim.apply_help_precondition_probe(&observation.evidence_id, precondition);
+            } else if let Some(precondition) = precondition {
                 claim.apply_precondition_probe(&observation.evidence_id, precondition);
+            } else if help_probe {
+                claim.apply_help_probe(
+                    &observation.evidence_id,
+                    output::classify_help_precedence(
+                        mode,
+                        &observation.process.status,
+                        observation.process.stdout.text.as_deref(),
+                    ),
+                );
             } else {
                 claim.apply_probe(
                     &observation.evidence_id,
@@ -238,8 +335,19 @@ impl ClaimSet {
 
         for key in matching_keys {
             if let Some(claim) = self.outputs.get_mut(&key) {
-                if let Some(precondition) = precondition {
+                if help_probe && let Some(precondition) = precondition {
+                    claim.apply_help_precondition_probe(&observation.evidence_id, precondition);
+                } else if let Some(precondition) = precondition {
                     claim.apply_precondition_probe(&observation.evidence_id, precondition);
+                } else if help_probe {
+                    claim.apply_help_probe(
+                        &observation.evidence_id,
+                        output::classify_help_precedence(
+                            mode,
+                            &observation.process.status,
+                            observation.process.stdout.text.as_deref(),
+                        ),
+                    );
                 } else {
                     claim.apply_probe(
                         &observation.evidence_id,
@@ -258,6 +366,27 @@ impl ClaimSet {
         self.commands
             .entry(path.clone())
             .or_insert_with(|| CommandClaim::new(path))
+    }
+
+    fn alias_paths_for(&self, path: &[String]) -> Vec<Vec<String>> {
+        let Some(command) = self.commands.get(&CommandPath::new(path.to_vec())) else {
+            return Vec::new();
+        };
+        if path.is_empty() {
+            return Vec::new();
+        }
+
+        command
+            .aliases
+            .iter()
+            .map(|alias| {
+                let mut alias_path = path.to_vec();
+                if let Some(last) = alias_path.last_mut() {
+                    *last = alias.clone();
+                }
+                alias_path
+            })
+            .collect()
     }
 }
 
@@ -351,13 +480,18 @@ impl CommandClaim {
         &mut self,
         evidence_id: &str,
         help_like: bool,
+        help_matches_current_path: bool,
         precondition: Option<PreconditionKind>,
     ) {
-        if help_like {
+        if help_matches_current_path {
             self.belief.update(4.0);
             self.runtime_confirmed = true;
         } else if let Some(precondition) = precondition {
             self.apply_precondition_blocked(evidence_id, precondition);
+            return;
+        } else if help_like {
+            self.belief.update(0.5);
+            self.evidence.push(format!("{evidence_id}:help observed"));
             return;
         } else {
             self.belief.update(-2.0);
@@ -498,6 +632,7 @@ pub struct OutputContractClaim {
     mode: OutputMode,
     flag_name: String,
     argv_fragment: Vec<String>,
+    scope: OutputContractScope,
     advertised: bool,
     probed: bool,
     parse_success: bool,
@@ -505,6 +640,10 @@ pub struct OutputContractClaim {
     preconditions: BTreeSet<PreconditionKind>,
     observed_kind: Option<ObservedOutputKind>,
     diagnostic: Option<String>,
+    help_probed: bool,
+    help_behavior: Option<output::OutputHelpBehavior>,
+    help_parse_success: bool,
+    help_diagnostic: Option<String>,
     evidence: Vec<String>,
 }
 
@@ -514,12 +653,14 @@ impl OutputContractClaim {
         mode: OutputMode,
         flag_name: String,
         argv_fragment: Vec<String>,
+        scope: OutputContractScope,
     ) -> Self {
         Self {
             command_path,
             mode,
             flag_name,
             argv_fragment,
+            scope,
             advertised: false,
             probed: false,
             parse_success: false,
@@ -527,12 +668,22 @@ impl OutputContractClaim {
             preconditions: BTreeSet::new(),
             observed_kind: None,
             diagnostic: None,
+            help_probed: false,
+            help_behavior: None,
+            help_parse_success: false,
+            help_diagnostic: None,
             evidence: Vec::new(),
         }
     }
 
-    fn apply_advertised(&mut self, evidence_id: &str, evidence_detail: &str) {
+    fn apply_advertised(
+        &mut self,
+        evidence_id: &str,
+        evidence_detail: &str,
+        scope: OutputContractScope,
+    ) {
         self.advertised = true;
+        self.scope = self.scope.merge(scope);
         self.evidence
             .push(format!("{evidence_id}:output mode {evidence_detail}"));
     }
@@ -544,6 +695,32 @@ impl OutputContractClaim {
         self.diagnostic = Some(classification.detail);
         self.evidence
             .push(format!("{evidence_id}:output mode probe"));
+    }
+
+    fn apply_help_probe(
+        &mut self,
+        evidence_id: &str,
+        classification: output::OutputHelpClassification,
+    ) {
+        self.help_probed = true;
+        self.help_parse_success |= classification.parse_success;
+        self.help_behavior = Some(classification.behavior);
+        self.help_diagnostic = Some(classification.detail);
+        self.evidence
+            .push(format!("{evidence_id}:output mode help probe"));
+    }
+
+    fn apply_help_precondition_probe(&mut self, evidence_id: &str, precondition: PreconditionKind) {
+        self.help_probed = true;
+        self.help_behavior = Some(output::OutputHelpBehavior::PreconditionBlocked);
+        self.help_diagnostic = Some(format!(
+            "output-help probe blocked by {} precondition",
+            precondition.label()
+        ));
+        self.evidence.push(format!(
+            "{evidence_id}:output mode help blocked by {}",
+            precondition.label()
+        ));
     }
 
     fn apply_precondition_probe(&mut self, evidence_id: &str, precondition: PreconditionKind) {
@@ -576,6 +753,10 @@ impl OutputContractClaim {
         &self.argv_fragment
     }
 
+    pub fn scope(&self) -> OutputContractScope {
+        self.scope
+    }
+
     pub fn advertised(&self) -> bool {
         self.advertised
     }
@@ -602,6 +783,22 @@ impl OutputContractClaim {
 
     pub fn diagnostic(&self) -> Option<&str> {
         self.diagnostic.as_deref()
+    }
+
+    pub fn help_probed(&self) -> bool {
+        self.help_probed
+    }
+
+    pub fn help_behavior(&self) -> Option<output::OutputHelpBehavior> {
+        self.help_behavior
+    }
+
+    pub fn help_parse_success(&self) -> bool {
+        self.help_parse_success
+    }
+
+    pub fn help_diagnostic(&self) -> Option<&str> {
+        self.help_diagnostic.as_deref()
     }
 
     pub fn evidence(&self) -> &[String] {
@@ -734,12 +931,22 @@ fn rejected_by_runtime(observation: &ShapeObservation) -> bool {
 
 fn output_mode_for_intent(intent: ProbeIntent) -> Option<OutputMode> {
     match intent {
-        ProbeIntent::OutputJson => Some(OutputMode::Json),
-        ProbeIntent::OutputYaml => Some(OutputMode::Yaml),
-        ProbeIntent::OutputTable => Some(OutputMode::Table),
-        ProbeIntent::OutputPlain => Some(OutputMode::Plain),
+        ProbeIntent::OutputJson | ProbeIntent::OutputJsonHelp => Some(OutputMode::Json),
+        ProbeIntent::OutputYaml | ProbeIntent::OutputYamlHelp => Some(OutputMode::Yaml),
+        ProbeIntent::OutputTable | ProbeIntent::OutputTableHelp => Some(OutputMode::Table),
+        ProbeIntent::OutputPlain | ProbeIntent::OutputPlainHelp => Some(OutputMode::Plain),
         _ => None,
     }
+}
+
+fn output_help_probe(intent: ProbeIntent) -> bool {
+    matches!(
+        intent,
+        ProbeIntent::OutputJsonHelp
+            | ProbeIntent::OutputYamlHelp
+            | ProbeIntent::OutputTableHelp
+            | ProbeIntent::OutputPlainHelp
+    )
 }
 
 fn output_probe_fragment(observation: &ShapeObservation, path: &[String]) -> Vec<String> {
@@ -768,8 +975,41 @@ fn argv_contains_fragment(argv_fragment: &[String], expected: &[String]) -> bool
         .any(|window| window == expected)
 }
 
-fn absolutize_candidate_path(current_path: &[String], candidate: Vec<String>) -> Vec<String> {
-    if current_path.is_empty() || candidate.starts_with(current_path) {
+fn relative_candidate_scope(
+    current_path: &[String],
+    candidates: &[layout::CandidateCommand],
+) -> Vec<String> {
+    if current_path.is_empty() {
+        return Vec::new();
+    }
+
+    let relative_candidates = candidates
+        .iter()
+        .filter(|candidate| !candidate.absolute)
+        .collect::<Vec<_>>();
+    if relative_candidates.is_empty() {
+        return current_path.to_vec();
+    }
+
+    for prefix_len in (0..current_path.len()).rev() {
+        let suffix = &current_path[prefix_len..];
+        if relative_candidates
+            .iter()
+            .any(|candidate| candidate.path.as_slice() == suffix)
+        {
+            return current_path[..prefix_len].to_vec();
+        }
+    }
+
+    current_path.to_vec()
+}
+
+fn absolutize_candidate_path(
+    current_path: &[String],
+    candidate: Vec<String>,
+    absolute: bool,
+) -> Vec<String> {
+    if absolute || current_path.is_empty() || candidate.starts_with(current_path) {
         return candidate;
     }
 
@@ -835,6 +1075,26 @@ mod tests {
     }
 
     #[test]
+    fn multiline_usage_help_confirms_current_command() {
+        let observations = vec![observation(
+            "e_000024",
+            ProbeIntent::Help,
+            vec!["backups".to_owned()],
+            "Manage Supabase physical backups\n\nUsage:\n  supabase backups [command]\n\nAvailable Commands:\n  list     Lists available physical backups\n  restore  Restore to a specific timestamp using PITR\n\nFlags:\n  -h, --help  help for backups\n",
+            Some(0),
+        )];
+
+        let claims = ClaimSet::from_observations("supabase", &observations);
+        let backups = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["backups"])
+            .expect("backups claim exists");
+
+        assert!(backups.runtime_confirmed());
+        assert!(!backups.help_unavailable());
+    }
+
+    #[test]
     fn claims_record_negative_diagnostic_probes() {
         let observations = vec![
             observation(
@@ -869,6 +1129,119 @@ mod tests {
         assert!(measure.invalid_child_rejected());
         assert!(measure.invalid_flag_rejected());
         assert!(measure.has_child_candidates());
+    }
+
+    #[test]
+    fn absolute_help_references_are_not_nested_under_current_command() {
+        let observations = vec![observation(
+            "e_000011",
+            ProbeIntent::Help,
+            vec!["adapter".to_owned(), "list".to_owned()],
+            "rote adapter list - Show installed adapters\n\nNEXT STEPS\n  rote adapter info <ID>    Show details\n  rote adapter reauth <ID>  Re-authorize an adapter\n",
+            Some(0),
+        )];
+
+        let claims = ClaimSet::from_observations("rote", &observations);
+
+        assert!(
+            claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["adapter", "info"])
+        );
+        assert!(
+            !claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["adapter", "list", "adapter", "info"])
+        );
+        let adapter_list = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["adapter", "list"])
+            .expect("current command claim exists");
+        assert!(!adapter_list.has_child_candidates());
+    }
+
+    #[test]
+    fn parent_help_tables_are_scoped_to_the_matching_ancestor() {
+        let observations = vec![observation(
+            "e_000013",
+            ProbeIntent::Help,
+            vec!["flow".to_owned(), "search".to_owned()],
+            "FLOW COMMANDS\n\nCOMMANDS:\n  list [--json]        List flows\n  search <QUERY>       Search flows\n  doctor               Check all flows\n",
+            Some(0),
+        )];
+
+        let claims = ClaimSet::from_observations("rote", &observations);
+
+        assert!(
+            claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["flow", "doctor"])
+        );
+        assert!(
+            !claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["flow", "search", "doctor"])
+        );
+        let flow_search = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["flow", "search"])
+            .expect("current command claim exists");
+        assert!(!flow_search.has_child_candidates());
+    }
+
+    #[test]
+    fn parent_help_echo_does_not_confirm_or_attach_features_to_child_candidate() {
+        let observations = vec![observation(
+            "e_000017",
+            ProbeIntent::Help,
+            vec![
+                "adapter".to_owned(),
+                "set".to_owned(),
+                "base_url".to_owned(),
+            ],
+            "tool adapter set - Mutate a key\n\nUSAGE\n  tool adapter set <ID> <KEY> <VALUE> [--json]\n\nFLAGS\n  --json  Emit result as JSON\n",
+            Some(0),
+        )];
+
+        let claims = ClaimSet::from_observations("tool", &observations);
+        let child = claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["adapter", "set", "base_url"])
+            .expect("child claim exists");
+
+        assert!(!child.runtime_confirmed());
+        assert!(!child.help_unavailable());
+        assert!(claims.flags().any(
+            |claim| claim.command_path().as_slice() == ["adapter", "set"]
+                && claim.name() == "--json"
+        ));
+        assert!(!claims.flags().any(|claim| claim.command_path().as_slice()
+            == ["adapter", "set", "base_url"]
+            && claim.name() == "--json"));
+    }
+
+    #[test]
+    fn single_parent_help_row_does_not_duplicate_current_tail() {
+        let observations = vec![observation(
+            "e_000015",
+            ProbeIntent::Help,
+            vec!["install".to_owned(), "skill".to_owned()],
+            "rote install - Installation utilities\n\nSUBCOMMANDS\n  skill  Install provider integration\n",
+            Some(0),
+        )];
+
+        let claims = ClaimSet::from_observations("rote", &observations);
+
+        assert!(
+            claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["install", "skill"])
+        );
+        assert!(
+            !claims
+                .commands()
+                .any(|claim| claim.path().as_slice() == ["install", "skill", "skill"])
+        );
     }
 
     #[test]

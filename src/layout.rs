@@ -44,6 +44,32 @@ impl HelpDocument {
         blocks
     }
 
+    fn section_kind_before(&self, row_index: usize) -> SectionKind {
+        self.section_title_before(row_index)
+            .map_or(SectionKind::Unknown, section_kind)
+    }
+
+    fn section_title_before(&self, row_index: usize) -> Option<&str> {
+        self.lines[..row_index]
+            .iter()
+            .rev()
+            .find(|line| !line.text.is_empty() && !line.is_row_like())
+            .map(|line| line.text.as_str())
+    }
+
+    fn flag_section_before(&self, row_index: usize) -> CandidateFlagSection {
+        self.section_title_before(row_index)
+            .map_or(CandidateFlagSection::Other, flag_section)
+    }
+
+    fn examples_advertise_output_mode(&self, flag: &CandidateFlag, mode: OutputMode) -> bool {
+        self.lines.iter().any(|line| {
+            self.section_title_before(line.index)
+                .is_some_and(is_example_section)
+                && example_line_mentions_output_mode(&line.text, flag, mode)
+        })
+    }
+
     pub fn usage_lines(&self) -> impl Iterator<Item = &LayoutLine> {
         self.lines.iter().filter(|line| {
             line.text
@@ -67,6 +93,27 @@ impl HelpDocument {
 
         row_count >= 2 || (header_count >= 1 && row_count >= 1) || option_count >= 1
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectionKind {
+    Command,
+    NonCommand,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateFlagSection {
+    Command,
+    Global,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidateOutputModeScope {
+    CommandFlag,
+    GlobalFlag,
+    Example,
 }
 
 #[derive(Debug, Clone)]
@@ -121,11 +168,15 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
     let mut candidates = BTreeMap::<Vec<String>, CandidateCommand>::new();
 
     for block in document.row_blocks() {
+        let section = document.section_kind_before(block[0].index);
+        if section == SectionKind::NonCommand {
+            continue;
+        }
         let rows = block
             .iter()
             .filter_map(|row| command_row_candidate(row, binary_name))
             .collect::<Vec<_>>();
-        if !is_command_table_block(block.len(), &rows) {
+        if !is_command_table_block(block.len(), &rows, section) {
             continue;
         }
         for row in rows {
@@ -145,6 +196,7 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
                     path: path.clone(),
                     aliases,
                     summary: row.summary.clone(),
+                    absolute: row.absolute,
                     evidence_detail: format!("layout row {}", row.index),
                 });
             }
@@ -156,9 +208,14 @@ pub fn command_candidates(text: &str, binary_name: &str) -> Vec<CandidateCommand
 
 pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
     let document = HelpDocument::parse(text);
+    flag_candidates_from_document(&document)
+}
+
+fn flag_candidates_from_document(document: &HelpDocument) -> Vec<CandidateFlag> {
     let mut candidates = BTreeMap::<String, CandidateFlag>::new();
 
     for row in document.rows() {
+        let section = document.flag_section_before(row.index);
         for column in &row.columns {
             for token in column.split_whitespace() {
                 let Some(name) = long_flag_name(token) else {
@@ -168,7 +225,9 @@ pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
                 candidates.entry(name.clone()).or_insert(CandidateFlag {
                     name,
                     short: short_flag_in(column),
+                    invocation: column.clone(),
                     summary: row.columns.get(1).cloned(),
+                    section,
                     value_kind: grammar.value_kind,
                     value_name: grammar.value_name,
                     required: grammar.required,
@@ -183,17 +242,20 @@ pub fn flag_candidates(text: &str) -> Vec<CandidateFlag> {
 }
 
 pub fn output_mode_candidates(text: &str) -> Vec<CandidateOutputMode> {
+    let document = HelpDocument::parse(text);
     let mut candidates = BTreeMap::<(OutputMode, Vec<String>), CandidateOutputMode>::new();
 
-    for flag in flag_candidates(text) {
+    for flag in flag_candidates_from_document(&document) {
         for mode in output_modes_for_flag(&flag) {
             let argv_fragment = output_mode_argv_fragment(&flag, mode);
+            let scope = output_mode_scope(&document, &flag, mode);
             candidates
                 .entry((mode, argv_fragment.clone()))
                 .or_insert_with(|| CandidateOutputMode {
                     mode,
                     flag_name: flag.name.clone(),
                     argv_fragment,
+                    scope,
                     evidence_detail: flag.evidence_detail.clone(),
                 });
         }
@@ -210,21 +272,12 @@ pub fn usage_arguments(
     let document = HelpDocument::parse(text);
     let mut arguments = Vec::new();
 
-    for line in document.usage_lines() {
-        let Some((_, usage)) = line.text.split_once(':') else {
+    for (line_index, usage) in usage_syntaxes(&document) {
+        if !usage_matches_current_path(&usage, binary_name, current_path) {
             continue;
-        };
-        let mut tokens = usage.split_whitespace().map(clean_token).peekable();
-        if tokens.peek().is_some_and(|token| *token == binary_name) {
-            tokens.next();
-        }
-        for segment in current_path {
-            if tokens.peek().is_some_and(|token| *token == segment) {
-                tokens.next();
-            }
         }
 
-        let tokens = tokens.collect::<Vec<_>>();
+        let tokens = usage_remainder_tokens(&usage, binary_name, current_path);
         let mut index = 0_usize;
         while index < tokens.len() {
             let token = tokens[index];
@@ -239,7 +292,7 @@ pub fn usage_arguments(
                 }
                 continue;
             }
-            if let Some(argument) = usage_argument_from_token(token, line.index) {
+            if let Some(argument) = usage_argument_from_token(token, line_index) {
                 arguments.push(argument);
             }
             index += 1;
@@ -253,6 +306,48 @@ pub fn is_help_like(text: &str) -> bool {
     HelpDocument::parse(text).is_help_like()
 }
 
+pub fn help_matches_command_path(text: &str, binary_name: &str, current_path: &[String]) -> bool {
+    if current_path.is_empty() {
+        return true;
+    }
+
+    let document = HelpDocument::parse(text);
+    let syntaxes = usage_syntaxes(&document);
+    if !syntaxes.is_empty() {
+        return syntaxes
+            .iter()
+            .any(|(_, usage)| usage_matches_current_path(usage, binary_name, current_path));
+    }
+
+    let expected = std::iter::once(binary_name)
+        .chain(current_path.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" ");
+    document
+        .lines
+        .iter()
+        .find(|line| !line.text.is_empty())
+        .is_some_and(|line| {
+            line.text == expected
+                || line
+                    .text
+                    .strip_prefix(&expected)
+                    .is_some_and(|rest| rest.starts_with(' ') || rest.starts_with(" -"))
+        })
+}
+
+pub fn usage_command_path(
+    text: &str,
+    binary_name: &str,
+    current_path: &[String],
+) -> Option<Vec<String>> {
+    let document = HelpDocument::parse(text);
+    usage_syntaxes(&document)
+        .into_iter()
+        .filter_map(|(_, usage)| command_path_from_usage(&usage, binary_name, current_path))
+        .max_by_key(Vec::len)
+}
+
 pub fn is_manpage_like(text: &str) -> bool {
     text.as_bytes().windows(2).any(|window| window[1] == 0x08)
 }
@@ -262,6 +357,7 @@ pub struct CandidateCommand {
     pub path: Vec<String>,
     pub aliases: Vec<String>,
     pub summary: Option<String>,
+    pub absolute: bool,
     pub evidence_detail: String,
 }
 
@@ -269,7 +365,9 @@ pub struct CandidateCommand {
 pub struct CandidateFlag {
     pub name: String,
     pub short: Option<String>,
+    pub invocation: String,
     pub summary: Option<String>,
+    pub section: CandidateFlagSection,
     pub value_kind: CandidateFlagValueKind,
     pub value_name: Option<String>,
     pub required: bool,
@@ -282,6 +380,7 @@ pub struct CandidateOutputMode {
     pub mode: OutputMode,
     pub flag_name: String,
     pub argv_fragment: Vec<String>,
+    pub scope: CandidateOutputModeScope,
     pub evidence_detail: String,
 }
 
@@ -305,6 +404,8 @@ struct CommandRowCandidate {
     index: usize,
     paths: Vec<Vec<String>>,
     summary: Option<String>,
+    absolute: bool,
+    placeholder_like: bool,
     invocation_width: usize,
     invocation_tokens: usize,
     title_like_summary: bool,
@@ -313,19 +414,24 @@ struct CommandRowCandidate {
 
 fn command_row_candidate(row: &LayoutLine, binary_name: &str) -> Option<CommandRowCandidate> {
     let first_column = row.columns.first()?;
-    let paths = command_paths_from_cell(first_column, binary_name);
-    if paths.is_empty() {
+    let parsed = command_paths_from_cell(first_column, binary_name);
+    if parsed.paths.is_empty() {
         return None;
     }
-    let distinctive_invocation = paths.iter().flatten().any(|segment| {
+    let distinctive_invocation = parsed.paths.iter().flatten().any(|segment| {
         segment
             .chars()
             .any(|ch| !ch.is_ascii_lowercase() || matches!(ch, '-' | '_' | ':' | '@'))
     });
     Some(CommandRowCandidate {
         index: row.index,
-        paths,
+        placeholder_like: parsed.paths.iter().all(|path| {
+            path.iter()
+                .all(|segment| is_placeholder_like(segment.as_str()))
+        }),
+        paths: parsed.paths,
         summary: row.columns.get(1).cloned(),
+        absolute: parsed.absolute,
         invocation_width: first_column.chars().count(),
         invocation_tokens: command_prefix_token_count(first_column, binary_name),
         title_like_summary: row
@@ -336,14 +442,22 @@ fn command_row_candidate(row: &LayoutLine, binary_name: &str) -> Option<CommandR
     })
 }
 
-fn is_command_table_block(row_count: usize, candidates: &[CommandRowCandidate]) -> bool {
+fn is_command_table_block(
+    row_count: usize,
+    candidates: &[CommandRowCandidate],
+    section: SectionKind,
+) -> bool {
     if candidates.len() == 1 {
         let row = &candidates[0];
         return row.invocation_width <= 48
             && row.invocation_tokens <= 3
+            && (!row.placeholder_like || section == SectionKind::Command)
             && (row.paths.len() > 1 || row.title_like_summary || row.distinctive_invocation);
     }
     if candidates.len() < 2 {
+        return false;
+    }
+    if section != SectionKind::Command && candidates.iter().all(|row| row.placeholder_like) {
         return false;
     }
 
@@ -367,8 +481,113 @@ fn starts_title_like(text: &str) -> bool {
         .is_some_and(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit())
 }
 
-fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
+fn section_kind(text: &str) -> SectionKind {
+    let normalized = text
+        .trim_matches(|ch: char| matches!(ch, ':' | '-' | '='))
+        .to_ascii_lowercase();
+    let words = normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+
+    if words
+        .iter()
+        .any(|word| matches!(*word, "commands" | "command" | "subcommands" | "subcommand"))
+    {
+        return SectionKind::Command;
+    }
+
+    if words.iter().any(|word| {
+        matches!(
+            *word,
+            "arguments"
+                | "argument"
+                | "parameters"
+                | "parameter"
+                | "options"
+                | "option"
+                | "flags"
+                | "flag"
+                | "examples"
+                | "example"
+                | "usage"
+                | "environment"
+                | "outputs"
+                | "output"
+                | "inputs"
+                | "input"
+                | "keys"
+                | "key"
+                | "values"
+                | "value"
+                | "fields"
+                | "field"
+                | "types"
+                | "type"
+                | "exit"
+                | "codes"
+                | "code"
+                | "notes"
+                | "note"
+                | "details"
+                | "location"
+                | "locations"
+                | "provider"
+                | "providers"
+        )
+    }) {
+        return SectionKind::NonCommand;
+    }
+
+    SectionKind::Unknown
+}
+
+fn flag_section(text: &str) -> CandidateFlagSection {
+    let normalized = text
+        .trim_matches(|ch: char| matches!(ch, ':' | '-' | '='))
+        .to_ascii_lowercase();
+    let words = normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let flag_like = words.iter().any(|word| {
+        matches!(
+            *word,
+            "flags" | "flag" | "options" | "option" | "switches" | "switch"
+        )
+    });
+
+    if !flag_like {
+        return CandidateFlagSection::Other;
+    }
+    if words
+        .iter()
+        .any(|word| matches!(*word, "global" | "persistent" | "inherited" | "common"))
+    {
+        CandidateFlagSection::Global
+    } else {
+        CandidateFlagSection::Command
+    }
+}
+
+fn is_example_section(text: &str) -> bool {
+    let normalized = text
+        .trim_matches(|ch: char| matches!(ch, ':' | '-' | '='))
+        .to_ascii_lowercase();
+    normalized
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|word| matches!(word, "example" | "examples"))
+}
+
+#[derive(Debug, Default)]
+struct ParsedCommandPaths {
+    paths: Vec<Vec<String>>,
+    absolute: bool,
+}
+
+fn command_paths_from_cell(cell: &str, binary_name: &str) -> ParsedCommandPaths {
     let mut path = Vec::new();
+    let mut absolute = false;
     let mut saw_alias_separator = false;
 
     for token in cell.split_whitespace() {
@@ -377,36 +596,47 @@ fn command_paths_from_cell(cell: &str, binary_name: &str) -> Vec<Vec<String>> {
             continue;
         }
         if cleaned == binary_name && path.is_empty() {
+            absolute = true;
             continue;
         }
         if cleaned.chars().all(|ch| ch.is_ascii_digit()) {
-            return Vec::new();
+            return ParsedCommandPaths::default();
         }
         if is_argument_like(cleaned) || cleaned.starts_with('-') {
+            break;
+        }
+        if !path.is_empty() && is_placeholder_like(cleaned) {
             break;
         }
         if !is_command_token(cleaned) {
             break;
         }
         if path.len() >= MAX_COMMAND_PATH_SEGMENTS {
-            return Vec::new();
+            return ParsedCommandPaths::default();
         }
         saw_alias_separator |= token.ends_with(',');
         path.push(cleaned.to_owned());
     }
 
     if path.is_empty() {
-        return Vec::new();
+        return ParsedCommandPaths::default();
     }
     if saw_alias_separator {
-        return path.into_iter().map(|segment| vec![segment]).collect();
+        return ParsedCommandPaths {
+            paths: path.into_iter().map(|segment| vec![segment]).collect(),
+            absolute,
+        };
     }
 
-    vec![path]
+    ParsedCommandPaths {
+        paths: vec![path],
+        absolute,
+    }
 }
 
 fn command_prefix_token_count(cell: &str, binary_name: &str) -> usize {
     command_paths_from_cell(cell, binary_name)
+        .paths
         .iter()
         .map(Vec::len)
         .max()
@@ -420,6 +650,26 @@ fn is_argument_like(token: &str) -> bool {
         || token.contains('[')
         || token.contains('=')
         || token == "..."
+}
+
+fn is_placeholder_like(token: &str) -> bool {
+    let mut has_uppercase = false;
+    let mut has_lowercase = false;
+    let mut has_separator = false;
+
+    for ch in token.chars() {
+        if ch.is_ascii_uppercase() {
+            has_uppercase = true;
+        } else if ch.is_ascii_lowercase() {
+            has_lowercase = true;
+        } else if matches!(ch, '_' | '-') {
+            has_separator = true;
+        } else if !ch.is_ascii_digit() {
+            return false;
+        }
+    }
+
+    has_uppercase && !has_lowercase && (token.len() >= 2 || has_separator)
 }
 
 fn is_command_token(token: &str) -> bool {
@@ -490,14 +740,17 @@ fn flag_grammar_in(invocation: &str, summary: Option<&str>) -> CandidateFlagGram
             value_kind = CandidateFlagValueKind::Required;
             value_name = value_name_from_token(token);
         } else if let Some(next) = tokens.get(index + 1) {
-            if next.starts_with("[<") {
+            if next.starts_with("[<") || *next == "[" {
                 value_kind = CandidateFlagValueKind::Optional;
-                value_name = value_name_from_token(next);
+                value_name = value_name_from_token(next).or_else(|| Some("choice".to_owned()));
                 repeatable |= next.contains("...");
             } else if next.starts_with('<') {
                 value_kind = CandidateFlagValueKind::Required;
                 value_name = value_name_from_token(next);
                 repeatable |= next.contains("...");
+            } else if let Some(name) = bare_value_name_from_token(next) {
+                value_kind = CandidateFlagValueKind::Required;
+                value_name = Some(name);
             }
         }
     }
@@ -563,11 +816,134 @@ fn value_name_from_token(token: &str) -> Option<String> {
     }
 }
 
+fn bare_value_name_from_token(token: &str) -> Option<String> {
+    let cleaned = clean_token(token).trim_matches(|ch: char| matches!(ch, '[' | ']'));
+    if cleaned.is_empty()
+        || cleaned.starts_with('-')
+        || cleaned == "|"
+        || cleaned.eq_ignore_ascii_case("default")
+    {
+        return None;
+    }
+    if !cleaned
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
+        return None;
+    }
+    Some(cleaned.to_ascii_lowercase().replace('-', "_"))
+}
+
 fn is_generic_usage_placeholder(name: &str) -> bool {
     matches!(
         name,
         "options" | "option" | "command" | "commands" | "subcommand" | "subcommands" | "args"
     )
+}
+
+fn usage_syntaxes(document: &HelpDocument) -> Vec<(usize, String)> {
+    let mut syntaxes = Vec::new();
+    let mut index = 0_usize;
+
+    while index < document.lines.len() {
+        let line = &document.lines[index];
+        if let Some((prefix, usage)) = line.text.split_once(':') {
+            if prefix.eq_ignore_ascii_case("usage") {
+                let usage = usage.trim();
+                if !usage.is_empty() {
+                    syntaxes.push((line.index, usage.to_owned()));
+                    index += 1;
+                    continue;
+                }
+            } else {
+                index += 1;
+                continue;
+            }
+        }
+
+        if !is_usage_heading(&line.text) {
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+        while let Some(next) = document.lines.get(index) {
+            if next.text.is_empty() {
+                break;
+            }
+            if next.indent <= line.indent && next.is_header_like() {
+                break;
+            }
+            syntaxes.push((next.index, next.text.clone()));
+            index += 1;
+        }
+    }
+
+    syntaxes
+}
+
+fn command_path_from_usage(
+    usage: &str,
+    binary_name: &str,
+    current_path: &[String],
+) -> Option<Vec<String>> {
+    let mut path = Vec::new();
+    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
+    if tokens.peek().is_some_and(|token| *token == binary_name) {
+        tokens.next();
+    }
+    for token in tokens {
+        if token.starts_with('-') || is_argument_like(token) || !is_command_token(token) {
+            break;
+        }
+        path.push(token.to_owned());
+    }
+    if path.is_empty() {
+        return None;
+    }
+    if current_path.is_empty() || current_path.starts_with(&path) {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn is_usage_heading(text: &str) -> bool {
+    text.trim_matches(|ch: char| matches!(ch, ':' | '-' | '='))
+        .eq_ignore_ascii_case("usage")
+}
+
+fn usage_matches_current_path(usage: &str, binary_name: &str, current_path: &[String]) -> bool {
+    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
+    if tokens.peek().is_some_and(|token| *token == binary_name) {
+        tokens.next();
+    }
+    for segment in current_path {
+        match tokens.peek() {
+            Some(token) if token == segment => {
+                tokens.next();
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn usage_remainder_tokens<'a>(
+    usage: &'a str,
+    binary_name: &str,
+    current_path: &[String],
+) -> Vec<&'a str> {
+    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
+    if tokens.peek().is_some_and(|token| *token == binary_name) {
+        tokens.next();
+    }
+    for segment in current_path {
+        if tokens.peek().is_some_and(|token| *token == segment) {
+            tokens.next();
+        }
+    }
+    tokens.collect()
 }
 
 fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
@@ -588,17 +964,58 @@ fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
     modes
 }
 
+fn output_mode_scope(
+    document: &HelpDocument,
+    flag: &CandidateFlag,
+    mode: OutputMode,
+) -> CandidateOutputModeScope {
+    if document.examples_advertise_output_mode(flag, mode) {
+        CandidateOutputModeScope::Example
+    } else if flag.section == CandidateFlagSection::Global {
+        CandidateOutputModeScope::GlobalFlag
+    } else {
+        CandidateOutputModeScope::CommandFlag
+    }
+}
+
+fn example_line_mentions_output_mode(line: &str, flag: &CandidateFlag, mode: OutputMode) -> bool {
+    let normalized = line.to_ascii_lowercase();
+    contains_word(&normalized, mode.label())
+        && (flag_reference_in_line(&normalized, &flag.name)
+            || flag
+                .short
+                .as_deref()
+                .is_some_and(|short| flag_reference_in_line(&normalized, short)))
+}
+
+fn flag_reference_in_line(line: &str, flag: &str) -> bool {
+    if flag.is_empty() {
+        return false;
+    }
+    let flag = flag.to_ascii_lowercase();
+    line.split_whitespace().any(|token| {
+        token == flag
+            || token
+                .strip_prefix(&flag)
+                .is_some_and(|suffix| suffix.starts_with('=') || suffix.starts_with(','))
+    })
+}
+
 fn flag_advertises_output_mode(flag: &CandidateFlag, mode_word: &str) -> bool {
     let flag_name = flag.name.trim_start_matches("--").replace(['-', '_'], " ");
     let value_name = flag.value_name.as_deref().unwrap_or("").replace('_', " ");
     let summary = flag.summary.as_deref().unwrap_or("").to_ascii_lowercase();
 
-    if contains_word(&flag_name, mode_word) {
+    if flag.value_kind == CandidateFlagValueKind::Boolean
+        && contains_word(&flag_name, mode_word)
+        && (mode_flag_name_is_direct_output(&flag_name, mode_word)
+            || summary_describes_output_mode(&summary, mode_word))
+    {
         return true;
     }
 
     if !contains_word(&summary, mode_word) {
-        return false;
+        return flag_invocation_advertises_output_choice(flag, &flag_name, &summary, mode_word);
     }
 
     contains_word(&flag_name, "format")
@@ -608,8 +1025,53 @@ fn flag_advertises_output_mode(flag: &CandidateFlag, mode_word: &str) -> bool {
         || summary.contains("output format")
         || summary.contains("format:")
         || summary.contains("format as")
-        || summary.contains(&format!("emit {mode_word}"))
+        || summary_describes_output_mode(&summary, mode_word)
         || summary.contains("machine-readable")
+}
+
+fn flag_invocation_advertises_output_choice(
+    flag: &CandidateFlag,
+    flag_name: &str,
+    summary: &str,
+    mode_word: &str,
+) -> bool {
+    if !contains_word(&flag.invocation.to_ascii_lowercase(), mode_word) {
+        return false;
+    }
+    if !(contains_word(flag_name, "output")
+        || contains_word(flag_name, "format")
+        || contains_word(summary, "output")
+        || contains_word(summary, "format"))
+    {
+        return false;
+    }
+    flag.invocation.contains('|') || flag.invocation.contains('[') || flag.invocation.contains('<')
+}
+
+fn mode_flag_name_is_direct_output(flag_name: &str, mode_word: &str) -> bool {
+    let words = flag_name
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+
+    words == [mode_word]
+        || words == ["output", mode_word]
+        || words == [mode_word, "output"]
+        || words == ["format", mode_word]
+        || words == [mode_word, "format"]
+}
+
+fn summary_describes_output_mode(summary: &str, mode_word: &str) -> bool {
+    [
+        "emit", "emits", "print", "prints", "output", "outputs", "render", "renders", "produce",
+        "produces", "write", "writes",
+    ]
+    .into_iter()
+    .any(|verb| summary.contains(&format!("{verb} {mode_word}")))
+        || summary.contains(&format!("result as {mode_word}"))
+        || summary.contains(&format!("output as {mode_word}"))
+        || summary.contains(&format!("format as {mode_word}"))
+        || summary.contains(&format!("{mode_word} output"))
 }
 
 fn output_mode_argv_fragment(flag: &CandidateFlag, mode: OutputMode) -> Vec<String> {
@@ -675,8 +1137,8 @@ fn split_columns(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidateFlagValueKind, command_candidates, flag_candidates, is_help_like, is_manpage_like,
-        output_mode_candidates, usage_arguments,
+        CandidateFlagValueKind, command_candidates, flag_candidates, help_matches_command_path,
+        is_help_like, is_manpage_like, output_mode_candidates, usage_arguments, usage_command_path,
     };
     use crate::output::OutputMode;
 
@@ -755,6 +1217,30 @@ mod tests {
     }
 
     #[test]
+    fn rejects_argument_tables_as_command_candidates() {
+        let text = "ARGUMENTS\n  FILE  Path to archive file\n  NAME  Resource name\n";
+        let candidates = command_candidates(text, "tool");
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn rejects_key_value_tables_as_command_candidates() {
+        let text = "SETTABLE KEYS\n  base_url     url     http(s) required\n  tags         csv     comma-separated labels\n";
+        let candidates = command_candidates(text, "tool");
+
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn keeps_uppercase_commands_in_command_sections() {
+        let text = "COMMANDS\n  GET  Execute HTTP GET request\n";
+        let candidates = command_candidates(text, "tool");
+
+        assert!(candidates.iter().any(|item| item.path == ["GET"]));
+    }
+
+    #[test]
     fn extracts_simple_comma_separated_aliases_as_sibling_commands() {
         let text = "Commands:\n  rm, remove    Remove an item\n";
         let candidates = command_candidates(text, "tool");
@@ -766,6 +1252,33 @@ mod tests {
             candidates
                 .iter()
                 .any(|item| item.path == ["rm"] && item.aliases == ["remove"])
+        );
+    }
+
+    #[test]
+    fn absolute_invocation_rows_keep_root_paths_and_skip_placeholders() {
+        let text = "NEXT STEPS\n  rote adapter info <ID>      Show details\n  rote adapter new ID SPEC    Create an adapter\n";
+        let candidates = command_candidates(text, "rote");
+
+        assert!(
+            candidates
+                .iter()
+                .any(|item| { item.path == ["adapter", "info"] && item.absolute })
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|item| { item.path == ["adapter", "new"] && item.absolute })
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|item| item.path == ["adapter", "new", "ID"])
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|item| item.path == ["adapter", "new", "ID", "SPEC"])
         );
     }
 
@@ -789,6 +1302,71 @@ mod tests {
             arguments
                 .iter()
                 .any(|arg| arg.name == "files" && arg.variadic)
+        );
+    }
+
+    #[test]
+    fn extracts_usage_positionals_from_header_blocks_and_skips_sibling_usage() {
+        let text = "USAGE\n  tool adapter new <ID> <SPEC> [OPTIONS]\n  tool adapter new-from-mcp <ID> <MCP_ENDPOINT>\n\nARGUMENTS\n  ID  Identifier\n";
+        let current_path = vec!["adapter".to_owned(), "new".to_owned()];
+        let arguments = usage_arguments(text, "tool", &current_path);
+
+        assert!(arguments.iter().any(|arg| arg.name == "id" && arg.required));
+        assert!(
+            arguments
+                .iter()
+                .any(|arg| arg.name == "spec" && arg.required)
+        );
+        assert!(!arguments.iter().any(|arg| arg.name == "mcp_endpoint"));
+    }
+
+    #[test]
+    fn detects_when_help_usage_matches_the_probed_command_path() {
+        let text = "tool adapter set - Mutate a key\n\nUSAGE\n  tool adapter set <ID> <KEY> <VALUE> [--json]\n";
+
+        assert!(help_matches_command_path(
+            text,
+            "tool",
+            &["adapter".to_owned(), "set".to_owned()]
+        ));
+        assert!(!help_matches_command_path(
+            text,
+            "tool",
+            &[
+                "adapter".to_owned(),
+                "set".to_owned(),
+                "base_url".to_owned()
+            ]
+        ));
+    }
+
+    #[test]
+    fn detects_multiline_usage_as_matching_command_path() {
+        let text = "Manage Supabase physical backups\n\nUsage:\n  supabase backups [command]\n\nAvailable Commands:\n  list     Lists available physical backups\n  restore  Restore to a specific timestamp using PITR\n";
+
+        assert!(help_matches_command_path(
+            text,
+            "supabase",
+            &["backups".to_owned()]
+        ));
+        assert_eq!(
+            usage_command_path(text, "supabase", &["backups".to_owned()]),
+            Some(vec!["backups".to_owned()])
+        );
+    }
+
+    #[test]
+    fn extracts_usage_command_scope_for_parent_help_echoes() {
+        let text = "USAGE\n  tool adapter set <ID> <KEY> <VALUE> [--json]\n";
+        let current_path = vec![
+            "adapter".to_owned(),
+            "set".to_owned(),
+            "base_url".to_owned(),
+        ];
+
+        assert_eq!(
+            usage_command_path(text, "tool", &current_path),
+            Some(vec!["adapter".to_owned(), "set".to_owned()])
         );
     }
 
@@ -863,11 +1441,48 @@ mod tests {
     }
 
     #[test]
+    fn extracts_output_modes_from_choice_lists_in_flag_invocation() {
+        let text = "Flags:\n  -o, --output [ env | pretty | json | toml | yaml ]   output format of status variables (default pretty)\n";
+        let candidates = output_mode_candidates(text);
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Json
+                && candidate.flag_name == "--output"
+                && candidate.argv_fragment == ["--output", "json"]
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Yaml
+                && candidate.flag_name == "--output"
+                && candidate.argv_fragment == ["--output", "yaml"]
+        }));
+    }
+
+    #[test]
     fn ignores_json_file_defaults_as_output_modes() {
         let text = "Options:\n  --manifest <FILE>  Benchmark corpus manifest [default: benchmarks/local-corpus.json]\n  --output <FILE>    Output file [default: report.json]\n";
         let candidates = output_mode_candidates(text);
 
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn ignores_json_input_payload_flags_as_output_modes() {
+        let text = "Options:\n  --config <FILE>       Load configuration from JSON file\n  --config-json <JSON>  Pass auth/headers/filters as JSON\n  --dry-run             Analyze without creating and output JSON\n";
+        let candidates = output_mode_candidates(text);
+
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.flag_name == "--config")
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.flag_name == "--config-json")
+        );
+        assert!(candidates.iter().any(|candidate| {
+            candidate.mode == OutputMode::Json && candidate.argv_fragment == ["--dry-run"]
+        }));
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub enum ObservedOutputKind {
     YamlLike,
     TableLike,
     PlainText,
+    HelpText,
     Empty,
     Unparseable,
     ProcessFailed,
@@ -38,6 +39,24 @@ pub enum ObservedOutputKind {
 pub struct OutputClassification {
     pub expected_mode: OutputMode,
     pub observed_kind: ObservedOutputKind,
+    pub parse_success: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputHelpBehavior {
+    MachineReadableHelp,
+    HelpOverridesOutput,
+    Ambiguous,
+    PreconditionBlocked,
+    ProcessFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OutputHelpClassification {
+    pub expected_mode: OutputMode,
+    pub behavior: OutputHelpBehavior,
     pub parse_success: bool,
     pub detail: String,
 }
@@ -65,6 +84,14 @@ pub fn classify(
             detail: "stdout was empty".to_owned(),
         };
     }
+    if looks_like_help(text) {
+        return OutputClassification {
+            expected_mode,
+            observed_kind: ObservedOutputKind::HelpText,
+            parse_success: false,
+            detail: "stdout was help text, not machine-readable command output".to_owned(),
+        };
+    }
 
     match expected_mode {
         OutputMode::Json => classify_json(expected_mode, text),
@@ -76,6 +103,66 @@ pub fn classify(
             parse_success: true,
             detail: "plain text was produced".to_owned(),
         },
+    }
+}
+
+pub fn classify_help_precedence(
+    expected_mode: OutputMode,
+    status: &ProcessStatus,
+    stdout: Option<&str>,
+) -> OutputHelpClassification {
+    if !matches!(status, ProcessStatus::Exited { code: Some(0) }) {
+        return OutputHelpClassification {
+            expected_mode,
+            behavior: OutputHelpBehavior::ProcessFailed,
+            parse_success: false,
+            detail: "output-help probe exited nonzero or did not finish".to_owned(),
+        };
+    }
+
+    let text = stdout.unwrap_or("").trim();
+    if text.is_empty() {
+        return OutputHelpClassification {
+            expected_mode,
+            behavior: OutputHelpBehavior::Ambiguous,
+            parse_success: false,
+            detail: "output-help probe produced empty stdout".to_owned(),
+        };
+    }
+
+    let direct = classify(expected_mode, status, Some(text));
+    if direct.parse_success {
+        return OutputHelpClassification {
+            expected_mode,
+            behavior: OutputHelpBehavior::MachineReadableHelp,
+            parse_success: true,
+            detail: format!(
+                "--help respected {} output and produced machine-readable help",
+                expected_mode.label()
+            ),
+        };
+    }
+
+    if looks_like_help(text) {
+        return OutputHelpClassification {
+            expected_mode,
+            behavior: OutputHelpBehavior::HelpOverridesOutput,
+            parse_success: false,
+            detail: format!(
+                "--help took precedence over {} output and produced prose help",
+                expected_mode.label()
+            ),
+        };
+    }
+
+    OutputHelpClassification {
+        expected_mode,
+        behavior: OutputHelpBehavior::Ambiguous,
+        parse_success: false,
+        detail: format!(
+            "output-help probe produced neither parseable {} nor recognizable help",
+            expected_mode.label()
+        ),
     }
 }
 
@@ -96,7 +183,31 @@ fn classify_json(expected_mode: OutputMode, text: &str) -> OutputClassification 
     }
 }
 
+fn looks_like_help(text: &str) -> bool {
+    let lowercase = text.to_ascii_lowercase();
+    lowercase.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("usage")
+            || trimmed.starts_with("options")
+            || trimmed.starts_with("flags")
+            || trimmed.starts_with("commands")
+            || trimmed.starts_with("subcommands")
+            || trimmed.starts_with("arguments")
+            || trimmed.contains(" --help")
+            || trimmed.contains("[--help]")
+    })
+}
+
 fn classify_yaml(expected_mode: OutputMode, text: &str) -> OutputClassification {
+    if looks_like_script(text) {
+        return OutputClassification {
+            expected_mode,
+            observed_kind: ObservedOutputKind::PlainText,
+            parse_success: false,
+            detail: "stdout looked like script text, not YAML".to_owned(),
+        };
+    }
+
     let yaml_like = text.lines().any(|line| {
         let trimmed = line.trim_start();
         trimmed.starts_with("- ")
@@ -119,6 +230,19 @@ fn classify_yaml(expected_mode: OutputMode, text: &str) -> OutputClassification 
             "stdout did not match conservative YAML-like structure".to_owned()
         },
     }
+}
+
+fn looks_like_script(text: &str) -> bool {
+    let sample = text.lines().take(40).collect::<Vec<_>>().join("\n");
+    let lowercase = sample.to_ascii_lowercase();
+    sample.starts_with("#!")
+        || lowercase.contains("shell-script")
+        || lowercase.contains("complete -")
+        || lowercase.contains("function ")
+        || sample.contains("()")
+        || sample.contains("${")
+        || sample.contains("[[")
+        || sample.contains("fi\n")
 }
 
 fn classify_table(expected_mode: OutputMode, text: &str) -> OutputClassification {

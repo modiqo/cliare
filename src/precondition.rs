@@ -6,12 +6,16 @@ use crate::evidence::ProcessStatus;
 #[serde(rename_all = "snake_case")]
 pub enum PreconditionKind {
     AuthRequired,
+    NetworkUnavailable,
+    RuntimeDependencyUnavailable,
 }
 
 impl PreconditionKind {
     pub fn label(self) -> &'static str {
         match self {
             Self::AuthRequired => "auth_required",
+            Self::NetworkUnavailable => "network_unavailable",
+            Self::RuntimeDependencyUnavailable => "runtime_dependency_unavailable",
         }
     }
 }
@@ -46,10 +50,40 @@ pub fn classify_process(
         "requires auth",
     ];
 
-    auth_phrases
+    if auth_phrases.iter().any(|phrase| text.contains(phrase)) {
+        return Some(PreconditionKind::AuthRequired);
+    }
+
+    let network_phrases = [
+        "rate limit exceeded",
+        "network is unreachable",
+        "temporary failure in name resolution",
+        "no such host",
+        "could not resolve host",
+        "connection refused",
+        "connection timed out",
+        "request timed out",
+    ];
+    if network_phrases.iter().any(|phrase| text.contains(phrase)) {
+        return Some(PreconditionKind::NetworkUnavailable);
+    }
+
+    let runtime_dependency_phrases = [
+        "cannot connect to the docker daemon",
+        "docker desktop is a prerequisite",
+        "docker daemon is not running",
+        "failed to inspect service",
+        "failed to inspect container",
+        "no such file or directory: docker",
+    ];
+    if runtime_dependency_phrases
         .iter()
         .any(|phrase| text.contains(phrase))
-        .then_some(PreconditionKind::AuthRequired)
+    {
+        return Some(PreconditionKind::RuntimeDependencyUnavailable);
+    }
+
+    None
 }
 
 pub fn classify_text(text: &str) -> Option<PreconditionKind> {
@@ -76,5 +110,17 @@ mod tests {
     fn leaves_ordinary_usage_errors_unclassified() {
         assert_eq!(classify_text("error: unknown command"), None);
         assert_eq!(classify_text("error: invalid flag --wat"), None);
+    }
+
+    #[test]
+    fn detects_network_and_runtime_dependency_preconditions() {
+        assert_eq!(
+            classify_text("GET https://api.github.com: 403 API rate limit exceeded"),
+            Some(PreconditionKind::NetworkUnavailable)
+        );
+        assert_eq!(
+            classify_text("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
+            Some(PreconditionKind::RuntimeDependencyUnavailable)
+        );
     }
 }

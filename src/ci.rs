@@ -187,7 +187,7 @@ async fn write_ci_summary(
     writeln!(&mut text).expect("writing to string cannot fail");
     writeln!(
         &mut text,
-        "- `scorecard.json`\n- `shape.json`\n- `evidence.jsonl`\n- `report.md`\n- `findings.sarif`\n- `junit.xml`"
+        "- `scorecard.json`\n- `shape.json`\n- `command-index.json`\n- `command-index.md`\n- `evidence.jsonl`\n- `report.md`\n- `issues.json`\n- `persona-*.md`\n- `findings.sarif`\n- `junit.xml`"
     )
     .expect("writing to string cannot fail");
 

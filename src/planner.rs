@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::claims::{ClaimSet, CommandClaim, OutputContractClaim};
 use crate::evidence::ProbeIntent;
@@ -138,27 +138,49 @@ impl DeterministicPlanner {
         plans
     }
 
-    fn output_probe_plans_for(&mut self, claim: &OutputContractClaim) -> Vec<ProbePlan> {
+    fn output_probe_plans_for(
+        &mut self,
+        claim: &OutputContractClaim,
+        command: Option<&CommandClaim>,
+    ) -> Vec<ProbePlan> {
         if claim.command_path().len() > self.max_depth {
             self.depth_skipped_paths
                 .insert(claim.command_path().to_vec());
             return Vec::new();
         }
-        if claim.probed() {
+        if command.is_some_and(has_required_positionals) {
             return Vec::new();
         }
 
         let Some(intent) = output_intent(claim.mode()) else {
             return Vec::new();
         };
-        vec![ProbePlan::new(
-            ProbeSpec::output_mode_help(
-                claim.command_path().to_vec(),
-                claim.argv_fragment().to_vec(),
-                intent,
-            ),
-            PlannerRank::for_output_probe(claim),
-        )]
+        let Some(help_intent) = output_help_intent(claim.mode()) else {
+            return Vec::new();
+        };
+
+        let mut plans = Vec::new();
+        if !claim.probed() {
+            plans.push(ProbePlan::new(
+                ProbeSpec::output_mode(
+                    claim.command_path().to_vec(),
+                    claim.argv_fragment().to_vec(),
+                    intent,
+                ),
+                PlannerRank::for_output_probe(claim, 0),
+            ));
+        }
+        if !claim.help_probed() {
+            plans.push(ProbePlan::new(
+                ProbeSpec::output_mode_help(
+                    claim.command_path().to_vec(),
+                    claim.argv_fragment().to_vec(),
+                    help_intent,
+                ),
+                PlannerRank::for_output_probe(claim, 1),
+            ));
+        }
+        plans
     }
 
     fn invalid_child_token(&self, path: &[String]) -> String {
@@ -187,11 +209,18 @@ impl ProbePlanner for DeterministicPlanner {
 
     fn extend_from_claims(&mut self, claims: &ClaimSet) {
         let mut plans = Vec::new();
+        let commands = claims
+            .commands()
+            .map(|claim| (claim.path().to_vec(), claim))
+            .collect::<BTreeMap<_, _>>();
         for claim in claims.commands() {
             plans.extend(self.probe_plans_for(claim));
         }
         for claim in claims.output_contracts() {
-            plans.extend(self.output_probe_plans_for(claim));
+            plans.extend(self.output_probe_plans_for(
+                claim,
+                commands.get(claim.command_path().as_slice()).copied(),
+            ));
         }
         self.schedule_ranked(plans);
     }
@@ -297,14 +326,14 @@ impl PlannerRank {
         }
     }
 
-    fn for_output_probe(claim: &OutputContractClaim) -> Self {
+    fn for_output_probe(claim: &OutputContractClaim, intent_order: u8) -> Self {
         Self {
             category: 2,
             expected_value: output_expected_value(claim.mode()),
             uncertainty: if claim.probed() { 0 } else { 700 },
             confidence: if claim.advertised() { 800 } else { 200 },
             depth: claim.command_path().len() as u16,
-            intent_order: output_intent_order(claim.mode()),
+            intent_order: output_intent_order(claim.mode(), intent_order),
         }
     }
 }
@@ -361,13 +390,23 @@ fn output_intent(mode: OutputMode) -> Option<ProbeIntent> {
     }
 }
 
-fn output_intent_order(mode: OutputMode) -> u8 {
+fn output_help_intent(mode: OutputMode) -> Option<ProbeIntent> {
     match mode {
+        OutputMode::Json => Some(ProbeIntent::OutputJsonHelp),
+        OutputMode::Yaml => Some(ProbeIntent::OutputYamlHelp),
+        OutputMode::Table => Some(ProbeIntent::OutputTableHelp),
+        OutputMode::Plain => Some(ProbeIntent::OutputPlainHelp),
+    }
+}
+
+fn output_intent_order(mode: OutputMode, probe_order: u8) -> u8 {
+    let mode_order = match mode {
         OutputMode::Json => 0,
         OutputMode::Yaml => 1,
         OutputMode::Table => 2,
         OutputMode::Plain => 3,
-    }
+    };
+    mode_order * 2 + probe_order
 }
 
 pub fn bootstrap_invalid_command_token(target_name: &str) -> String {
@@ -376,6 +415,10 @@ pub fn bootstrap_invalid_command_token(target_name: &str) -> String {
 
 pub fn bootstrap_invalid_flag_token(target_name: &str) -> String {
     format!("--__cliare_unknown_{target_name}_flag__")
+}
+
+fn has_required_positionals(claim: &CommandClaim) -> bool {
+    claim.positionals().any(|argument| argument.required())
 }
 
 #[cfg(test)]
@@ -445,6 +488,28 @@ mod tests {
 
         assert!(!probes.contains(&ProbeIntent::InvalidChild));
         assert!(probes.contains(&ProbeIntent::InvalidFlag));
+    }
+
+    #[test]
+    fn planner_does_not_probe_output_modes_when_required_positionals_are_unknown() {
+        let observations = vec![observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["report".to_owned()],
+            "Usage: cliare report <PERSONA> [OPTIONS]\n\nOptions:\n  --format <FORMAT>  Representation to print [possible values: markdown, json]\n",
+            Some(0),
+        )];
+        let claims = ClaimSet::from_observations("cliare", &observations);
+        let mut planner = DeterministicPlanner::new(2, "cliare".to_owned());
+
+        assert_eq!(claims.output_contracts().count(), 1);
+
+        planner.extend_from_claims(&claims);
+        let probes = std::iter::from_fn(|| planner.next())
+            .map(|probe| probe.intent)
+            .collect::<Vec<_>>();
+
+        assert!(!probes.contains(&ProbeIntent::OutputJson));
     }
 
     #[test]

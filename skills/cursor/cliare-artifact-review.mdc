@@ -1,0 +1,46 @@
+---
+description: Review CLIARE measurement artifacts and produce persona-specific, evidence-backed remediation guidance.
+alwaysApply: false
+---
+
+# CLIARE Artifact Review
+
+Use this rule when reviewing a CLIARE artifact directory containing `scorecard.json`, `issues.json`, `shape.json`, and `evidence.jsonl`. If `artifact-map.json` is present, read it first. If it is missing and CLIARE is available, generate it with `cliare describe <artifact-dir> --write`.
+
+Start with persona tables, not raw JSON dumps. For persona-level review, read `persona-<persona>.md` first, then use `persona-<persona>.json` and `issues.json` only for drill-down.
+
+Prefer `jq` with explicit file paths. Do not use Python, `cd`, shell redirection, heredocs, or compound shell commands for routine artifact inspection.
+
+Use this order:
+
+1. Read `artifact-map.json` for folder kind, health, missing required artifacts, and navigation order.
+2. Read posture from `scorecard.json`.
+3. Generate missing persona artifacts with `cliare report <persona> --out <artifact-dir> --write`.
+4. Show a concise table of priority issues: priority, severity, category, confidence, affected count, issue id/title, and persona action.
+5. Ask which row to drill into unless the user already named an issue.
+6. For drill-down, show what the issue means, where it appears, evidence ids, how to address it, and how to verify the fix.
+
+Large issue lists:
+
+- Count affected commands by runtime state first.
+- If the user asks for all commands, list compactly from `issues.json`.
+- Do not infer false positives, root causes, or design intent from command names.
+- Use artifact states only: `runtime_confirmed`, `precondition_blocked`, `unconfirmed`, and `not_in_shape_catalog`.
+
+Useful queries:
+
+```sh
+jq '{kind:.artifact_kind,health:.health,navigation:.navigation,missing_required:.missing_required,summaries:.summaries}' <artifact-dir>/artifact-map.json
+```
+
+```sh
+jq '{score:.score.total,status:.score.status,coverage:{commands_discovered:.coverage.commands_discovered,commands_runtime_confirmed:.coverage.commands_runtime_confirmed,traversal_complete:.coverage.traversal_complete,budget_exhausted:.coverage.budget_exhausted,observed_max_depth:.coverage.observed_max_depth,max_depth:.coverage.max_depth,probes_completed:.coverage.probes_completed,max_probes:.coverage.max_probes}}' <artifact-dir>/scorecard.json
+```
+
+```sh
+jq '.summary, [.issues[] | {id,severity,category,confidence,title,affected:(.affected_commands|length)}]' <artifact-dir>/issues.json
+```
+
+```sh
+jq --arg id "issue.help_unavailable" '[.issues[] | select(.id==$id) | .affected_commands[]] | group_by(.state) | map({state:.[0].state,count:length})' <artifact-dir>/issues.json
+```

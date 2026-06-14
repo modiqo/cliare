@@ -79,6 +79,12 @@ impl ProbeSpec {
         }
     }
 
+    pub fn output_mode(path: Vec<String>, argv_fragment: Vec<String>, intent: ProbeIntent) -> Self {
+        let mut args = path.clone();
+        args.extend(argv_fragment);
+        Self { args, path, intent }
+    }
+
     pub fn output_mode_help(
         path: Vec<String>,
         argv_fragment: Vec<String>,

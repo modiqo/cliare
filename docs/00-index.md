@@ -79,6 +79,10 @@ The score must never be a black-box opinion. Every point should trace to evidenc
 | **17** | [Scoring Model and Bayesian Confidence](17-scoring-model-and-bayesian-confidence.md) | Current score v0 formulas, Bayesian claim confidence, calibration boundary, and model-governance path | v0 supports CI and improvement tracking; v1 requires public calibration before leaderboard certification |
 | **18** | [Calibration and Leaderboard Authority](18-calibration-and-leaderboard-authority.md) | Truth corpus, calibration metrics, certified profiles, provenance, anti-gaming, and leaderboard authority requirements | Public ranking requires calibrated models, stability reports, verification levels, and reproducible certified profiles |
 | **19** | [Runtime Evidence for Agent-Ready Command-Line Interfaces](19-runtime-evidence-for-agent-ready-clis.md) ([PDF](19-runtime-evidence-for-agent-ready-clis.pdf)) | Technical paper covering the motivation, architecture, inference model, score semantics, evaluation strategy, calibration boundary, and research agenda | CLI-agent-readiness should be measured from runtime evidence produced by the released executable |
+| **20** | [Persona Outcome Packets](20-persona-outcome-packets.md) | Persona-specific runbooks generated from one measurement run | One evidence-backed measurement can produce maintainers, harness, platform, security, OSS, DevRel, and research outcome packets |
+| **21** | [Reviewable Issue Ledger and Persona Views](21-reviewable-issue-ledger.md) | Canonical issue ledger, evidence context, and persona projections | Persona reports are filtered views over deterministic, reviewable issues |
+| **22** | [Agent-Ready CLI Standard Template](22-agent-ready-cli-standard-template.md) | Runtime behavior template for CLIs that want strong agent and CLIARE compatibility | Help, output, diagnostics, preconditions, fixtures, and CI artifacts form the measurable standard |
+| **23** | [Agent Skill Installation](23-agent-skills-installation.md) | Installable CLIARE review skills and persona commands for coding agents | Claude, Codex, and Cursor can inspect CLIARE artifacts through the same table-first review discipline |
 
 ---
 
@@ -132,6 +136,14 @@ User CI / local machine
             |
             v
 +-------------------------+
+| Command Index           |
+| command-index.json      |
+| command-index.md        |
+| agent-facing lookup     |
++-----------+-------------+
+            |
+            v
++-------------------------+
 | Scoring Engine          |
 | - expected utility      |
 | - confidence intervals  |
@@ -153,19 +165,27 @@ User CI / local machine
 
 ## First-Class Outputs
 
-CLIARE should produce four durable artifacts:
+CLIARE should produce durable artifacts that separate evidence, inference, command navigation, scoring, and human review:
 
 ```
 .cliare/
+  artifact-map.json
+  artifact-map.md
   evidence.jsonl
   shape.json
+  command-index.json
+  command-index.md
   scorecard.json
   report.md
 ```
 
+The artifact map is the directory-level navigation contract. It describes the folder kind, file roles, schemas, required and missing artifacts, current job state, and recommended inspection order.
+
 The evidence log is the raw observation record. It is append-only and replayable.
 
-The shape catalog is the inferred command surface.
+The shape catalog is the raw inferred command surface.
+
+The command index is the command-centric lookup table for agents and maintainers. It summarizes each command's parameters, runtime state, preconditions, output contracts, suitability, gaps, and evidence pointers.
 
 The scorecard is the compact CI and leaderboard artifact.
 
@@ -193,7 +213,7 @@ CLIARE can use docs as weak evidence, but the reference implementation should wo
 
 CLIARE is ready for certified public scoring when:
 
-1. Two independent implementations can consume and produce compatible `shape.json` and `scorecard.json`.
+1. Two independent implementations can consume and produce compatible `artifact-map.json`, `shape.json`, `command-index.json`, and `scorecard.json`.
 2. A CLI maintainer can run CLIARE in CI without modiqo cloud access.
 3. A score is reproducible from evidence.
 4. Score changes decompose into understandable improvements or regressions.
