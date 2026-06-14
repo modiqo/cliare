@@ -79,6 +79,8 @@ cliare measure mycli --out .cliare/mycli --profile standard --refresh
 cliare describe .cliare/mycli --write
 ```
 
+By default, `cliare measure` runs in the foreground and blocks until the measurement completes. That is the right behavior for CI because the command can fail the job if measurement, guard policy, or artifact generation fails. Each run still writes progress under `<out>/jobs/`, so another terminal or agent can inspect status while the foreground command is running.
+
 For large command surfaces, use a deeper profile and run detached so the shell returns immediately while CLIARE keeps writing progress and artifacts:
 
 ```sh
@@ -86,6 +88,20 @@ cliare measure supabase --out .cliare/supabase --profile deep --max-depth 12 --m
 cliare jobs status --out .cliare/supabase
 cliare describe .cliare/supabase --write
 ```
+
+Use these measurement controls deliberately:
+
+| Option | Purpose |
+|---|---|
+| `--profile quick` | Fast smoke run for pull requests and small command surfaces. |
+| `--profile standard` | Balanced default for routine CI and local review. |
+| `--profile deep` | Broader traversal for large CLIs, scheduled CI, release checks, and benchmark runs. |
+| `--max-depth <N>` | Overrides profile depth when commands have deep subcommand trees. |
+| `--max-probes <N>` | Overrides the probe budget when a large surface needs more runtime evidence. |
+| `--min-expected-value <N>` | Controls when low-value frontier exploration can converge; lower values explore more aggressively. |
+| `--concurrency <N>` | Runs more probes in parallel when the target CLI and machine can tolerate it. |
+| `--detach` | Starts a background measurement worker, prints job metadata, and returns control to the shell. |
+| `--refresh` | Ignores reusable cached artifacts and probes the target again. |
 
 Start human review with `artifact-map.md`, not the raw JSON files. The artifact map explains what was generated, whether the run completed, which files are intended for humans, and where to drill down. Then open the persona report that matches the review you are doing.
 
