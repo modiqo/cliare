@@ -124,6 +124,18 @@ Use the files in this order during a normal review:
 5. `command-index.md`: drill into specific command paths, parameters, preconditions, runtime state, output contracts, and agent suitability.
 6. `evidence.jsonl`: verify exact probe output only when a finding needs proof or dispute resolution.
 
+For harness integration, generate the measurement with enough traversal budget, then treat the command index as the primary runtime catalog:
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile deep --max-depth 12 --max-probes 5000 --refresh
+cliare report harness --out .cliare/mycli --write
+cliare describe .cliare/mycli --write
+```
+
+`command-index.json` is the harness-facing artifact. It is one row per command path and is designed for routing, planning, and safety checks: command path, argv form, summary, confidence, runtime state, readiness state, discovered flags, positionals, preconditions, output contracts, gaps, and evidence pointers. `command-index.md` is the same catalog rendered for human review.
+
+`shape.json` is the lower-level inferred CLI shape. Use it when building custom harness integrations, debugging extraction quality, inspecting aliases, comparing raw command trees across releases, or tracing how flags, positionals, and output contracts were inferred. A harness should usually read `command-index.json` first and fall back to `shape.json` only when it needs the full raw catalog. There is no separate shape-generation command: `cliare measure` emits both artifacts from the same evidence run so the index, shape, scorecard, and persona reports stay consistent.
+
 If you already have a measurement directory and want to regenerate one persona packet after code changes to CLIARE itself, run:
 
 ```sh
