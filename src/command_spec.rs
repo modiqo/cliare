@@ -418,6 +418,33 @@ mod tests {
     }
 
     #[test]
+    fn metadata_spec_contains_playbook_maintainer() {
+        let metadata = metadata();
+        let playbook = metadata
+            .command_spec
+            .root
+            .subcommands
+            .iter()
+            .find(|command| command.name == "playbook")
+            .expect("playbook command is present");
+
+        assert_eq!(playbook.usage, "Usage: cliare playbook [OPTIONS] <ROLE>");
+        assert!(playbook.args.iter().any(|arg| {
+            arg.id == "role"
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "maintainer")
+        }));
+        assert!(
+            playbook
+                .args
+                .iter()
+                .any(|arg| arg.long.as_deref() == Some("target"))
+        );
+    }
+
+    #[test]
     fn metadata_spec_records_default_single_value_arity() {
         let metadata = metadata();
         let measure = metadata

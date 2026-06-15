@@ -54,11 +54,64 @@ pub enum Command {
     Skills(SkillsArgs),
     /// Review, mark, and list evidence-backed CLIARE issues.
     Issues(IssuesArgs),
+    /// Print role-specific operational playbooks.
+    Playbook(PlaybookArgs),
     /// Print CLIARE implementation metadata.
     Metadata(MetadataArgs),
 }
 
 #[derive(Debug, Args)]
+pub struct PlaybookArgs {
+    /// Playbook role to print.
+    #[arg(value_enum)]
+    pub role: PlaybookRole,
+
+    /// Target CLI name or path to use in generated commands.
+    #[arg(long, value_name = "TARGET", value_hint = ValueHint::CommandName)]
+    pub target: Option<String>,
+
+    /// Measurement artifact directory to use in generated commands.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to use in generated report, issue, and describe commands.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = PlaybookFormat::Markdown)]
+    pub format: PlaybookFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PlaybookRole {
+    Maintainer,
+}
+
+impl PlaybookRole {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Maintainer => "maintainer",
+        }
+    }
+}
+
+impl std::fmt::Display for PlaybookRole {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PlaybookFormat {
+    Markdown,
+    Json,
+}
+
+#[derive(Debug, Args)]
+#[command(
+    after_help = "For the end-to-end maintainer workflow and parameter guide, run: cliare playbook maintainer"
+)]
 pub struct IssuesArgs {
     #[command(subcommand)]
     pub command: IssuesCommand,
@@ -273,6 +326,9 @@ pub struct BenchmarkArgs {
         .args(["area", "issue"])
         .multiple(false)
 ))]
+#[command(
+    after_help = "For the end-to-end maintainer workflow and parameter guide, run: cliare playbook maintainer"
+)]
 pub struct ReportArgs {
     /// Persona packet to generate.
     #[arg(value_enum)]
@@ -458,6 +514,9 @@ pub struct JobsStatusArgs {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(
+    after_help = "For profile selection, probe budgets, and the maintainer workflow, run: cliare playbook maintainer"
+)]
 pub struct MeasureArgs {
     /// Path or PATH-resolved command name for the target CLI.
     #[arg(value_name = "TARGET", value_hint = ValueHint::CommandName)]
@@ -786,6 +845,7 @@ mod tests {
         assert!(help.contains("describe"));
         assert!(help.contains("skills"));
         assert!(help.contains("issues"));
+        assert!(help.contains("playbook"));
         assert!(help.contains("context"));
         assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
@@ -817,6 +877,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -842,6 +903,7 @@ mod tests {
             | Command::Skills(_)
             | Command::Context(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected guard command")
             }
@@ -870,6 +932,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected benchmark command")
             }
@@ -908,6 +971,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected report command")
             }
@@ -944,6 +1008,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected report command")
             }
@@ -1000,6 +1065,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected skills command")
             }
@@ -1046,8 +1112,49 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected issues command")
+            }
+        }
+    }
+
+    #[test]
+    fn playbook_maintainer_accepts_target_context_and_format() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "playbook",
+            "maintainer",
+            "--target",
+            "rote",
+            "--out",
+            ".cliare-context",
+            "--context",
+            "authenticated",
+            "--format",
+            "json",
+        ])
+        .expect("valid playbook command");
+
+        match cli.command {
+            Command::Playbook(args) => {
+                assert_eq!(args.role, super::PlaybookRole::Maintainer);
+                assert_eq!(args.target.as_deref(), Some("rote"));
+                assert_eq!(args.out, std::path::PathBuf::from(".cliare-context"));
+                assert_eq!(args.context.as_deref(), Some("authenticated"));
+                assert_eq!(args.format, super::PlaybookFormat::Json);
+            }
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Issues(_)
+            | Command::Metadata(_) => {
+                panic!("expected playbook command")
             }
         }
     }
@@ -1076,6 +1183,9 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_) => {
+                panic!("expected metadata command")
+            }
+            Command::Playbook(_) => {
                 panic!("expected metadata command")
             }
         }
@@ -1108,6 +1218,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -1131,6 +1242,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -1165,6 +1277,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected jobs command")
             }
@@ -1200,6 +1313,7 @@ mod tests {
             | Command::Report(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected describe command")
             }
@@ -1272,6 +1386,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
+            | Command::Playbook(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }

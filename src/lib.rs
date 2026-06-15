@@ -25,6 +25,7 @@ pub mod observation;
 pub mod output;
 pub mod path_classification;
 pub mod planner;
+pub mod playbook;
 pub mod policy;
 pub mod precondition;
 pub mod process;

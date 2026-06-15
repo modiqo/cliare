@@ -84,6 +84,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | **24** | [CLI Benchmark Corpus Tracker](24-cli-benchmark-corpus-tracker.md) | Candidate vendor and popular OSS CLIs for the real-world benchmark corpus | P0/P1 tracker with blank measurement, score, traversal, and findings columns |
 | **25** | [Calibration Workflow TODO](25-calibration-workflow-todo.md) | Concrete TODO for `calibrate init`, `calibrate check`, and `calibrate evaluate` | Truth sets and metrics come before fitting or `cliare-score-v1` certification |
 | **26** | [Maintainer Issue Dispositions](26-maintainer-dispositions.md) | Maintainer review workflow for accepting, rejecting, deferring, or fixture-gating CLIARE issues | Dispositions annotate evidence instead of suppressing findings |
+| **27** | [Maintainer Playbook](27-maintainer-playbook.md) | End-to-end maintainer command sequence from first measurement through CI and agent-surface publishing | Measure, view, act, disposition, remeasure, gate, publish |
 
 ---
 

@@ -145,6 +145,9 @@ pub enum CliareError {
     #[error("failed to serialize issue dispositions")]
     SerializeIssueDispositions(#[source] serde_json::Error),
 
+    #[error("failed to serialize playbook")]
+    SerializePlaybook(#[source] serde_json::Error),
+
     #[error("failed to write issue dispositions {path}")]
     WriteIssueDispositions {
         path: PathBuf,
