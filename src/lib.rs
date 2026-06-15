@@ -15,6 +15,7 @@ pub mod guard;
 pub mod jobs;
 pub mod layout;
 mod layout_tokens;
+mod markdown;
 pub mod measure;
 pub mod observation;
 pub mod output;

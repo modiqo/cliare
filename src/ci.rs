@@ -8,6 +8,7 @@ use tokio::fs;
 
 use crate::artifacts::{CI_SUMMARY_MD, JUNIT_XML, SARIF_JSON, SCORECARD_JSON};
 use crate::error::{CliareError, Result};
+use crate::markdown::MarkdownBuffer;
 use crate::policy::PolicyEvaluation;
 
 #[derive(Debug, Clone)]
@@ -65,11 +66,10 @@ async fn write_ci_summary(
     scorecard: &CiScorecard,
     guard: Option<&GuardCiContext>,
 ) -> Result<()> {
-    let mut text = String::new();
-    writeln!(&mut text, "# CLIARE CI Summary").expect("writing to string cannot fail");
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(
-        &mut text,
+    let mut text = MarkdownBuffer::new();
+    text.line(format_args!("# CLIARE CI Summary"));
+    text.blank_line();
+    text.line(format_args!(
         "| Field | Value |\n|---|---:|\n| Target | `{}` |\n| Resolved | `{}` |\n| Score | {:.0}/100 |\n| Status | `{}` |\n| Findings | {} |\n| Commands discovered | {} |\n| Runtime-confirmed commands | {} |\n| Concurrency limit | {} |\n| Scheduler rounds | {} |\n| Probes scheduled | {} |\n| Machine-readable outputs | {} |\n| Output parse successes | {} |\n| Side-effect file changes | {} |\n| Credential-like side effects | {} |\n| Traversal complete | {} |",
         markdown_escape(&scorecard.target.requested),
         markdown_escape(&scorecard.target.resolved),
@@ -86,15 +86,13 @@ async fn write_ci_summary(
         scorecard.coverage.side_effect_files_total,
         scorecard.coverage.credential_like_side_effects,
         scorecard.coverage.traversal_complete
-    )
-    .expect("writing to string cannot fail");
+    ));
 
     if let Some(guard) = guard {
-        writeln!(&mut text).expect("writing to string cannot fail");
-        writeln!(&mut text, "## Guard").expect("writing to string cannot fail");
-        writeln!(&mut text).expect("writing to string cannot fail");
-        writeln!(
-            &mut text,
+        text.blank_line();
+        text.line(format_args!("## Guard"));
+        text.blank_line();
+        text.line(format_args!(
             "| Field | Value |\n|---|---:|\n| Result | {} |\n| Baseline | `{}` |\n| Baseline score | {:.0} |\n| Current score | {:.0} |\n| Delta | {:+.1} |\n| Allowed drop | {:.1} |",
             if guard.passed { "pass" } else { "fail" },
             markdown_escape(&guard.baseline_path.display().to_string()),
@@ -102,97 +100,81 @@ async fn write_ci_summary(
             guard.current_total,
             guard.delta,
             guard.allowed_drop
-        )
-        .expect("writing to string cannot fail");
+        ));
         if let Some(policy) = &guard.policy {
-            writeln!(&mut text).expect("writing to string cannot fail");
-            writeln!(&mut text, "## Policy").expect("writing to string cannot fail");
-            writeln!(&mut text).expect("writing to string cannot fail");
-            writeln!(
-                &mut text,
+            text.blank_line();
+            text.line(format_args!("## Policy"));
+            text.blank_line();
+            text.line(format_args!(
                 "| Field | Value |\n|---|---:|\n| Result | {} |\n| Policy | `{}` |\n| Failures | {} |",
                 if policy.passed { "pass" } else { "fail" },
                 markdown_escape(&policy.policy_path.display().to_string()),
                 policy.failures.len()
-            )
-            .expect("writing to string cannot fail");
+            ));
             if !policy.failures.is_empty() {
-                writeln!(&mut text).expect("writing to string cannot fail");
-                writeln!(&mut text, "| Rule | Failure | Detail |\n|---|---|---|")
-                    .expect("writing to string cannot fail");
+                text.blank_line();
+                text.line(format_args!("| Rule | Failure | Detail |\n|---|---|---|"));
                 for failure in &policy.failures {
-                    writeln!(
-                        &mut text,
+                    text.line(format_args!(
                         "| `{}` | {} | {} |",
                         markdown_escape(&failure.id),
                         markdown_escape(&failure.title),
                         markdown_escape(&failure.detail)
-                    )
-                    .expect("writing to string cannot fail");
+                    ));
                 }
             }
         }
     }
 
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(&mut text, "## Subscores").expect("writing to string cannot fail");
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(
-        &mut text,
+    text.blank_line();
+    text.line(format_args!("## Subscores"));
+    text.blank_line();
+    text.line(format_args!(
         "| Dimension | Score | Weight | Status | Rationale |\n|---|---:|---:|---|---|"
-    )
-    .expect("writing to string cannot fail");
+    ));
     for (dimension, subscore) in &scorecard.subscores {
         let score = subscore
             .score
             .map(|value| format!("{value:.0}"))
             .unwrap_or_else(|| "n/a".to_owned());
-        writeln!(
-            &mut text,
+        text.line(format_args!(
             "| `{}` | {} | {:.2} | `{}` | {} |",
             markdown_escape(dimension),
             score,
             subscore.weight,
             markdown_escape(&subscore.status),
             markdown_escape(&subscore.rationale)
-        )
-        .expect("writing to string cannot fail");
+        ));
     }
 
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(&mut text, "## Findings").expect("writing to string cannot fail");
-    writeln!(&mut text).expect("writing to string cannot fail");
+    text.blank_line();
+    text.line(format_args!("## Findings"));
+    text.blank_line();
     if scorecard.findings.is_empty() {
-        writeln!(&mut text, "No findings.").expect("writing to string cannot fail");
+        text.line(format_args!("No findings."));
     } else {
-        writeln!(
-            &mut text,
+        text.line(format_args!(
             "| Severity | Dimension | Finding | Recommendation |\n|---|---|---|---|"
-        )
-        .expect("writing to string cannot fail");
+        ));
         for finding in &scorecard.findings {
-            writeln!(
-                &mut text,
+            text.line(format_args!(
                 "| `{}` | `{}` | {} | {} |",
                 markdown_escape(&finding.severity),
                 markdown_escape(&finding.dimension),
                 markdown_escape(&finding.title),
                 markdown_escape(&finding.recommendation)
-            )
-            .expect("writing to string cannot fail");
+            ));
         }
     }
 
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(&mut text, "## Artifacts").expect("writing to string cannot fail");
-    writeln!(&mut text).expect("writing to string cannot fail");
-    writeln!(
-        &mut text,
+    text.blank_line();
+    text.line(format_args!("## Artifacts"));
+    text.blank_line();
+    text.line(format_args!(
         "- `scorecard.json`\n- `shape.json`\n- `command-index.json`\n- `command-index.md`\n- `evidence.jsonl`\n- `report.md`\n- `issues.json`\n- `persona-*.md`\n- `findings.sarif`\n- `junit.xml`"
-    )
-    .expect("writing to string cannot fail");
+    ));
 
-    fs::write(path, text)
+    fs::write(path, text.into_string())
         .await
         .map_err(|source| CliareError::WriteCiSummary {
             path: path.to_path_buf(),
