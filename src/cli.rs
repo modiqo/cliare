@@ -61,6 +61,29 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
+#[command(
+    long_about = "Print a role-specific operational playbook. For maintainers, this includes the measure, view, act, disposition, remeasure, CI, and agent-surface publishing loop.",
+    after_help = "Maintainer workflow:
+  1. Measure: cliare measure <target-cli> --out .cliare --profile quick|standard|deep --refresh
+  2. View: cliare report maintainer --out .cliare --format markdown
+  3. Act or disposition: fix the CLI, or use cliare issues mark <issue-id> --status intentional|needs-fixture
+  4. Remeasure: cliare measure <target-cli> --out .cliare --profile deep --refresh
+  5. Gate: cliare guard <target-cli> --baseline .cliare-baseline/scorecard.json --out .cliare --profile deep
+  6. Publish: cliare describe .cliare --write && cliare report harness --out .cliare --write
+
+Profiles:
+  quick     Small local smoke pass for one help path, diagnostic, or output contract.
+  standard  Balanced default for the normal maintainer loop.
+  deep      Broader release-quality pass for CI baselines, releases, and agent-surface publishing.
+
+Advanced traversal knobs:
+  --max-depth controls recursive command-path depth.
+  --max-probes controls total runtime probes.
+  --concurrency controls simultaneous probes.
+  --execution-mode host measures authenticated or host-specific behavior.
+
+Run `cliare playbook maintainer --target <target-cli>` to print the full command-by-command guide."
+)]
 pub struct PlaybookArgs {
     /// Playbook role to print.
     #[arg(value_enum)]
@@ -1157,6 +1180,24 @@ mod tests {
                 panic!("expected playbook command")
             }
         }
+    }
+
+    #[test]
+    fn playbook_help_includes_maintainer_workflow_and_profiles() {
+        let mut command = Cli::command();
+        let playbook = command
+            .find_subcommand_mut("playbook")
+            .expect("playbook command exists");
+        let help = playbook.render_long_help().to_string();
+
+        assert!(help.contains("Maintainer workflow"));
+        assert!(help.contains("--profile quick|standard|deep"));
+        assert!(help.contains("quick"));
+        assert!(help.contains("standard"));
+        assert!(help.contains("deep"));
+        assert!(help.contains("cliare report maintainer"));
+        assert!(help.contains("cliare guard"));
+        assert!(help.contains("cliare report harness"));
     }
 
     #[test]
