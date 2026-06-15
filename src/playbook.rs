@@ -10,6 +10,7 @@ use crate::report_format::{escape_markdown, shell_arg};
 const PLAYBOOK_SCHEMA_VERSION: &str = "cliare.playbook.v1";
 const TARGET_PLACEHOLDER: &str = "<target-cli>";
 const ISSUE_PLACEHOLDER: &str = "<issue-id>";
+const DEFAULT_OUT_PLACEHOLDER: &str = ".cliare/<target-cli>";
 
 #[derive(Debug, Clone)]
 pub struct PlaybookSummary {
@@ -45,6 +46,7 @@ struct MaintainerPlaybook {
     target: String,
     out: PathBuf,
     context: Option<String>,
+    artifact_layout: Vec<&'static str>,
     lifecycle: Vec<PlaybookSection>,
     parameter_guide: Vec<ParameterGuide>,
     increase_budget_when: Vec<&'static str>,
@@ -81,7 +83,8 @@ impl MaintainerPlaybook {
             .target
             .clone()
             .unwrap_or_else(|| TARGET_PLACEHOLDER.to_owned());
-        let commands = CommandBuilder::new(&target, &args.out, args.context.as_deref());
+        let out = effective_artifact_dir(args, &target);
+        let commands = CommandBuilder::new(&target, &out, args.context.as_deref());
         let lifecycle = maintainer_lifecycle(&commands);
 
         Self {
@@ -89,8 +92,14 @@ impl MaintainerPlaybook {
             role: PlaybookRole::Maintainer.label(),
             goal: "Measure the CLI, inspect evidence-backed findings, fix or disposition issues, remeasure, gate in CI, and publish the agent-facing command surface.",
             target,
-            out: args.out.clone(),
+            out,
             context: args.context.clone(),
+            artifact_layout: vec![
+                "`--out` names one target's artifact root, not a global CLIARE database.",
+                "Use `.cliare/<target-cli>` for normal project-local runs.",
+                "Context runs write under `.cliare/<target-cli>/contexts/<context>`.",
+                "If you use `--detach`, wait for `cliare jobs status --out <artifact-dir>` to report `complete` before reading reports or issues.",
+            ],
             lifecycle,
             parameter_guide: parameter_guide(),
             increase_budget_when: vec![
@@ -132,12 +141,12 @@ impl MaintainerPlaybook {
 #[derive(Debug)]
 struct CommandBuilder<'a> {
     target: &'a str,
-    out: &'a PathBuf,
+    out: &'a Path,
     context: Option<&'a str>,
 }
 
 impl<'a> CommandBuilder<'a> {
-    fn new(target: &'a str, out: &'a PathBuf, context: Option<&'a str>) -> Self {
+    fn new(target: &'a str, out: &'a Path, context: Option<&'a str>) -> Self {
         Self {
             target,
             out,
@@ -156,17 +165,28 @@ impl<'a> CommandBuilder<'a> {
 
     fn large_measure(&self) -> String {
         format!(
-            "cliare measure {} --out {} --profile deep --max-depth 12 --max-probes 2500 --concurrency 8 --refresh",
+            "cliare measure {} --out {} --profile deep --max-depth 12 --max-probes 5000 --concurrency 8 --refresh",
             shell_token(self.target),
             shell_path(self.out)
         )
     }
 
+    fn detached_measure(&self) -> String {
+        format!("{} --detach", self.large_measure())
+    }
+
     fn authenticated_measure(&self) -> String {
         format!(
-            "cliare measure {} --out .cliare-context --context authenticated --auth-state present --execution-mode host --profile deep --refresh",
-            shell_token(self.target)
+            "cliare measure {} --out {} --context authenticated --auth-state present --execution-mode host --profile deep --refresh",
+            shell_token(self.target),
+            shell_path(self.out)
         )
+    }
+
+    fn job_status(&self) -> String {
+        let mut command = format!("cliare jobs status --out {}", shell_path(self.out));
+        self.push_context(&mut command);
+        command
     }
 
     fn report(&self, persona: &str, extra: &[&str]) -> String {
@@ -213,8 +233,9 @@ impl<'a> CommandBuilder<'a> {
 
     fn guard(&self) -> String {
         format!(
-            "cliare guard {} --baseline .cliare-baseline/scorecard.json --out {} --profile deep --allowed-drop 2",
+            "cliare guard {} --baseline {} --out {} --profile deep --allowed-drop 2",
             shell_token(self.target),
+            shell_path(&baseline_scorecard_path(self.target)),
             shell_path(self.out)
         )
     }
@@ -255,6 +276,11 @@ fn maintainer_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
                     why: "Use only when reports show traversal pressure such as budget exhaustion or remaining frontier.",
                 },
                 PlaybookCommand {
+                    title: "Detached long run",
+                    command: commands.detached_measure(),
+                    why: "Use when a deep run may take long enough that you want to continue in the background.",
+                },
+                PlaybookCommand {
                     title: "Authenticated host-context pass",
                     command: commands.authenticated_measure(),
                     why: "Use when real auth, host config, installed plugins, or local state change CLI behavior.",
@@ -266,6 +292,11 @@ fn maintainer_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
             title: "View",
             purpose: "Read the artifact map, maintainer report, issue ledger, and focused evidence.",
             commands: vec![
+                PlaybookCommand {
+                    title: "Detached job status",
+                    command: commands.job_status(),
+                    why: "Use after `measure --detach`; wait for `complete` before reading reports or issues.",
+                },
                 PlaybookCommand {
                     title: "Artifact map",
                     command: commands.describe(&["--format", "markdown"]),
@@ -472,6 +503,7 @@ fn render_maintainer_markdown(playbook: &MaintainerPlaybook) -> String {
     )
     .expect("writing to string cannot fail");
     writeln!(&mut text).expect("writing to string cannot fail");
+    render_artifact_layout(&mut text, playbook);
 
     for section in &playbook.lifecycle {
         writeln!(
@@ -507,6 +539,15 @@ fn render_maintainer_markdown(playbook: &MaintainerPlaybook) -> String {
     render_completion_criteria(&mut text, playbook);
 
     text
+}
+
+fn render_artifact_layout(text: &mut String, playbook: &MaintainerPlaybook) {
+    writeln!(text, "## Artifact Directory").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    for item in &playbook.artifact_layout {
+        writeln!(text, "- {}", escape_markdown(item)).expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
 }
 
 fn render_triage_order(text: &mut String) {
@@ -612,20 +653,65 @@ fn shell_token(value: &str) -> String {
     }
 }
 
+fn effective_artifact_dir(args: &PlaybookArgs, target: &str) -> PathBuf {
+    if args.out == PathBuf::from(DEFAULT_OUT_PLACEHOLDER) {
+        if target == TARGET_PLACEHOLDER {
+            PathBuf::from(DEFAULT_OUT_PLACEHOLDER)
+        } else {
+            PathBuf::from(".cliare").join(artifact_dir_segment(target))
+        }
+    } else {
+        args.out.clone()
+    }
+}
+
+fn artifact_dir_segment(target: &str) -> String {
+    let raw = Path::new(target)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(target);
+    let mut segment = String::new();
+    for ch in raw.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            segment.push(ch);
+        } else if !segment.ends_with('-') {
+            segment.push('-');
+        }
+    }
+    let segment = segment.trim_matches('-');
+    if segment.is_empty() {
+        "target-cli".to_owned()
+    } else {
+        segment.to_owned()
+    }
+}
+
+fn baseline_scorecard_path(target: &str) -> PathBuf {
+    if target == TARGET_PLACEHOLDER {
+        PathBuf::from(".cliare-baseline")
+            .join(TARGET_PLACEHOLDER)
+            .join("scorecard.json")
+    } else {
+        PathBuf::from(".cliare-baseline")
+            .join(artifact_dir_segment(target))
+            .join("scorecard.json")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
     use crate::cli::{PlaybookArgs, PlaybookFormat, PlaybookRole};
 
-    use super::{MaintainerPlaybook, playbook};
+    use super::{DEFAULT_OUT_PLACEHOLDER, MaintainerPlaybook, playbook};
 
     #[test]
     fn maintainer_playbook_contains_full_lifecycle() {
         let args = PlaybookArgs {
             role: PlaybookRole::Maintainer,
             target: Some("rote".to_owned()),
-            out: PathBuf::from(".cliare"),
+            out: PathBuf::from(DEFAULT_OUT_PLACEHOLDER),
             context: None,
             format: PlaybookFormat::Markdown,
         };
@@ -638,8 +724,11 @@ mod tests {
         assert!(text.contains("## 4. Disposition"));
         assert!(text.contains("## 6. Gate in CI"));
         assert!(text.contains("## 7. Publish Agent Surface"));
-        assert!(text.contains("cliare measure rote --out .cliare --profile deep --refresh"));
-        assert!(text.contains("cliare issues list --out .cliare --format markdown"));
+        assert!(text.contains("## Artifact Directory"));
+        assert!(text.contains("cliare measure rote --out .cliare/rote --profile deep --refresh"));
+        assert!(text.contains("cliare jobs status --out .cliare/rote"));
+        assert!(text.contains("cliare issues list --out .cliare/rote --format markdown"));
+        assert!(text.contains("cliare measure rote --out .cliare/rote --context authenticated"));
     }
 
     #[test]
@@ -647,7 +736,7 @@ mod tests {
         let args = PlaybookArgs {
             role: PlaybookRole::Maintainer,
             target: None,
-            out: PathBuf::from(".cliare"),
+            out: PathBuf::from(DEFAULT_OUT_PLACEHOLDER),
             context: Some("authenticated".to_owned()),
             format: PlaybookFormat::Json,
         };
@@ -659,7 +748,9 @@ mod tests {
         assert_eq!(value["schema_version"], "cliare.playbook.v1");
         assert_eq!(value["role"], "maintainer");
         assert_eq!(value["target"], "<target-cli>");
+        assert_eq!(value["out"], ".cliare/<target-cli>");
         assert_eq!(value["context"], "authenticated");
+        assert!(value["artifact_layout"].is_array());
     }
 
     #[test]

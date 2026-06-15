@@ -64,12 +64,12 @@ pub enum Command {
 #[command(
     long_about = "Print a role-specific operational playbook. For maintainers, this includes the measure, view, act, disposition, remeasure, CI, and agent-surface publishing loop.",
     after_help = "Maintainer workflow:
-  1. Measure: cliare measure <target-cli> --out .cliare --profile quick|standard|deep --refresh
-  2. View: cliare report maintainer --out .cliare --format markdown
+  1. Measure: cliare measure <target-cli> --out .cliare/<target-cli> --profile quick|standard|deep --refresh
+  2. View: cliare report maintainer --out .cliare/<target-cli> --format markdown
   3. Act or disposition: fix the CLI, or use cliare issues mark <issue-id> --status intentional|needs-fixture
-  4. Remeasure: cliare measure <target-cli> --out .cliare --profile deep --refresh
-  5. Gate: cliare guard <target-cli> --baseline .cliare-baseline/scorecard.json --out .cliare --profile deep
-  6. Publish: cliare describe .cliare --write && cliare report harness --out .cliare --write
+  4. Remeasure: cliare measure <target-cli> --out .cliare/<target-cli> --profile deep --refresh
+  5. Gate: cliare guard <target-cli> --baseline .cliare-baseline/<target-cli>/scorecard.json --out .cliare/<target-cli> --profile deep
+  6. Publish: cliare describe .cliare/<target-cli> --write && cliare report harness --out .cliare/<target-cli> --write
 
 Measure profiles used by this playbook:
   quick     Small local smoke pass for one help path, diagnostic, or output contract.
@@ -83,6 +83,7 @@ Advanced traversal knobs:
   --execution-mode host measures authenticated or host-specific behavior.
 
 Do not pass --profile to `cliare playbook`; pass it to `cliare measure` or `cliare guard`.
+`.cliare/<target-cli>` is a project-scoped artifact directory, relative to the directory where you run CLIARE.
 Run `cliare playbook maintainer --target <target-cli>` to print the full command-by-command guide."
 )]
 pub struct PlaybookArgs {
@@ -95,7 +96,12 @@ pub struct PlaybookArgs {
     pub target: Option<String>,
 
     /// Measurement artifact directory to use in generated commands.
-    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    #[arg(
+        long,
+        value_name = "DIR",
+        default_value = ".cliare/<target-cli>",
+        value_hint = ValueHint::DirPath
+    )]
     pub out: PathBuf,
 
     /// Context name to use in generated report, issue, and describe commands.
@@ -1192,6 +1198,7 @@ mod tests {
         let help = playbook.render_long_help().to_string();
 
         assert!(help.contains("Maintainer workflow"));
+        assert!(help.contains(".cliare/<target-cli>"));
         assert!(help.contains("--profile quick|standard|deep"));
         assert!(help.contains("Measure profiles used by this playbook"));
         assert!(help.contains("Do not pass --profile to `cliare playbook`"));

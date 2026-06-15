@@ -16,10 +16,22 @@ measure -> view -> act or disposition -> remeasure -> gate in CI -> publish agen
 The command form is:
 
 ```sh
-cliare playbook maintainer --target mycli --out .cliare
+cliare playbook maintainer --target mycli
 ```
 
-If the target is not known yet, the playbook prints placeholder commands with `<target-cli>`.
+By default, the playbook uses `.cliare/<target-cli>` as the artifact directory. This is a project-local folder relative to the directory where you run CLIARE, not a global database. If the target is not known yet, the playbook prints placeholder commands with `<target-cli>`.
+
+Use `--out` only to override the artifact directory:
+
+```sh
+cliare playbook maintainer --target mycli --out /tmp/cliare-mycli
+```
+
+For context runs, CLIARE writes under:
+
+```text
+.cliare/<target-cli>/contexts/<context>
+```
 
 ---
 
@@ -30,31 +42,38 @@ If the target is not known yet, the playbook prints placeholder commands with `<
 Start with `standard` for normal development:
 
 ```sh
-cliare measure mycli --out .cliare --profile standard --refresh
+cliare measure mycli --out .cliare/mycli --profile standard --refresh
 ```
 
 Use `quick` during tight local edits:
 
 ```sh
-cliare measure mycli --out .cliare --profile quick --refresh
+cliare measure mycli --out .cliare/mycli --profile quick --refresh
 ```
 
 Use `deep` before CI baselines, releases, and agent-surface publishing:
 
 ```sh
-cliare measure mycli --out .cliare --profile deep --refresh
+cliare measure mycli --out .cliare/mycli --profile deep --refresh
 ```
 
 For large CLIs with deep command trees:
 
 ```sh
-cliare measure mycli --out .cliare --profile deep --max-depth 12 --max-probes 2500 --concurrency 8 --refresh
+cliare measure mycli --out .cliare/mycli --profile deep --max-depth 12 --max-probes 5000 --concurrency 8 --refresh
+```
+
+For long-running measurements:
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile deep --max-depth 12 --max-probes 5000 --concurrency 8 --refresh --detach
+cliare jobs status --out .cliare/mycli
 ```
 
 For authenticated or host-context behavior:
 
 ```sh
-cliare measure mycli --out .cliare-context --context authenticated --auth-state present --execution-mode host --profile deep --refresh
+cliare measure mycli --out .cliare/mycli --context authenticated --auth-state present --execution-mode host --profile deep --refresh
 ```
 
 ### 2. View
@@ -62,12 +81,14 @@ cliare measure mycli --out .cliare-context --context authenticated --auth-state 
 Open the artifact map, maintainer report, issue ledger, and focused drilldowns:
 
 ```sh
-cliare describe .cliare --format markdown
-cliare report maintainer --out .cliare --format markdown
-cliare issues list --out .cliare --format markdown
-cliare report maintainer --out .cliare --area output-contracts --format markdown
-cliare report maintainer --out .cliare --issue <issue-id> --with-evidence --format bundle
+cliare describe .cliare/mycli --format markdown
+cliare report maintainer --out .cliare/mycli --format markdown
+cliare issues list --out .cliare/mycli --format markdown
+cliare report maintainer --out .cliare/mycli --area output-contracts --format markdown
+cliare report maintainer --out .cliare/mycli --issue <issue-id> --with-evidence --format bundle
 ```
+
+If the measurement was detached, wait until `cliare jobs status --out .cliare/mycli` reports `complete` before running report or issue commands.
 
 ### 3. Act
 
@@ -85,9 +106,9 @@ Fix concrete contract gaps before advisory compatibility work:
 Record maintainer decisions when an issue is intentional, not applicable, accepted risk, deferred, a false positive, or fixture-gated:
 
 ```sh
-cliare issues mark <issue-id> --out .cliare --status intentional --reason "Direct <command> --help is canonical for this CLI."
-cliare issues mark <issue-id> --out .cliare --status needs-fixture --reason "Requires safe fixture operands for <id> and <endpoint-url>."
-cliare issues list --out .cliare --format markdown
+cliare issues mark <issue-id> --out .cliare/mycli --status intentional --reason "Direct <command> --help is canonical for this CLI."
+cliare issues mark <issue-id> --out .cliare/mycli --status needs-fixture --reason "Requires safe fixture operands for <id> and <endpoint-url>."
+cliare issues list --out .cliare/mycli --format markdown
 ```
 
 ### 5. Remeasure
@@ -95,9 +116,9 @@ cliare issues list --out .cliare --format markdown
 After fixes or dispositions:
 
 ```sh
-cliare measure mycli --out .cliare --profile deep --refresh
-cliare report maintainer --out .cliare --write
-cliare issues list --out .cliare --format markdown
+cliare measure mycli --out .cliare/mycli --profile deep --refresh
+cliare report maintainer --out .cliare/mycli --write
+cliare issues list --out .cliare/mycli --format markdown
 ```
 
 ### 6. Gate in CI
@@ -105,7 +126,7 @@ cliare issues list --out .cliare --format markdown
 Use `guard` once a baseline exists:
 
 ```sh
-cliare guard mycli --baseline .cliare-baseline/scorecard.json --out .cliare --profile deep --allowed-drop 2
+cliare guard mycli --baseline .cliare-baseline/mycli/scorecard.json --out .cliare/mycli --profile deep --allowed-drop 2
 ```
 
 ### 7. Publish Agent Surface
@@ -113,8 +134,8 @@ cliare guard mycli --baseline .cliare-baseline/scorecard.json --out .cliare --pr
 Publish or attach the files an agent harness should read before invoking the target CLI:
 
 ```sh
-cliare describe .cliare --write
-cliare report harness --out .cliare --write
+cliare describe .cliare/mycli --write
+cliare report harness --out .cliare/mycli --write
 cliare skills install --agent all --scope project
 cliare metadata --format json
 ```
