@@ -60,15 +60,13 @@ The key artifact is `command-index.json`. It records command paths, argv forms, 
 
 ## Install
 
-CLIARE is prepared for these official release channels:
+CLIARE is prepared for crates.io:
 
 ```sh
 cargo install cliare
-brew tap modiqo/tap
-brew install cliare
 ```
 
-Those commands become the stable install path after the first crates.io and Homebrew tap publish. Until then, install from source:
+That command becomes the stable install path after the first crates.io publish. Until then, install from source:
 
 ```sh
 git clone https://github.com/modiqo/cliare.git
@@ -84,7 +82,7 @@ cargo build --locked --bin cliare
 ./target/debug/cliare metadata --format json
 ```
 
-Release preparation lives in [RELEASE.md](RELEASE.md). The Homebrew formula template is [packaging/homebrew/cliare.rb](packaging/homebrew/cliare.rb), and the version history is [CHANGELOG.md](CHANGELOG.md).
+Release preparation lives in [RELEASE.md](RELEASE.md). The version history is [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick Start: Maintainer Audit
 

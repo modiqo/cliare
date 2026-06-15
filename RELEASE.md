@@ -5,7 +5,6 @@ This repository is prepared for an initial crates.io release. The current crate 
 ## Channels
 
 - crates.io: publish the Rust crate so users can run `cargo install cliare`.
-- Homebrew tap: publish `packaging/homebrew/cliare.rb` to a tap such as `modiqo/homebrew-tap`.
 - GitHub Releases: attach source archives, checksums, and optional prebuilt binaries after the tag is pushed.
 
 ## crates.io Automation
@@ -73,39 +72,9 @@ cargo install cliare
 cliare metadata --format text
 ```
 
-## Homebrew Tap
+## Homebrew
 
-The formula template lives at `packaging/homebrew/cliare.rb`.
-
-The tag workflow `.github/workflows/release-homebrew.yml` can update `modiqo/homebrew-tap` automatically when a `vX.Y.Z` tag is pushed. It checks that the tag matches `Cargo.toml`, computes the GitHub source archive SHA-256, replaces `REPLACE_WITH_SHA256`, commits `Formula/cliare.rb` to the tap, and pushes the change.
-
-Before tagging, create a GitHub token with write access to `modiqo/homebrew-tap` and store it in this repository as:
-
-```text
-HOMEBREW_TAP_TOKEN
-```
-
-After pushing the tag, compute the source archive checksum:
-
-```sh
-curl -L https://github.com/modiqo/cliare/archive/refs/tags/v0.1.1.tar.gz -o cliare-v0.1.1.tar.gz
-shasum -a 256 cliare-v0.1.1.tar.gz
-```
-
-Copy the formula into the tap, replace `REPLACE_WITH_SHA256`, then test it:
-
-```sh
-brew install --build-from-source ./Formula/cliare.rb
-brew test cliare
-brew audit --strict --online cliare
-```
-
-Expected user install after the tap is published:
-
-```sh
-brew tap modiqo/tap
-brew install cliare
-```
+Homebrew distribution is deferred until a tap repository exists. The formula template remains at `packaging/homebrew/cliare.rb` for future use, but no Homebrew workflow is active.
 
 ## GitHub Release
 
@@ -113,7 +82,6 @@ Create a release for `v0.1.1` that includes:
 
 - Release notes copied from `CHANGELOG.md`.
 - The crates.io install command.
-- The Homebrew tap install command.
 - Checksums for any attached archives or binaries.
 - A short example of `cliare measure <target> --out .cliare/<target> --profile standard --refresh`.
 
@@ -122,4 +90,3 @@ Create a release for `v0.1.1` that includes:
 - `cargo package` includes local artifacts, credentials, generated measurement outputs, or unrelated workspace files.
 - `cliare metadata --format json` is not parseable.
 - The CLIARE-on-CLIARE run has unreviewed action-required findings.
-- The Homebrew formula still contains `REPLACE_WITH_SHA256`.
