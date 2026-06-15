@@ -73,6 +73,14 @@ The Rust implementation loads this spec through [`src/score_model.rs`](../src/sc
 
 Current v0 remains `experimental_partial`; the architectural change is that v0 is now a concrete model artifact that can be calibrated, revised, frozen, and compared instead of an informal set of code literals.
 
+Baseline governance rule:
+
+```text
+The model artifact owns both claim inference parameters and score aggregation parameters.
+```
+
+In v0 this means command priors, flag priors, output-contract priors, log-odds evidence weights, dimension weights, score coefficients, thresholds, and display precision all live in `score-models/cliare-score-v0.json`. The claims layer receives typed inference parameters derived from that artifact. If a future release tunes one of these values, the change must be represented as a model revision with a new hash rather than an invisible implementation tweak.
+
 ### Model Artifact Contract
 
 A score model must be immutable once published. Revisions create a new model id:

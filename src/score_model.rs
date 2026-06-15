@@ -127,8 +127,10 @@ pub struct EvidenceWeights {
     pub layout_candidate: f64,
     pub usage_syntax: f64,
     pub runtime_help_match: f64,
+    pub runtime_help_observed: f64,
     pub runtime_precondition_block: f64,
     pub runtime_rejection: f64,
+    pub alternate_help_unavailable: f64,
     pub non_help_output_from_help_probe: f64,
 }
 
@@ -138,6 +140,21 @@ pub struct CalibrationPlan {
     pub required_splits: Vec<String>,
     pub metrics: Vec<String>,
     pub freeze_rule: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClaimInferenceModel {
+    pub command_prior: f64,
+    pub flag_prior: f64,
+    pub output_contract_prior: f64,
+    pub layout_candidate: f64,
+    pub usage_syntax: f64,
+    pub runtime_help_match: f64,
+    pub runtime_help_observed: f64,
+    pub runtime_precondition_block: f64,
+    pub runtime_rejection: f64,
+    pub alternate_help_unavailable: f64,
+    pub non_help_output_from_help_probe: f64,
 }
 
 #[derive(Debug)]
@@ -157,6 +174,22 @@ impl ScoreModelSpec {
 
     pub fn weight(&self, dimension: ScoreDimension) -> f64 {
         self.dimension_weights.weight(dimension)
+    }
+
+    pub fn claim_inference_model(&self) -> ClaimInferenceModel {
+        ClaimInferenceModel {
+            command_prior: self.claim_priors.command_exists,
+            flag_prior: self.claim_priors.flag_exists,
+            output_contract_prior: self.claim_priors.output_contract_exists,
+            layout_candidate: self.evidence_weights.layout_candidate,
+            usage_syntax: self.evidence_weights.usage_syntax,
+            runtime_help_match: self.evidence_weights.runtime_help_match,
+            runtime_help_observed: self.evidence_weights.runtime_help_observed,
+            runtime_precondition_block: self.evidence_weights.runtime_precondition_block,
+            runtime_rejection: self.evidence_weights.runtime_rejection,
+            alternate_help_unavailable: self.evidence_weights.alternate_help_unavailable,
+            non_help_output_from_help_probe: self.evidence_weights.non_help_output_from_help_probe,
+        }
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -200,6 +233,7 @@ impl ScoreModelSpec {
         }
         self.dimension_weights.validate()?;
         self.scoring.validate()?;
+        self.evidence_weights.validate()?;
         if self.calibration.required_splits.len() < 3
             || !self
                 .calibration
@@ -257,6 +291,33 @@ impl DimensionWeights {
             + self.safety;
         if (sum - 1.0).abs() > 0.000_001 {
             return Err(format!("dimension weights must sum to 1.0, got {sum}"));
+        }
+        Ok(())
+    }
+}
+
+impl EvidenceWeights {
+    fn validate(&self) -> Result<(), String> {
+        for (name, value) in [
+            ("layout_candidate", self.layout_candidate),
+            ("usage_syntax", self.usage_syntax),
+            ("runtime_help_match", self.runtime_help_match),
+            ("runtime_help_observed", self.runtime_help_observed),
+            (
+                "runtime_precondition_block",
+                self.runtime_precondition_block,
+            ),
+            ("runtime_rejection", self.runtime_rejection),
+            (
+                "alternate_help_unavailable",
+                self.alternate_help_unavailable,
+            ),
+            (
+                "non_help_output_from_help_probe",
+                self.non_help_output_from_help_probe,
+            ),
+        ] {
+            validate_finite(&format!("evidence_weights.{name}"), value)?;
         }
         Ok(())
     }
@@ -367,6 +428,14 @@ fn validate_nonnegative(field: &str, value: f64) -> Result<(), String> {
     }
 }
 
+fn validate_finite(field: &str, value: f64) -> Result<(), String> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(format!("{field} must be finite"))
+    }
+}
+
 fn validate_score_mix(field: &str, left: f64, right: f64, expected: f64) -> Result<(), String> {
     validate_nonnegative(field, left)?;
     validate_nonnegative(field, right)?;
@@ -400,6 +469,33 @@ mod tests {
         assert_eq!(model.precision.score_decimals, 0);
         assert_eq!(model.weight(ScoreDimension::Discovery), 0.35);
         assert_eq!(ScoreModelSpec::bundled_sha256().len(), 64);
+    }
+
+    #[test]
+    fn bundled_model_records_current_inference_baseline() {
+        let inference = ScoreModelSpec::bundled().claim_inference_model();
+
+        assert_eq!(inference.command_prior, 0.08);
+        assert_eq!(inference.flag_prior, 0.12);
+        assert_eq!(inference.layout_candidate, 1.0);
+        assert_eq!(inference.usage_syntax, 0.5);
+        assert_eq!(inference.runtime_help_match, 4.0);
+        assert_eq!(inference.runtime_help_observed, 0.5);
+        assert_eq!(inference.runtime_precondition_block, 2.0);
+        assert_eq!(inference.runtime_rejection, 0.5);
+        assert_eq!(inference.alternate_help_unavailable, -0.25);
+        assert_eq!(inference.non_help_output_from_help_probe, -2.0);
+    }
+
+    #[test]
+    fn model_hash_covers_inference_weights() {
+        let changed = super::BUNDLED_SCORE_MODEL
+            .replace("\"runtime_help_match\": 4.0", "\"runtime_help_match\": 3.9");
+
+        assert_ne!(
+            super::sha256_hex(super::BUNDLED_SCORE_MODEL.as_bytes()),
+            super::sha256_hex(changed.as_bytes())
+        );
     }
 
     #[test]

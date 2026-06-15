@@ -201,6 +201,7 @@ pub struct IssuesListArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum IssuesListFormat {
+    Human,
     Markdown,
     Json,
 }

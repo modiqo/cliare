@@ -69,6 +69,7 @@ async fn list(args: IssuesListArgs) -> Result<IssuesSummary> {
     let packet = IssueDispositionList::build(&artifact_dir, &dispositions).await?;
     let dispositions_path = disposition_path(&artifact_dir);
     let stdout = match args.format {
+        IssuesListFormat::Human => render_list_human(&packet),
         IssuesListFormat::Markdown => render_list_markdown(&packet),
         IssuesListFormat::Json => {
             format!(
@@ -407,6 +408,160 @@ fn render_list_markdown(packet: &IssueDispositionList) -> String {
     text
 }
 
+fn render_list_human(packet: &IssueDispositionList) -> String {
+    let mut text = String::new();
+    writeln!(&mut text, "CLIARE issues").expect("writing to string cannot fail");
+    writeln!(&mut text, "Artifact: {}", packet.artifact_dir.display())
+        .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "Review state: {} total, {} action required, {} dispositioned, {} reviewed",
+        packet.summary.issues_total,
+        packet.summary.action_required,
+        packet.summary.dispositioned,
+        packet.summary.reviewed_decisions
+    )
+    .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+
+    if packet.issues.is_empty() {
+        writeln!(&mut text, "No issues found.").expect("writing to string cannot fail");
+        return text;
+    }
+
+    let action_required = packet
+        .issues
+        .iter()
+        .filter(|issue| issue.action_required)
+        .collect::<Vec<_>>();
+    let reviewed = packet
+        .issues
+        .iter()
+        .filter(|issue| !issue.action_required)
+        .collect::<Vec<_>>();
+
+    render_human_issue_group(&mut text, "Action required", &action_required);
+    if !reviewed.is_empty() {
+        writeln!(&mut text).expect("writing to string cannot fail");
+        render_human_issue_group(&mut text, "Reviewed or muted", &reviewed);
+    }
+
+    writeln!(&mut text).expect("writing to string cannot fail");
+    writeln!(&mut text, "Disposition examples:").expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "  cliare issues mark <issue-id> --out {} --status intentional --reason \"Documented and expected.\"",
+        shell_arg(&packet.artifact_dir.display().to_string())
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "  cliare issues mark <issue-id> --out {} --status needs-fixture --reason \"Requires safe sample operands.\"",
+        shell_arg(&packet.artifact_dir.display().to_string())
+    )
+    .expect("writing to string cannot fail");
+
+    text
+}
+
+fn render_human_issue_group(
+    text: &mut String,
+    heading: &str,
+    issues: &[&IssueDispositionListItem],
+) {
+    writeln!(text, "{} ({})", heading, issues.len()).expect("writing to string cannot fail");
+    if issues.is_empty() {
+        writeln!(text, "  none").expect("writing to string cannot fail");
+        return;
+    }
+
+    for (index, issue) in issues.iter().enumerate() {
+        render_human_issue(text, index + 1, issue);
+    }
+}
+
+fn render_human_issue(text: &mut String, index: usize, issue: &IssueDispositionListItem) {
+    let title = issue.title.as_deref().unwrap_or("Untitled issue");
+    let area = issue
+        .agent_readiness_area
+        .as_deref()
+        .or(issue.category.as_deref())
+        .unwrap_or("unknown");
+    let severity = issue.severity.as_deref().unwrap_or("unknown");
+    let confidence = issue.confidence.as_deref().unwrap_or("unknown");
+    let disposition = issue
+        .disposition
+        .as_ref()
+        .map(|entry| entry.status.label())
+        .unwrap_or("open");
+
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "{}. {} [{}]", index, title, issue.issue_id)
+        .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "   Area: {} | Severity: {} | Confidence: {} | Disposition: {}",
+        area, severity, confidence, disposition
+    )
+    .expect("writing to string cannot fail");
+
+    if let Some(impact) = issue.impact.as_deref().or(issue.why_it_matters.as_deref()) {
+        writeln!(text, "   Meaning: {}", impact).expect("writing to string cannot fail");
+    }
+    if let Some(recommendation) = &issue.recommendation {
+        writeln!(text, "   Next: {}", recommendation).expect("writing to string cannot fail");
+    }
+    if let Some(verification) = &issue.verification {
+        writeln!(text, "   Verify: {}", verification.command)
+            .expect("writing to string cannot fail");
+    }
+    if let Some(disposition) = &issue.disposition
+        && !disposition.reason.trim().is_empty()
+    {
+        writeln!(text, "   Reason: {}", disposition.reason).expect("writing to string cannot fail");
+    }
+
+    render_human_commands(text, issue);
+}
+
+fn render_human_commands(text: &mut String, issue: &IssueDispositionListItem) {
+    if issue.affected_command_count == 0 {
+        return;
+    }
+
+    writeln!(
+        text,
+        "   Commands: {} affected{}",
+        issue.affected_command_count,
+        if issue.affected_command_count > issue.command_samples.len() {
+            ", sample below"
+        } else {
+            ""
+        }
+    )
+    .expect("writing to string cannot fail");
+
+    for command in &issue.command_samples {
+        let summary = command
+            .summary
+            .as_deref()
+            .filter(|summary| !summary.trim().is_empty())
+            .or_else(|| (!command.reason.trim().is_empty()).then_some(command.reason.as_str()));
+        match summary {
+            Some(summary) => writeln!(text, "     - {}: {}", command.command, summary),
+            None => writeln!(text, "     - {}", command.command),
+        }
+        .expect("writing to string cannot fail");
+    }
+
+    let hidden = issue
+        .affected_command_count
+        .saturating_sub(issue.command_samples.len());
+    if hidden > 0 {
+        writeln!(text, "     - ... {} more", hidden).expect("writing to string cannot fail");
+    }
+}
+
 fn issue_markdown_label(issue: &IssueDispositionListItem) -> String {
     let title = issue.title.as_deref().unwrap_or("Untitled issue");
     let status = issue.issue_status.as_deref().unwrap_or("unknown");
@@ -499,7 +654,7 @@ fn issue_disposition_label(disposition: &str, reason: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{IssueDispositionList, render_list_markdown};
+    use super::{IssueDispositionList, render_list_human, render_list_markdown};
     use crate::issue_disposition::{IssueDispositionStatus, IssueDispositions, disposition_path};
 
     #[tokio::test]
@@ -579,6 +734,7 @@ mod tests {
             .await
             .expect("list packet builds");
         let markdown = render_list_markdown(&packet);
+        let human = render_list_human(&packet);
 
         assert_eq!(packet.issues.len(), 1);
         let issue = &packet.issues[0];
@@ -606,6 +762,10 @@ mod tests {
             "cliare measure mise --out {}",
             crate::report_format::shell_arg(&root.display().to_string())
         )));
+        assert!(human.contains("Action required (1)"));
+        assert!(human.contains("1 command needs clearer invalid-flag diagnostics"));
+        assert!(human.contains("mise outdated: Shows outdated tool versions"));
+        assert!(human.contains("Disposition examples:"));
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }

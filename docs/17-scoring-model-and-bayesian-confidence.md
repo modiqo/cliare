@@ -11,6 +11,14 @@
 
 The model is intentionally versioned. Public leaderboard certification requires an additional calibration layer: truth-set evaluation, calibrated likelihood weights, confidence intervals, repeated-run stability, and published metrics for proper scoring rules and safety error rates.
 
+The bundled model artifact is the source of truth for both inference and scoring in v0:
+
+```text
+score-models/cliare-score-v0.json
+```
+
+It declares claim priors, log-odds evidence weights, dimension weights, scoring coefficients, thresholds, display precision, calibration requirements, and model status. The Rust implementation loads this artifact, validates invariants, and embeds its SHA-256 in `scorecard.json`. Changing an inference weight such as `runtime_help_match` or a scoring coefficient changes the model hash and should be treated as a new model revision unless the change is only correcting an unpublished release candidate.
+
 The distinction is operational:
 
 ```text
@@ -123,21 +131,23 @@ That is equivalent to a Bayesian odds update where each evidence weight is a log
 posterior odds = prior odds * product_i exp(w_i)
 ```
 
-Current priors:
+Current priors are loaded from `score-models/cliare-score-v0.json`:
 
 ```text
 P(command_exists) = 0.08
 P(flag_exists)    = 0.12
 ```
 
-Current command evidence weights:
+Current command evidence weights are also loaded from the model artifact:
 
 | Evidence | Weight | Effect |
 |---|---:|---|
 | Structural command row in help/layout | `+1.0` | Weak positive candidate evidence |
 | Usage syntax observed | `+0.5` | Small positive grammar evidence |
 | Runtime help is reachable and help-like | `+4.0` | Strong positive command evidence |
+| Runtime help-like output is observed but not path-confirming | `+0.5` | Weak positive evidence that the path is parser-recognized |
 | Runtime reports a classified precondition such as auth, local context, or fixture input | `+2.0` | Positive command evidence, but conditional on runtime setup |
+| Alternate `help <path>` form fails while canonical help succeeds | `-0.25` | Low-severity compatibility signal, not canonical help failure |
 | Runtime help is not help-like and not precondition-blocked | `-2.0` | Negative command evidence |
 | Invalid child rejected cleanly | `+0.5` | Small positive parser-boundary evidence |
 | Invalid flag rejected cleanly | `+0.5` | Small positive parser-boundary evidence |
@@ -148,7 +158,7 @@ Current flag evidence weights:
 |---|---:|---|
 | Structural flag row in help/layout | `+1.0` | Positive flag evidence |
 
-This log-odds model is deliberately compact: it is explainable, replayable from evidence, and compatible with calibrated Beta-Bernoulli and Dirichlet-Categorical posteriors in a later model version.
+This log-odds model is deliberately compact: it is explainable, replayable from evidence, and compatible with calibrated Beta-Bernoulli and Dirichlet-Categorical posteriors in a later model version. The important governance property is that the baseline values are no longer hidden in claim-construction code; a scorecard's model hash covers the inference weights that produced command and flag confidence.
 
 ---
 

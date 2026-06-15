@@ -358,11 +358,11 @@ pub fn scorecard(
     run_context: ScoreRunContext,
 ) -> Scorecard {
     let binary_name = target_binary_name(&target);
-    let claims = ClaimSet::from_observations(&binary_name, observations);
+    let model_spec = ScoreModelSpec::bundled();
+    let claims = ClaimSet::from_observations_with_model(&binary_name, observations, model_spec);
     let runtime_context = run_context.runtime_context.clone();
     let metrics =
         Metrics::from_claims_and_observations(&claims, &binary_name, observations, run_context);
-    let model_spec = ScoreModelSpec::bundled();
 
     let subscores = subscores(&metrics, model_spec);
     let score = total_score(&subscores, model_spec);

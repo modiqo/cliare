@@ -8,9 +8,7 @@ use crate::layout::{self, CandidateOutputModeScope};
 use crate::observation::ShapeObservation;
 use crate::output::{self, ObservedOutputKind, OutputMode};
 use crate::precondition::{self, PreconditionKind};
-
-const COMMAND_PRIOR: f64 = 0.08;
-const FLAG_PRIOR: f64 = 0.12;
+use crate::score_model::{ClaimInferenceModel, ScoreModelSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -82,14 +80,36 @@ pub struct ClaimSet {
     commands: BTreeMap<CommandPath, CommandClaim>,
     flags: BTreeMap<(CommandPath, String), FlagClaim>,
     outputs: BTreeMap<OutputContractKey, OutputContractClaim>,
+    inference: ClaimInferenceModel,
 }
 
 impl ClaimSet {
     pub fn from_observations(binary_name: &str, observations: &[ShapeObservation]) -> Self {
+        Self::from_observations_with_model(binary_name, observations, ScoreModelSpec::bundled())
+    }
+
+    pub fn from_observations_with_model(
+        binary_name: &str,
+        observations: &[ShapeObservation],
+        model: &ScoreModelSpec,
+    ) -> Self {
+        Self::from_observations_with_inference(
+            binary_name,
+            observations,
+            model.claim_inference_model(),
+        )
+    }
+
+    fn from_observations_with_inference(
+        binary_name: &str,
+        observations: &[ShapeObservation],
+        inference: ClaimInferenceModel,
+    ) -> Self {
         let mut claims = Self {
             commands: BTreeMap::new(),
             flags: BTreeMap::new(),
             outputs: BTreeMap::new(),
+            inference,
         };
 
         for observation in observations {
@@ -208,9 +228,12 @@ impl ClaimSet {
 
         for candidate in layout::flag_candidates(text) {
             let key = (feature_scope.clone(), candidate.name.clone());
+            let inference = self.inference;
             self.flags
                 .entry(key)
-                .or_insert_with(|| FlagClaim::new(feature_scope.clone(), candidate.name.clone()))
+                .or_insert_with(|| {
+                    FlagClaim::new(feature_scope.clone(), candidate.name.clone(), inference)
+                })
                 .apply_layout_candidate(candidate, &observation.evidence_id);
         }
 
@@ -364,9 +387,10 @@ impl ClaimSet {
     }
 
     fn command_mut(&mut self, path: CommandPath) -> &mut CommandClaim {
+        let inference = self.inference;
         self.commands
             .entry(path.clone())
-            .or_insert_with(|| CommandClaim::new(path))
+            .or_insert_with(|| CommandClaim::new(path, inference))
     }
 
     fn alias_paths_for(&self, path: &[String]) -> Vec<Vec<String>> {
@@ -430,17 +454,18 @@ pub struct CommandClaim {
     invalid_child_rejected: bool,
     invalid_flag_rejected: bool,
     evidence: Vec<String>,
+    inference: ClaimInferenceModel,
 }
 
 impl CommandClaim {
-    fn new(path: CommandPath) -> Self {
+    fn new(path: CommandPath, inference: ClaimInferenceModel) -> Self {
         Self {
             path,
             summary: None,
             aliases: BTreeSet::new(),
             positionals: BTreeMap::new(),
             usage_observed: false,
-            belief: Belief::with_prior(COMMAND_PRIOR),
+            belief: Belief::with_prior(inference.command_prior),
             runtime_confirmed: false,
             canonical_help_unavailable: false,
             alternate_help_unavailable: false,
@@ -450,6 +475,7 @@ impl CommandClaim {
             invalid_child_rejected: false,
             invalid_flag_rejected: false,
             evidence: Vec::new(),
+            inference,
         }
     }
 
@@ -460,7 +486,7 @@ impl CommandClaim {
         evidence_id: &str,
         evidence_detail: &str,
     ) {
-        self.belief.update(1.0);
+        self.belief.update(self.inference.layout_candidate);
         if self.summary.is_none() {
             self.summary = summary;
         }
@@ -475,7 +501,7 @@ impl CommandClaim {
         evidence_id: &str,
     ) {
         self.usage_observed = true;
-        self.belief.update(0.5);
+        self.belief.update(self.inference.usage_syntax);
         for argument in arguments {
             self.positionals
                 .entry(argument.name.clone())
@@ -523,7 +549,7 @@ impl CommandClaim {
         probe_form: HelpProbeForm,
     ) {
         if help_matches_current_path {
-            self.belief.update(4.0);
+            self.belief.update(self.inference.runtime_help_match);
             self.runtime_confirmed = true;
             if matches!(probe_form, HelpProbeForm::Canonical) {
                 self.canonical_help_unavailable = false;
@@ -532,22 +558,25 @@ impl CommandClaim {
             self.apply_precondition_blocked(evidence_id, precondition);
             return;
         } else if help_like {
-            self.belief.update(0.5);
+            self.belief.update(self.inference.runtime_help_observed);
             self.evidence.push(format!("{evidence_id}:help observed"));
             return;
         } else if matches!(probe_form, HelpProbeForm::Alternate) {
-            self.belief.update(-0.25);
+            self.belief
+                .update(self.inference.alternate_help_unavailable);
             self.alternate_help_unavailable = true;
             self.alternate_help_evidence.push(evidence_id.to_owned());
         } else {
-            self.belief.update(-2.0);
+            self.belief
+                .update(self.inference.non_help_output_from_help_probe);
             self.canonical_help_unavailable = true;
         }
         self.evidence.push(evidence_id.to_owned());
     }
 
     fn apply_precondition_blocked(&mut self, evidence_id: &str, precondition: PreconditionKind) {
-        self.belief.update(2.0);
+        self.belief
+            .update(self.inference.runtime_precondition_block);
         self.preconditions.insert(precondition);
         self.evidence
             .push(format!("{evidence_id}:{}", precondition.label()));
@@ -562,7 +591,7 @@ impl CommandClaim {
     fn apply_invalid_child(&mut self, evidence_id: &str, rejected: bool) {
         if rejected {
             self.invalid_child_rejected = true;
-            self.belief.update(0.5);
+            self.belief.update(self.inference.runtime_rejection);
         }
         self.evidence.push(evidence_id.to_owned());
     }
@@ -570,7 +599,7 @@ impl CommandClaim {
     fn apply_invalid_flag(&mut self, evidence_id: &str, rejected: bool) {
         if rejected {
             self.invalid_flag_rejected = true;
-            self.belief.update(0.5);
+            self.belief.update(self.inference.runtime_rejection);
         }
         self.evidence.push(evidence_id.to_owned());
     }
@@ -678,6 +707,7 @@ pub struct FlagClaim {
     repeatable: bool,
     belief: Belief,
     evidence: Vec<String>,
+    inference: ClaimInferenceModel,
 }
 
 #[derive(Debug)]
@@ -861,7 +891,7 @@ impl OutputContractClaim {
 }
 
 impl FlagClaim {
-    fn new(command_path: CommandPath, name: String) -> Self {
+    fn new(command_path: CommandPath, name: String, inference: ClaimInferenceModel) -> Self {
         Self {
             command_path,
             name,
@@ -871,13 +901,14 @@ impl FlagClaim {
             value_name: None,
             required: false,
             repeatable: false,
-            belief: Belief::with_prior(FLAG_PRIOR),
+            belief: Belief::with_prior(inference.flag_prior),
             evidence: Vec::new(),
+            inference,
         }
     }
 
     fn apply_layout_candidate(&mut self, candidate: layout::CandidateFlag, evidence_id: &str) {
-        self.belief.update(1.0);
+        self.belief.update(self.inference.layout_candidate);
         if self.short.is_none() {
             self.short = candidate.short;
         }
@@ -1085,6 +1116,7 @@ mod tests {
     use crate::observation::ShapeObservation;
     use crate::precondition::PreconditionKind;
     use crate::process::OutputCapture;
+    use crate::score_model::ScoreModelSpec;
 
     #[test]
     fn claims_track_layout_and_runtime_confirmation() {
@@ -1331,6 +1363,58 @@ mod tests {
         assert!(!model.help_unavailable());
         assert!(!model.runtime_confirmed());
         assert!(model.confidence() > 0.5);
+    }
+
+    #[test]
+    fn claim_confidence_uses_supplied_model_inference_weights() {
+        let observations = vec![observation(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["model".to_owned()],
+            "error: rote requires login\n\nrun rote login",
+            Some(77),
+        )];
+        let default_claims = ClaimSet::from_observations("rote", &observations);
+        let default_model = default_claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["model"])
+            .expect("default model claim exists");
+        assert!(default_model.confidence() > 0.08);
+
+        let mut score_model = ScoreModelSpec::bundled().clone();
+        score_model.evidence_weights.runtime_precondition_block = 0.0;
+
+        let custom_claims =
+            ClaimSet::from_observations_with_model("rote", &observations, &score_model);
+        let custom_model = custom_claims
+            .commands()
+            .find(|claim| claim.path().as_slice() == ["model"])
+            .expect("custom model claim exists");
+
+        assert!(custom_model.precondition_blocked());
+        assert!((custom_model.confidence() - 0.08).abs() < 0.000_000_000_001);
+    }
+
+    #[test]
+    fn flag_confidence_uses_supplied_model_inference_weights() {
+        let observations = vec![observation(
+            "e_000003",
+            ProbeIntent::Help,
+            vec![],
+            "Usage: cliare metadata [--format <FORMAT>]\n\nOptions:\n  --format <FORMAT>  Output format\n",
+            Some(0),
+        )];
+        let mut score_model = ScoreModelSpec::bundled().clone();
+        score_model.claim_priors.flag_exists = 0.5;
+        score_model.evidence_weights.layout_candidate = 0.0;
+
+        let claims = ClaimSet::from_observations_with_model("cliare", &observations, &score_model);
+        let format = claims
+            .flags()
+            .find(|flag| flag.name() == "--format")
+            .expect("format flag exists");
+
+        assert!((format.confidence() - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]

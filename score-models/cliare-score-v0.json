@@ -56,10 +56,12 @@
   },
   "evidence_weights": {
     "layout_candidate": 1.0,
-    "usage_syntax": 0.8,
-    "runtime_help_match": 2.4,
-    "runtime_precondition_block": 1.6,
+    "usage_syntax": 0.5,
+    "runtime_help_match": 4.0,
+    "runtime_help_observed": 0.5,
+    "runtime_precondition_block": 2.0,
     "runtime_rejection": 0.5,
+    "alternate_help_unavailable": -0.25,
     "non_help_output_from_help_probe": -2.0
   },
   "calibration": {

@@ -1,12 +1,23 @@
 # Release Process
 
-This repository is prepared for an initial `0.1.0` release. These steps are intentionally manual until the publish path has been exercised at least once.
+This repository is prepared for an initial crates.io release. The current crate version is `0.1.1`.
 
 ## Channels
 
 - crates.io: publish the Rust crate so users can run `cargo install cliare`.
 - Homebrew tap: publish `packaging/homebrew/cliare.rb` to a tap such as `modiqo/homebrew-tap`.
 - GitHub Releases: attach source archives, checksums, and optional prebuilt binaries after the tag is pushed.
+
+## crates.io Automation
+
+The tag workflow `.github/workflows/release-crates.yml` publishes to crates.io when a `vX.Y.Z` tag is pushed and the tag version matches `Cargo.toml`.
+
+Before tagging:
+
+1. Revoke any token that was ever pasted into chat or logs.
+2. Create a fresh crates.io API token.
+3. Store it in GitHub repository secrets as `CARGO_REGISTRY_TOKEN`.
+4. Run the preflight commands below locally.
 
 ## Preflight
 
@@ -42,9 +53,9 @@ cargo run -- issues list --out .cliare/cliare --format human
 4. Tag the release:
 
 ```sh
-git tag -a v0.1.0 -m "v0.1.0"
+git tag -a v0.1.1 -m "v0.1.1"
 git push origin main
-git push origin v0.1.0
+git push origin v0.1.1
 ```
 
 ## crates.io
@@ -69,8 +80,8 @@ The formula template lives at `packaging/homebrew/cliare.rb`.
 After pushing the tag, compute the source archive checksum:
 
 ```sh
-curl -L https://github.com/modiqo/cliare/archive/refs/tags/v0.1.0.tar.gz -o cliare-v0.1.0.tar.gz
-shasum -a 256 cliare-v0.1.0.tar.gz
+curl -L https://github.com/modiqo/cliare/archive/refs/tags/v0.1.1.tar.gz -o cliare-v0.1.1.tar.gz
+shasum -a 256 cliare-v0.1.1.tar.gz
 ```
 
 Copy the formula into the tap, replace `REPLACE_WITH_SHA256`, then test it:
@@ -90,7 +101,7 @@ brew install cliare
 
 ## GitHub Release
 
-Create a release for `v0.1.0` that includes:
+Create a release for `v0.1.1` that includes:
 
 - Release notes copied from `CHANGELOG.md`.
 - The crates.io install command.
