@@ -1,0 +1,368 @@
+{
+  "schema_version": "cliare.benchmark-corpus.v1",
+  "name": "launch-low-pretraining-fast-moving-corpus",
+  "defaults": {
+    "target_concurrency": 2,
+    "profile": "standard",
+    "max_depth": 6,
+    "max_probes": 384,
+    "min_expected_value": 50,
+    "concurrency": 6,
+    "timeout_ms": 5000,
+    "output_limit_bytes": 262144
+  },
+  "targets": [
+    {
+      "id": "mise",
+      "target": "mise",
+      "required": false,
+      "tags": ["launch", "new-low", "toolchain", "task-runner", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "just",
+      "target": "just",
+      "required": false,
+      "tags": ["launch", "medium", "task-runner", "repo", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "task",
+      "target": "task",
+      "required": false,
+      "tags": ["launch", "medium", "task-runner", "repo", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "turbo",
+      "target": "turbo",
+      "required": false,
+      "tags": ["launch", "new-low", "monorepo", "javascript", "repo", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "nx",
+      "target": "nx",
+      "required": false,
+      "tags": ["launch", "medium", "monorepo", "javascript", "repo", "plugin-backed", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "ruff",
+      "target": "ruff",
+      "required": false,
+      "tags": ["launch", "new-low", "python", "lint-format", "repo", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 50.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "pixi",
+      "target": "pixi",
+      "required": false,
+      "tags": ["launch", "new-low", "python", "environment", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "dagster",
+      "target": "dagster",
+      "required": false,
+      "tags": ["launch", "medium", "data", "orchestration", "repo", "daemon", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 240000
+    },
+    {
+      "id": "airflow",
+      "target": "airflow",
+      "required": false,
+      "tags": ["launch", "legacy-high", "data", "orchestration", "daemon", "fixture", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 240000
+    },
+    {
+      "id": "convex",
+      "target": "convex",
+      "required": false,
+      "tags": ["launch", "new-low", "backend-platform", "auth", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "inngest",
+      "target": "inngest",
+      "required": false,
+      "tags": ["launch", "new-low", "workflow", "events", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "trigger-dev",
+      "target": "trigger.dev",
+      "required": false,
+      "tags": ["launch", "new-low", "workflow", "jobs", "repo", "cloud", "resolve-canonical-command", "skill-value-high"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "clerk",
+      "target": "clerk",
+      "required": false,
+      "tags": ["launch", "new-low", "auth-platform", "auth", "cloud", "resolve-official-surface", "skill-value-high"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "linear",
+      "target": "linear",
+      "required": false,
+      "tags": ["launch", "new-low", "project-management", "auth", "cloud", "resolve-official-surface", "skill-value-high"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "openai",
+      "target": "openai",
+      "required": false,
+      "tags": ["launch", "medium", "ai-platform", "auth", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "anthropic",
+      "target": "anthropic",
+      "required": false,
+      "tags": ["launch", "new-low", "ai-platform", "auth", "cloud", "resolve-canonical-command", "skill-value-high"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "databricks",
+      "target": "databricks",
+      "required": false,
+      "tags": ["launch", "medium", "enterprise-data", "ai", "auth", "cloud", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 240000
+    },
+    {
+      "id": "snow",
+      "target": "snow",
+      "required": false,
+      "tags": ["launch", "new-low", "data-warehouse", "auth", "cloud", "repo", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 240000
+    },
+    {
+      "id": "temporal",
+      "target": "temporal",
+      "required": false,
+      "tags": ["launch", "medium", "workflow-engine", "daemon", "cloud", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "nomad",
+      "target": "nomad",
+      "required": false,
+      "tags": ["launch", "medium", "scheduler", "infrastructure", "daemon", "cloud", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "consul",
+      "target": "consul",
+      "required": false,
+      "tags": ["launch", "medium", "service-networking", "config", "daemon", "cloud", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "tailscale",
+      "target": "tailscale",
+      "required": false,
+      "tags": ["launch", "medium", "networking", "identity", "auth", "daemon", "sensitive", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "sops",
+      "target": "sops",
+      "required": false,
+      "tags": ["launch", "medium", "secrets", "encryption", "repo", "fixture", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "age",
+      "target": "age",
+      "required": false,
+      "tags": ["launch", "medium", "encryption", "fixture", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "biome",
+      "target": "biome",
+      "required": false,
+      "tags": ["launch", "new-low", "javascript", "lint-format", "repo", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 50.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "vitest",
+      "target": "vitest",
+      "required": false,
+      "tags": ["launch", "new-low", "javascript", "test-runner", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "playwright",
+      "target": "playwright",
+      "required": false,
+      "tags": ["launch", "medium", "browser-testing", "repo", "daemon", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "astro",
+      "target": "astro",
+      "required": false,
+      "tags": ["launch", "new-low", "web-framework", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "expo",
+      "target": "expo",
+      "required": false,
+      "tags": ["launch", "medium", "mobile", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "eas",
+      "target": "eas",
+      "required": false,
+      "tags": ["launch", "new-low", "mobile", "build-platform", "auth", "repo", "cloud", "sensitive", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "shopify",
+      "target": "shopify",
+      "required": false,
+      "tags": ["launch", "medium", "commerce", "auth", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "sanity",
+      "target": "sanity",
+      "required": false,
+      "tags": ["launch", "medium", "cms", "auth", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "contentful",
+      "target": "contentful",
+      "required": false,
+      "tags": ["launch", "medium", "cms", "auth", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "sst",
+      "target": "sst",
+      "required": false,
+      "tags": ["launch", "new-low", "app-framework", "infrastructure", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "dvc",
+      "target": "dvc",
+      "required": false,
+      "tags": ["launch", "medium", "data", "ml", "versioning", "repo", "fixture", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "wandb",
+      "target": "wandb",
+      "required": false,
+      "tags": ["launch", "medium", "ml-platform", "auth", "repo", "cloud", "skill-value-high"],
+      "expected_score": { "min": 35.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "mlflow",
+      "target": "mlflow",
+      "required": false,
+      "tags": ["launch", "medium", "ml-platform", "daemon", "repo", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "ollama",
+      "target": "ollama",
+      "required": false,
+      "tags": ["launch", "new-low", "local-model-runtime", "daemon", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "semgrep",
+      "target": "semgrep",
+      "required": false,
+      "tags": ["launch", "medium", "security", "sast", "repo", "cloud", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "trivy",
+      "target": "trivy",
+      "required": false,
+      "tags": ["launch", "medium", "security", "sbom", "repo", "fixture", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "syft",
+      "target": "syft",
+      "required": false,
+      "tags": ["launch", "medium", "sbom", "repo", "fixture", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "grype",
+      "target": "grype",
+      "required": false,
+      "tags": ["launch", "medium", "vulnerability-scanning", "repo", "fixture", "json-friendly", "skill-value-high"],
+      "expected_score": { "min": 45.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "cosign",
+      "target": "cosign",
+      "required": false,
+      "tags": ["launch", "medium", "supply-chain", "signing", "auth", "fixture", "sensitive", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    },
+    {
+      "id": "slsa-verifier",
+      "target": "slsa-verifier",
+      "required": false,
+      "tags": ["launch", "new-low", "supply-chain", "verification", "fixture", "skill-value-high"],
+      "expected_score": { "min": 40.0, "max": 100.0 },
+      "max_duration_ms": 120000
+    }
+  ]
+}

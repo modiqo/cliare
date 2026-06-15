@@ -1,0 +1,80 @@
+{
+  "schema_version": "cliare.benchmark-corpus.v1",
+  "name": "agent-harness-cli-corpus",
+  "defaults": {
+    "target_concurrency": 1,
+    "profile": "standard",
+    "max_depth": 5,
+    "max_probes": 256,
+    "min_expected_value": 50,
+    "concurrency": 4,
+    "timeout_ms": 5000,
+    "output_limit_bytes": 262144
+  },
+  "targets": [
+    {
+      "id": "codex",
+      "target": "codex",
+      "required": false,
+      "tags": ["agent-harness", "skills", "mcp", "plugins", "approvals", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "claude",
+      "target": "claude",
+      "required": false,
+      "tags": ["agent-harness", "skills", "mcp", "hooks", "permissions", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "gemini",
+      "target": "gemini",
+      "required": false,
+      "tags": ["agent-harness", "resolve-canonical-command", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "aider",
+      "target": "aider",
+      "required": false,
+      "tags": ["agent-harness", "coding-agent", "git", "repo", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "goose",
+      "target": "goose",
+      "required": false,
+      "tags": ["agent-harness", "extensions", "tools", "resolve-safe-policy", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "opencode",
+      "target": "opencode",
+      "required": false,
+      "tags": ["agent-harness", "coding-agent", "resolve-canonical-command", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "swe-agent",
+      "target": "swe-agent",
+      "required": false,
+      "tags": ["agent-harness", "benchmark", "software-engineering", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    },
+    {
+      "id": "openhands",
+      "target": "openhands",
+      "required": false,
+      "tags": ["agent-harness", "software-engineering", "resolve-safe-policy", "sensitive"],
+      "expected_score": { "min": 30.0, "max": 100.0 },
+      "max_duration_ms": 180000
+    }
+  ]
+}

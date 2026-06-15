@@ -1,0 +1,195 @@
+name: Extract Command Index PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_id:
+        description: Stable registry id, for example gh, ruff, or supabase.
+        required: true
+        type: string
+      target:
+        description: Executable name or path to measure.
+        required: true
+        type: string
+      install_command:
+        description: Optional trusted setup command that installs the target CLI.
+        required: false
+        type: string
+      profile:
+        description: CLIARE traversal profile.
+        required: false
+        default: standard
+        type: choice
+        options:
+          - quick
+          - standard
+          - deep
+      max_depth:
+        description: Optional traversal depth override.
+        required: false
+        type: string
+      max_probes:
+        description: Optional probe budget override.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  extract:
+    name: Extract command index
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build CLIARE
+        run: cargo build --locked --bin cliare
+
+      - name: Install target CLI
+        if: ${{ github.event.inputs.install_command != '' }}
+        shell: bash
+        env:
+          INSTALL_COMMAND: ${{ github.event.inputs.install_command }}
+        run: |
+          set -euo pipefail
+          bash -lc "$INSTALL_COMMAND"
+
+      - name: Measure target CLI
+        id: measure
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ github.event.inputs.artifact_id }}
+          TARGET: ${{ github.event.inputs.target }}
+          PROFILE: ${{ github.event.inputs.profile }}
+          MAX_DEPTH: ${{ github.event.inputs.max_depth }}
+          MAX_PROBES: ${{ github.event.inputs.max_probes }}
+        run: |
+          set -euo pipefail
+
+          case "$ARTIFACT_ID" in
+            *[!a-zA-Z0-9._-]* | "" | "." | "..")
+              echo "artifact_id must contain only letters, digits, dot, underscore, and dash" >&2
+              exit 2
+              ;;
+          esac
+
+          args=(measure "$TARGET" --out ".cliare-index-runs/$ARTIFACT_ID" --profile "$PROFILE" --refresh)
+          if [[ -n "$MAX_DEPTH" ]]; then
+            args+=(--max-depth "$MAX_DEPTH")
+          fi
+          if [[ -n "$MAX_PROBES" ]]; then
+            args+=(--max-probes "$MAX_PROBES")
+          fi
+
+          ./target/debug/cliare "${args[@]}"
+          ./target/debug/cliare describe ".cliare-index-runs/$ARTIFACT_ID" --write
+
+          score="$(node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(s.score.total));' ".cliare-index-runs/$ARTIFACT_ID/scorecard.json")"
+          {
+            echo "score=$score"
+            echo "run_dir=.cliare-index-runs/$ARTIFACT_ID"
+            echo "registry_dir=registry/$ARTIFACT_ID"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish registry entry
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ github.event.inputs.artifact_id }}
+          TARGET: ${{ github.event.inputs.target }}
+          PROFILE: ${{ github.event.inputs.profile }}
+          RUN_DIR: ${{ steps.measure.outputs.run_dir }}
+          REGISTRY_DIR: ${{ steps.measure.outputs.registry_dir }}
+          SCORE: ${{ steps.measure.outputs.score }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$REGISTRY_DIR"
+          cp "$RUN_DIR/command-index.json" "$REGISTRY_DIR/command-index.json"
+          cp "$RUN_DIR/command-index.md" "$REGISTRY_DIR/command-index.md"
+          cp "$RUN_DIR/scorecard.json" "$REGISTRY_DIR/scorecard.json"
+          cp "$RUN_DIR/summary.md" "$REGISTRY_DIR/summary.md"
+          cp "$RUN_DIR/issues.md" "$REGISTRY_DIR/issues.md"
+          cp "$RUN_DIR/artifact-map.md" "$REGISTRY_DIR/artifact-map.md"
+
+          node <<'NODE'
+          const fs = require("fs");
+          const env = process.env;
+          const scorecard = JSON.parse(fs.readFileSync(`${env.REGISTRY_DIR}/scorecard.json`, "utf8"));
+          const commandIndex = JSON.parse(fs.readFileSync(`${env.REGISTRY_DIR}/command-index.json`, "utf8"));
+          const commands = Array.isArray(commandIndex.commands) ? commandIndex.commands.length : 0;
+          const lines = [
+            `# ${env.ARTIFACT_ID} Command Index`,
+            "",
+            "| Field | Value |",
+            "|---|---:|",
+            `| Target | \`${env.TARGET}\` |`,
+            `| Profile | \`${env.PROFILE}\` |`,
+            `| Score | ${Number(env.SCORE).toFixed(1)} |`,
+            `| Score model | \`${scorecard.score.model}\` |`,
+            `| Commands indexed | ${commands} |`,
+            `| Probes completed | ${scorecard.coverage.probes_completed} |`,
+            `| Traversal complete | \`${scorecard.coverage.traversal_complete}\` |`,
+            "",
+            "## Files",
+            "",
+            "- `command-index.json`: agent-facing command catalog.",
+            "- `command-index.md`: human-readable command catalog.",
+            "- `scorecard.json`: readiness score and subscores.",
+            "- `summary.md`: short run summary.",
+            "- `issues.md`: reviewable findings.",
+            "- `artifact-map.md`: artifact navigation map.",
+            "",
+            "This entry is generated by the Extract Command Index PR workflow."
+          ];
+          fs.writeFileSync(`${env.REGISTRY_DIR}/README.md`, `${lines.join("\n")}\n`);
+          NODE
+
+      - name: Open pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ github.event.inputs.artifact_id }}
+          TARGET: ${{ github.event.inputs.target }}
+          SCORE: ${{ steps.measure.outputs.score }}
+        run: |
+          set -euo pipefail
+
+          branch="cliare/index-${ARTIFACT_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "registry/$ARTIFACT_ID"
+
+          if git diff --cached --quiet; then
+            echo "No registry changes to publish."
+            exit 0
+          fi
+
+          git commit -m "chore: update ${ARTIFACT_ID} command index"
+          git push --force-with-lease origin "$branch"
+
+          title="Update ${ARTIFACT_ID} command index"
+          body="$(cat <<BODY
+          This PR updates the CLIARE command index for \`${TARGET}\`.
+
+          Score: ${SCORE}
+
+          Review starts in \`registry/${ARTIFACT_ID}/README.md\`, then \`command-index.md\`.
+          BODY
+          )"
+
+          if gh pr view "$branch" --json number --jq .number >/tmp/pr-number 2>/dev/null; then
+            gh pr edit "$branch" --title "$title" --body "$body"
+          else
+            gh pr create --base main --head "$branch" --title "$title" --body "$body"
+          fi

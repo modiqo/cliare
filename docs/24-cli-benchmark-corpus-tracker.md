@@ -9,7 +9,23 @@
 
 This tracker records the real-world CLI corpus used to mature CLIARE's benchmark suite. The emphasis is not raw popularity alone. The corpus represents CLIs that agent harnesses commonly need when operating real software projects: source control platforms, clouds, containers, Kubernetes, infrastructure-as-code, deployment platforms, databases, package managers, secrets, observability, and AI-application infrastructure.
 
-This tracker intentionally excludes basic shell staples such as `python`, `grep`, `sed`, `awk`, `jq`, `curl`, `bash`, and coreutils. Those tools matter, but agents are already heavily pretrained on them and they are not the primary benchmark pressure point for CLIARE v0. It also excludes AI-agent harness CLIs for this pass.
+This tracker intentionally excludes basic shell staples such as `python`, `grep`, `sed`, `awk`, `jq`, `curl`, `bash`, and coreutils. Those tools matter, but agents are already heavily pretrained on them and they are not the primary benchmark pressure point for CLIARE v0. It also excludes AI-agent harness CLIs from the main product corpus; those should be measured in a separate agent-harness corpus so they do not blur the claim that CLIARE helps agents operate ordinary operational CLIs.
+
+The launch corpus should deliberately balance familiar anchors with newer or faster-moving CLIs that are less likely to be memorized by pretrained models. A useful initial mix is:
+
+| Slice | Target Share | Purpose |
+|---|---:|---|
+| Legacy/high-pretraining anchors | 20% | Keep stable baselines such as `git`, `gh`, `docker`, `kubectl`, `aws`, `npm`, and `cargo` for regression and comparability. |
+| Modern fast-moving developer/platform CLIs | 50% | Stress agent navigation on command surfaces that change quickly and are less likely to be fully internalized by model pretraining. |
+| Auth/context-heavy SaaS CLIs | 20% | Measure preconditions, fixtures, profile state, sensitive output, and agent-routing constraints. |
+| Dynamic/plugin/weird CLIs | 10% | Exercise plugin dispatch, project-local commands, generated help, local daemons, and framework-specific edge cases. |
+
+For launch planning, tag each corpus entry with:
+
+- `pretraining_exposure`: `legacy_high`, `medium`, or `new_low`
+- `release_velocity`: `stable`, `fast`, or `very_fast`
+- `context_shape`: `clean`, `auth`, `repo`, `daemon`, `cloud`, or `fixture`
+- `skill_value`: `high` when an evidence-backed command index or agent skill is likely to prevent trial-and-error command discovery
 
 The blank findings columns are intentional. As benchmark artifacts are generated, each row records the artifact folder, score, traversal status, and the highest-value findings from the persona and issue reports.
 
@@ -43,6 +59,12 @@ Reference vendor calibration manifest:
 
 ```sh
 cliare benchmark --manifest benchmarks/vendor-calibration-corpus.json --out .cliare-vendor-calibration --refresh
+```
+
+Reference low-pretraining launch manifest:
+
+```sh
+cliare benchmark --manifest benchmarks/launch-low-pretraining-corpus.json --out .cliare-launch-low-pretraining --refresh
 ```
 
 ---
@@ -113,6 +135,61 @@ These are the first CLIs to measure. They cover the most common operational surf
 
 ---
 
+## P0.5 Low-Pretraining / Fast-Moving Launch Corpus
+
+These CLIs should be precreated before launch because they pressure-test CLIARE's core claim better than heavily memorized staples. They are newer, faster moving, auth/context-heavy, workflow-specific, or likely to need a generated command index and agent skill before a harness can use them reliably.
+
+Rows with "resolve canonical command" should not be measured until the official package, installed executable name, and basic safe-probe policy are verified.
+
+| Launch Priority | CLI | Category | Pretraining Exposure | Context Shape | Why Harnesses Use It | Benchmark Folder | Findings / Follow-Up |
+|---:|---|---|---|---|---|---|---|
+| L1 | `mise` | Toolchain / task manager | new_low | repo | Polyglot tool versions, environment activation, tasks, and project bootstrap in modern repos. |  | Verify task-discovery output and whether project-local config changes command behavior. |
+| L2 | `just` | Task runner | medium | repo | Common repository task interface; agents need to discover canonical build/test/lint commands instead of guessing. |  | Add fixture repos with nested and included justfiles. |
+| L3 | `task` | Task runner | medium | repo | Go Task workflows, aliases, includes, variables, and monorepo task execution. |  | Add fixture taskfiles and compare machine-readable task listing if available. |
+| L4 | `turbo` | Monorepo build orchestration | new_low | repo | JS/TS monorepos, pipeline tasks, cache, affected builds, and workspace graph operations. |  | Needs package-manager fixture and repo context. |
+| L5 | `nx` | Monorepo build orchestration | medium | repo | Deep plugin-backed command surface for builds, tests, generators, affected projects, and workspace graph operations. |  | Plugin and workspace context likely change command surface. |
+| L6 | `ruff` | Python lint / format | new_low | repo | Fast Python linting, formatting, config discovery, and fix workflows used in coding-agent loops. |  | Track JSON/SARIF output contracts and safe fix/diff modes. |
+| L7 | `pixi` | Python / Conda environment manager | new_low | repo | Newer project, environment, lockfile, task, and package workflows. |  | Needs clean and repo-context measurements. |
+| L8 | `dagster` | Data orchestration | medium | repo, daemon | Data pipeline development, local dev servers, asset/job commands, definitions validation, and deployment workflows. |  | Separate help-only, project, and daemon-backed contexts. |
+| L9 | `airflow` | Data orchestration | legacy_high | daemon, fixture | Established workflow orchestration with scheduler/database state, DAG inspection, backfills, and admin commands. |  | Useful contrast against newer `dagster`; daemon and database fixtures required. |
+| L10 | `convex` | Backend platform | new_low | auth, repo, cloud | Modern app backend, dev server, deployment, functions, data, env vars, and project linking. |  | Requires clean, linked-project, and auth-context measurements. |
+| L11 | `inngest` | Workflow / events | new_low | repo, cloud | Event-driven app workflows, local dev server, functions, deploys, and cloud integration. |  | Verify canonical command and local fixture strategy. |
+| L12 | `trigger` / `trigger.dev` | Workflow / jobs | new_low | repo, cloud | Background jobs, local dev, deploys, environment selection, and observability for app workflows. |  | Resolve canonical command and package before measuring. |
+| L13 | `clerk` | Auth platform | new_low | auth, cloud | Auth app configuration, domains, users, environment variables, and project workflows. |  | Resolve official CLI surface and sensitive-output policy. |
+| L14 | `linear` | Project management | new_low | auth, cloud | Issues, projects, cycles, comments, and planning workflows that agents often need to coordinate. |  | Verify official CLI availability and auth fixture strategy. |
+| L15 | `openai` | AI platform | medium | auth, cloud | Model, file, batch, eval, fine-tuning, and API workflow operations from terminal. |  | Measure as platform tooling, not as an agent harness. |
+| L16 | `anthropic` | AI platform | new_low | auth, cloud | Model and API workflows when an official or canonical CLI exists. |  | Resolve canonical command/package before measuring. |
+| L17 | `databricks` | Enterprise data / AI | medium | auth, cloud, repo | Jobs, repos, clusters, bundles, secrets, SQL warehouses, and workspace automation. |  | Needs workspace-scoped auth and safe fixture workspace. |
+| L18 | `snow` | Data warehouse | new_low | auth, cloud, repo | Snowflake databases, warehouses, stages, Snowpark, apps, and deployment workflows. |  | Verify canonical Snowflake CLI command and auth fixture strategy. |
+| L19 | `temporal` | Workflow engine | medium | daemon, cloud | Workflow execution, namespaces, workers, schedules, local dev server, and cloud workflows. |  | Measure local server and cloud-auth contexts separately. |
+| L20 | `nomad` | Scheduler / infrastructure | medium | daemon, cloud | Job planning, allocation inspection, deployments, logs, and cluster operations. |  | Requires local or fixture cluster context for deeper probes. |
+| L21 | `consul` | Service networking / config | medium | daemon, cloud | KV, service discovery, intentions, config entries, and datacenter operations. |  | Requires local agent or fixture cluster context. |
+| L22 | `tailscale` | Networking / identity | medium | auth, daemon | Network status, device identity, SSH, funnel/serve, ACL-adjacent diagnostics, and admin operations. |  | Sensitive; help-only and authenticated contexts should be separate. |
+| L23 | `sops` | Secrets / encryption | medium | repo, fixture | Encrypted config files, KMS/age/PGP workflows, edit/decrypt/encrypt, and CI secrets handling. |  | Needs safe encrypted fixture files and side-effect expectations. |
+| L24 | `age` | Encryption | medium | fixture | File encryption/decryption workflows, recipient/key handling, and safe local transformations. |  | Needs fixture files and credential-like path policy. |
+| L25 | `biome` | JS/TS lint / format | new_low | repo | Modern lint/format/check workflows, config discovery, and machine-readable diagnostics. |  | Track JSON output, safe write modes, and repo config effects. |
+| L26 | `vitest` | JS/TS test runner | new_low | repo | Test selection, watch mode, reporters, coverage, and monorepo test workflows. |  | Need non-watch safe probes and reporter output contracts. |
+| L27 | `playwright` | Browser testing | medium | repo, daemon | Browser install, test, codegen, trace, report, and web-app verification workflows. |  | Avoid GUI/browser-launching probes unless fixtures declare them. |
+| L28 | `astro` | Web framework | new_low | repo | Modern site/app build, dev, preview, integrations, and project scaffolding workflows. |  | Separate scaffold/create commands from safe project commands. |
+| L29 | `expo` | Mobile app platform | medium | repo, cloud | React Native app dev, build, prebuild, doctor, credentials, and publish workflows. |  | Auth and project context needed; avoid long-running dev server by default. |
+| L30 | `eas` | Mobile app build platform | new_low | auth, repo, cloud | Expo Application Services build, submit, credentials, channels, and deployment workflows. |  | Sensitive auth and cloud actions require explicit policy. |
+| L31 | `shopify` | Commerce platform | medium | auth, repo, cloud | Theme, app, extension, store, deployment, and local dev workflows. |  | Needs fixture app/store strategy and sensitive auth classification. |
+| L32 | `sanity` | CMS / content platform | medium | auth, repo, cloud | Content studio, schema, deploy, dataset, and project workflows. |  | Measure clean, project, and auth contexts. |
+| L33 | `contentful` | CMS / content platform | medium | auth, cloud | Space, environment, content model, migration, and publish workflows. |  | Sensitive content operations require fixtures and policy. |
+| L34 | `sst` | App / infrastructure framework | new_low | repo, cloud | Modern full-stack app deployments, local dev, secrets, stages, and AWS-backed workflows. |  | High skill value; command surface depends on project config. |
+| L35 | `dvc` | Data / ML versioning | medium | repo, fixture | Data pipelines, remotes, experiments, metrics, and reproducible ML project workflows. |  | Needs fixture repo and safe local data paths. |
+| L36 | `wandb` | ML platform | medium | auth, repo, cloud | Experiment tracking, artifacts, sweeps, reports, and project state. |  | Auth-sensitive; verify offline/local modes. |
+| L37 | `mlflow` | ML platform | medium | daemon, repo | Experiments, models, tracking server, registry, artifacts, and local workflow automation. |  | Separate local server and file-backed contexts. |
+| L38 | `ollama` | Local model runtime | new_low | daemon | Local model pull/run/list/serve workflows used by agent and developer environments. |  | Daemon and model-download behavior must be controlled. |
+| L39 | `semgrep` | Security analysis | medium | repo, cloud | Static analysis, rule packs, CI scans, SARIF/JSON output, and autofix workflows. |  | Track machine-readable output and safe autofix behavior. |
+| L40 | `trivy` | Security / SBOM | medium | repo, fixture | Vulnerability scanning for images, filesystems, config, SBOM, and CI workflows. |  | Avoid network-heavy probes unless fixture policy allows. |
+| L41 | `syft` | SBOM | medium | repo, fixture | SBOM generation from images, filesystems, and packages with JSON/SPDX/CycloneDX output. |  | Good machine-output contract candidate. |
+| L42 | `grype` | Vulnerability scanning | medium | repo, fixture | Vulnerability scanning from SBOMs/images/filesystems with machine-readable output. |  | Pair with `syft` fixtures. |
+| L43 | `cosign` | Supply-chain signing | medium | auth, fixture | Container signing, verification, attestations, keyless flows, and policy workflows. |  | Sensitive key material and network identity require strict fixtures. |
+| L44 | `slsa-verifier` | Supply-chain verification | new_low | fixture | Provenance and artifact verification workflows for release pipelines. |  | Good low-pretraining, high-agent-value release tool. |
+
+---
+
 ## P1 Expansion
 
 These should follow once the P0 suite produces stable measurements and the corpus folder layout is in place.
@@ -139,6 +216,29 @@ These should follow once the P0 suite produces stable measurements and the corpu
 | 54 | `doppler` | Secrets / config | Secrets, environment config, project/service selection, and CI injection. |  |  |  |  |
 | 55 | `infisical` | Secrets / config | Secrets, projects, environments, identity, and config sync workflows. |  |  |  |  |
 | 56 | `op` | Secrets / password manager | 1Password secrets, vaults, items, service accounts, and shell injection. |  |  |  |  |
+
+---
+
+## Separate Agent-Harness Corpus
+
+These CLIs are strategically important, but they should be measured outside the main product corpus. The goal of the main corpus is to prove CLIARE helps agents operate ordinary operational CLIs. Agent harness CLIs can otherwise dominate the story with self-referential behavior, rapidly changing product surfaces, and agent-specific safety policies.
+
+Reference manifest:
+
+```sh
+cliare benchmark --manifest benchmarks/agent-harness-corpus.json --out .cliare-agent-harness --refresh
+```
+
+| Priority | CLI | Category | Why Measure Separately | Benchmark Folder | Findings / Follow-Up |
+|---:|---|---|---|---|---|
+| A1 | `codex` | Agent harness | Codex CLI exposes agent execution, approvals, MCP, skills, plugins, and local shell behavior. |  | Measure only under explicit harness-safety policy. |
+| A2 | `claude` | Agent harness | Claude Code exposes terminal, skills, hooks, MCP, permissions, and project-specific agent workflows. |  | Measure local and managed-skill contexts separately. |
+| A3 | `gemini` | Agent harness | Gemini CLI-style tools are relevant to cross-agent skill portability and command-surface comparison. |  | Resolve canonical command and installation channel. |
+| A4 | `aider` | Agent harness | Established coding-agent CLI with repo, model, git, and edit workflows. |  | Useful baseline for older agent CLI surfaces. |
+| A5 | `goose` | Agent harness | Open-source agent harness with extensions/tools and project workflows. |  | Resolve installed command and safe-probe policy. |
+| A6 | `opencode` | Agent harness | Terminal coding-agent workflow and model/tool configuration. |  | Resolve canonical command and contexts. |
+| A7 | `swe-agent` | Agent harness / benchmark | Research harness for software-engineering agents and benchmark workflows. |  | Useful for bridge between CLIARE and benchmark infrastructure. |
+| A8 | `openhands` | Agent harness | Software-engineering agent platform with CLI/deployment surfaces. |  | Resolve command and safe local execution mode. |
 
 ---
 
