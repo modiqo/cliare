@@ -92,27 +92,143 @@ jobs:
           extra-args: --refresh
           artifact-name: cliare-on-cliare-${{ steps.profile.outputs.profile }}
 
-      - name: Print CLIARE score
+      - name: Print CLIARE score and issues
         shell: bash
         run: |
           set -euo pipefail
 
+          out=".cliare/cliare-on-cliare"
+          ./target/debug/cliare issues list --out "$out" --format json > "$out/issues-list.json"
+
           node <<'NODE'
           const fs = require("fs");
-          const scorecard = JSON.parse(fs.readFileSync(".cliare/cliare-on-cliare/scorecard.json", "utf8"));
+          const out = ".cliare/cliare-on-cliare";
+          const scorecard = JSON.parse(fs.readFileSync(`${out}/scorecard.json`, "utf8"));
+          const issueList = JSON.parse(fs.readFileSync(`${out}/issues-list.json`, "utf8"));
+
+          const escapeCell = (value) => String(value ?? "")
+            .replaceAll("|", "\\|")
+            .replaceAll("\n", "<br>");
+          const code = (value) => `\`${escapeCell(value)}\``;
+          const score = (value) => Number.isFinite(value) ? value.toFixed(1) : "n/a";
+          const subscore = (name) => scorecard.subscores?.[name];
+          const subscoreLabel = (name) => {
+            const entry = subscore(name);
+            if (!entry) {
+              return "n/a";
+            }
+            return `${name}: ${score(entry.score)}/100`;
+          };
+          const areaScore = (issue) => {
+            const area = issue.agent_readiness_area || issue.category || "";
+            const normalized = area.replaceAll("-", "_");
+            if (normalized.includes("output")) {
+              return subscoreLabel("output");
+            }
+            if (normalized.includes("safety") || normalized.includes("security")) {
+              return subscoreLabel("safety");
+            }
+            if (normalized.includes("diagnostic") || normalized.includes("recovery")) {
+              return subscoreLabel("recovery");
+            }
+            if (normalized.includes("execution")) {
+              return subscoreLabel("execution");
+            }
+            if (normalized.includes("grammar") || normalized.includes("help")) {
+              return subscoreLabel("grammar");
+            }
+            if (normalized.includes("discovery") || normalized.includes("compatibility") || normalized.includes("precondition")) {
+              return subscoreLabel("discovery");
+            }
+            return "n/a";
+          };
+          const statusHint = (issue) => {
+            const id = issue.issue_id || "<issue-id>";
+            if (issue.disposition) {
+              return `${code(issue.disposition.status)}<br>${escapeCell(issue.disposition.reason || "")}`;
+            }
+            const area = issue.agent_readiness_area || issue.category || "";
+            const defaultStatus = area.includes("safety") ? "accepted-risk" : "intentional";
+            return code(`./target/debug/cliare issues mark '${id}' --out ${out} --status ${defaultStatus} --reason 'Reviewed in CI; document rationale here.'`);
+          };
+          const commandSamples = (issue) => {
+            if (!issue.affected_command_count) {
+              return "none listed";
+            }
+            const samples = (issue.command_samples || []).slice(0, 2).map((sample) => {
+              const summary = sample.summary || sample.reason || sample.state || "";
+              return `${code(sample.command)}<br>${escapeCell(summary)}`;
+            });
+            const remaining = issue.affected_command_count - samples.length;
+            if (remaining > 0) {
+              samples.push(`${remaining} more`);
+            }
+            return samples.join("<br>");
+          };
+
+          const dimensions = Object.entries(scorecard.subscores || {})
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, entry]) => `| ${escapeCell(name)} | ${score(entry.score)} | ${escapeCell(entry.status)} | ${entry.weight ?? "n/a"} |`);
+
+          const issues = issueList.issues || [];
+          const visibleIssues = issues.slice(0, 20);
+          const issueRows = visibleIssues.map((issue) => `| ${[
+            code(issue.issue_id),
+            escapeCell(issue.title || "Untitled issue"),
+            escapeCell(issue.severity || "unknown"),
+            escapeCell(issue.agent_readiness_area || issue.category || "unknown"),
+            escapeCell(areaScore(issue)),
+            escapeCell(String(issue.affected_command_count ?? 0)),
+            commandSamples(issue),
+            statusHint(issue),
+          ].join(" | ")} |`);
+
           const lines = [
             "",
             "## CLIARE on CLIARE",
             "",
             "| Field | Value |",
             "| --- | ---: |",
-            `| Total | ${scorecard.score.total.toFixed(1)} |`,
+            `| Total | ${score(scorecard.score.total)} |`,
+            `| Status | ${scorecard.score.status} |`,
             `| Model | ${scorecard.score.model} |`,
             `| Profile | ${scorecard.coverage.traversal_profile} |`,
             `| Probes | ${scorecard.coverage.probes_completed} |`,
             `| Commands discovered | ${scorecard.coverage.commands_discovered} |`,
             `| Commands runtime-confirmed | ${scorecard.coverage.commands_runtime_confirmed} |`,
             `| Traversal complete | ${scorecard.coverage.traversal_complete} |`,
+            `| Issues total | ${issueList.summary.issues_total} |`,
+            `| Action required | ${issueList.summary.action_required} |`,
+            `| Dispositioned | ${issueList.summary.dispositioned} |`,
+            `| Reviewed decisions | ${issueList.summary.reviewed_decisions} |`,
+            "",
+            "### Score Dimensions",
+            "",
+            "| Dimension | Score | Status | Weight |",
+            "| --- | ---: | --- | ---: |",
+            ...dimensions,
+            "",
+            "### Issue Review Queue",
+            "",
+            "| Issue ID | Title | Severity | Area | Score context | Commands | Examples | Disposition hint |",
+            "| --- | --- | --- | --- | --- | ---: | --- | --- |",
+            ...(issueRows.length ? issueRows : ["| none | No open issues were generated. | n/a | n/a | n/a | 0 | n/a | n/a |"]),
+            ...(issues.length > visibleIssues.length ? [``, `_Showing first ${visibleIssues.length} of ${issues.length} issues._`] : []),
+            "",
+            "### Disposition Hints",
+            "",
+            "Use dispositions for reviewed findings that should not keep reappearing as unreviewed CI noise. The issue id is the finding type for aggregated findings.",
+            "",
+            "| Status | Use when |",
+            "| --- | --- |",
+            "| `intentional` | The behavior is a deliberate CLI design choice. |",
+            "| `needs-fixture` | CLIARE needs safe sample operands, local context, or fixture data before judging it. |",
+            "| `not-applicable` | The finding does not apply to the measured deployment profile. |",
+            "| `accepted-risk` | Security or platform owners reviewed and accepted the residual risk. |",
+            "| `false-positive` | The evidence is misleading and should not be treated as a product issue. |",
+            "| `deferred` | The issue is real but intentionally scheduled for later. |",
+            "",
+            "To persist a disposition, run the suggested `cliare issues mark ...` command locally and keep the resulting `issue-dispositions.json` with the artifact set used by CI.",
             ""
           ];
           const text = `${lines.join("\n")}\n`;
