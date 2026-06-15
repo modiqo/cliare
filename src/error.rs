@@ -251,6 +251,9 @@ pub enum CliareError {
     #[error("failed to spawn detached measure job")]
     SpawnDetachedMeasure(#[source] std::io::Error),
 
+    #[error("{message}")]
+    DetachedJobAlreadyActive { message: String },
+
     #[error("failed to read job pointer {path}")]
     ReadJobPointer {
         path: PathBuf,

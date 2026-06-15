@@ -285,6 +285,10 @@ pub fn measurement_dir(root: &Path, context: &RuntimeContext) -> PathBuf {
     }
 }
 
+pub fn context_artifact_dir(root: &Path, context: &str) -> PathBuf {
+    contexts_dir(root).join(sanitize_context_name(context))
+}
+
 pub fn contexts_dir(root: &Path) -> PathBuf {
     root.join("contexts")
 }
@@ -318,7 +322,7 @@ pub async fn resolve_measurement_dir(
     command: &str,
 ) -> Result<PathBuf> {
     if let Some(context) = context {
-        let artifact_dir = contexts_dir(root).join(sanitize_context_name(context));
+        let artifact_dir = context_artifact_dir(root, context);
         if artifact_dir.join(SCORECARD_JSON).is_file() {
             return Ok(artifact_dir);
         }

@@ -101,6 +101,10 @@ impl JobStatus {
             Self::Failed => "failed",
         }
     }
+
+    fn is_active(self) -> bool {
+        matches!(self, Self::Starting | Self::Running)
+    }
 }
 
 pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummary> {
@@ -120,11 +124,13 @@ pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummar
         path: jobs_dir.clone(),
         source,
     })?;
+    ensure_no_active_job(&artifact_dir)?;
 
     let job_id = crate::measure::new_measure_job_id()?;
     let progress_log = jobs_dir.join(format!("{job_id}.log"));
     let stdout_log = jobs_dir.join(format!("{job_id}.stdout.log"));
     let stderr_log = jobs_dir.join(format!("{job_id}.stderr.log"));
+    create_initial_progress_log(&progress_log, &job_id, &artifact_dir)?;
     let stdout = open_job_stream(&stdout_log)?;
     let stderr = open_job_stream(&stderr_log)?;
 
@@ -180,15 +186,17 @@ fn configure_detached_process(command: &mut Command) {
 pub async fn jobs(args: JobsArgs) -> Result<JobsSummary> {
     match args.command {
         JobsCommand::Status(args) => {
-            let artifact_dir = context::resolve_measurement_dir(
-                &args.out,
-                args.context.as_deref(),
-                "cliare jobs status",
-            )
-            .await?;
+            let artifact_dir = job_artifact_dir(&args.out, args.context.as_deref());
             job_status(artifact_dir)
         }
     }
+}
+
+fn job_artifact_dir(root: &Path, context: Option<&str>) -> PathBuf {
+    context.map_or_else(
+        || root.to_path_buf(),
+        |context| context::context_artifact_dir(root, context),
+    )
 }
 
 fn open_job_stream(path: &Path) -> Result<File> {
@@ -201,6 +209,43 @@ fn open_job_stream(path: &Path) -> Result<File> {
             path: path.to_path_buf(),
             source,
         })
+}
+
+fn ensure_no_active_job(out: &Path) -> Result<()> {
+    let summary = job_status(out.to_path_buf())?;
+    if !summary.status.is_active() {
+        return Ok(());
+    }
+
+    let job_id = summary
+        .job_id
+        .as_deref()
+        .map_or_else(String::new, |job_id| format!(" job_id={job_id}"));
+    let status_command = format!("cliare jobs status --out {}", shell_arg_path(out));
+    Err(CliareError::DetachedJobAlreadyActive {
+        message: format!(
+            "detached measure job already active for {}: status={}{}. Run `{}` or wait for it to finish before starting another detached measurement.",
+            out.display(),
+            summary.status.label(),
+            job_id,
+            status_command
+        ),
+    })
+}
+
+fn create_initial_progress_log(path: &Path, job_id: &str, out: &Path) -> Result<()> {
+    let contents = format!(
+        "# CLIARE measure progress\n\
+         job_id: {job_id}\n\
+         out: {}\n\
+         progress: initializing detached measurement; worker will replace this header once target resolution succeeds.\n\n\
+         [detached]   0.0% job_spawned\n",
+        out.display()
+    );
+    fs::write(path, contents).map_err(|source| CliareError::WriteProgressLog {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn measure_worker_args(args: &MeasureArgs, job_id: &str) -> Vec<String> {
@@ -348,15 +393,7 @@ fn job_status(out: PathBuf) -> Result<JobsSummary> {
         Some(path) => last_stream_line(path)?,
         None => None,
     };
-    let status = match last_progress.as_deref() {
-        Some(line) if line.contains(" complete ") || line.contains("% complete ") => {
-            JobStatus::Complete
-        }
-        Some(line) if line.contains("failed error=") => JobStatus::Failed,
-        Some(_) => JobStatus::Running,
-        None if last_error.is_some() => JobStatus::Failed,
-        None => JobStatus::Starting,
-    };
+    let status = classify_job_status(last_progress.as_deref(), last_error.as_deref());
 
     Ok(JobsSummary {
         out,
@@ -368,6 +405,17 @@ fn job_status(out: PathBuf) -> Result<JobsSummary> {
         last_progress,
         last_error,
     })
+}
+
+fn classify_job_status(last_progress: Option<&str>, last_error: Option<&str>) -> JobStatus {
+    match last_progress {
+        Some(line) if line.contains("failed error=") => JobStatus::Failed,
+        Some(line) if line.contains("100.0% complete ") => JobStatus::Complete,
+        Some(line) if line.contains("job_spawned") && last_error.is_some() => JobStatus::Failed,
+        Some(_) => JobStatus::Running,
+        None if last_error.is_some() => JobStatus::Failed,
+        None => JobStatus::Starting,
+    }
 }
 
 fn parse_pointer(contents: &str) -> BTreeMap<String, String> {
@@ -432,8 +480,13 @@ fn shell_arg_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{JobStatus, last_stream_line, parse_pointer};
+    use super::{
+        JobStatus, classify_job_status, ensure_no_active_job, job_artifact_dir, job_status,
+        last_stream_line, parse_pointer,
+    };
 
     #[test]
     fn parses_job_pointer_lines() {
@@ -453,6 +506,127 @@ mod tests {
     }
 
     #[test]
+    fn status_classifier_does_not_complete_on_partial_progress() {
+        let line = "[2026-06-15T18:25:30Z]   3.0% completed probe=p_000001";
+
+        let status = classify_job_status(Some(line), None);
+
+        assert_eq!(status, JobStatus::Running);
+    }
+
+    #[test]
+    fn status_classifier_completes_only_on_final_progress() {
+        let line = "[2026-06-15T18:25:30Z] 100.0% complete score=87";
+
+        let status = classify_job_status(Some(line), None);
+
+        assert_eq!(status, JobStatus::Complete);
+    }
+
+    #[test]
+    fn status_classifier_marks_spawn_failure_from_stderr() {
+        let line = "[detached]   0.0% job_spawned";
+
+        let status = classify_job_status(Some(line), Some("Error: target executable not found"));
+
+        assert_eq!(status, JobStatus::Failed);
+    }
+
+    #[test]
+    fn job_status_reads_job_only_directory() {
+        let out = temp_dir("job-status-running");
+        let jobs = out.join("jobs");
+        fs::create_dir_all(&jobs).expect("creates jobs directory");
+        let progress = jobs.join("measure-1.log");
+        let stdout = jobs.join("measure-1.stdout.log");
+        let stderr = jobs.join("measure-1.stderr.log");
+        fs::write(&progress, "[detached]   0.0% job_spawned\n").expect("writes progress log");
+        fs::write(&stdout, "").expect("writes stdout log");
+        fs::write(&stderr, "").expect("writes stderr log");
+        fs::write(
+            jobs.join("current"),
+            format!(
+                "job_id=measure-1\nprogress_log={}\nstdout_log={}\nstderr_log={}\n",
+                progress.display(),
+                stdout.display(),
+                stderr.display()
+            ),
+        )
+        .expect("writes current pointer");
+
+        let summary = job_status(out.clone()).expect("reads job-only status");
+
+        assert_eq!(summary.status, JobStatus::Running);
+        assert_eq!(summary.job_id.as_deref(), Some("measure-1"));
+        assert_eq!(
+            summary.last_progress.as_deref(),
+            Some("[detached]   0.0% job_spawned")
+        );
+        let _ = fs::remove_dir_all(out);
+    }
+
+    #[test]
+    fn job_status_reports_failed_when_worker_errors_before_progress() {
+        let out = temp_dir("job-status-worker-error");
+        let jobs = out.join("jobs");
+        fs::create_dir_all(&jobs).expect("creates jobs directory");
+        let progress = jobs.join("measure-1.log");
+        let stderr = jobs.join("measure-1.stderr.log");
+        fs::write(&stderr, "Error: target executable was not found: rote\n")
+            .expect("writes stderr log");
+        fs::write(
+            jobs.join("current"),
+            format!(
+                "job_id=measure-1\nprogress_log={}\nstderr_log={}\n",
+                progress.display(),
+                stderr.display()
+            ),
+        )
+        .expect("writes current pointer");
+
+        let summary = job_status(out.clone()).expect("reads failed status");
+
+        assert_eq!(summary.status, JobStatus::Failed);
+        assert_eq!(
+            summary.last_error.as_deref(),
+            Some("Error: target executable was not found: rote")
+        );
+        let _ = fs::remove_dir_all(out);
+    }
+
+    #[test]
+    fn active_job_guard_rejects_running_job() {
+        let out = temp_dir("job-status-active-guard");
+        let jobs = out.join("jobs");
+        fs::create_dir_all(&jobs).expect("creates jobs directory");
+        let progress = jobs.join("measure-1.log");
+        fs::write(&progress, "[detached]   0.0% job_spawned\n").expect("writes progress log");
+        fs::write(
+            jobs.join("current"),
+            format!("job_id=measure-1\nprogress_log={}\n", progress.display()),
+        )
+        .expect("writes current pointer");
+
+        let error = ensure_no_active_job(&out).expect_err("rejects active job");
+
+        assert!(error.to_string().contains("already active"));
+        assert!(error.to_string().contains("job_id=measure-1"));
+        let _ = fs::remove_dir_all(out);
+    }
+
+    #[test]
+    fn job_artifact_dir_selects_named_context_without_finished_artifacts() {
+        let root = PathBuf::from(".cliare");
+
+        let artifact_dir = job_artifact_dir(&root, Some("Authenticated Context"));
+
+        assert_eq!(
+            artifact_dir,
+            PathBuf::from(".cliare/contexts/authenticated-context")
+        );
+    }
+
+    #[test]
     fn stream_tail_uses_last_non_empty_line() {
         let path =
             std::env::temp_dir().join(format!("cliare-job-stream-test-{}", std::process::id()));
@@ -462,5 +636,13 @@ mod tests {
 
         assert_eq!(line.as_deref(), Some("last"));
         let _ = fs::remove_file(path);
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("cliare-{name}-{}-{nonce}", std::process::id()))
     }
 }
