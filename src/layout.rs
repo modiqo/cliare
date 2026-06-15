@@ -4,6 +4,10 @@ use crate::layout_tokens::{
     clean_token, is_argument_like, is_command_token, is_placeholder_like, long_flag_name,
     short_flag_in, split_columns, starts_title_like,
 };
+use crate::layout_usage::{
+    bare_value_name_from_token, command_path_from_usage, usage_argument_from_token,
+    usage_matches_current_path, usage_remainder_tokens, usage_syntaxes, value_name_from_token,
+};
 use crate::output::OutputMode;
 
 const MAX_COMMAND_PATH_SEGMENTS: usize = 3;
@@ -27,6 +31,10 @@ impl HelpDocument {
         self.lines
             .iter()
             .filter(|line| line.is_row_like() && !line.is_continuation_like())
+    }
+
+    pub(crate) fn lines(&self) -> &[LayoutLine] {
+        &self.lines
     }
 
     pub fn row_blocks(&self) -> Vec<Vec<&LayoutLine>> {
@@ -192,7 +200,7 @@ impl LayoutLine {
         }
     }
 
-    fn is_header_like(&self) -> bool {
+    pub(crate) fn is_header_like(&self) -> bool {
         !self.text.is_empty()
             && self.indent == 0
             && self.text.ends_with(':')
@@ -778,176 +786,6 @@ fn flag_grammar_in(invocation: &str, summary: Option<&str>) -> CandidateFlagGram
         required,
         repeatable,
     }
-}
-
-fn usage_argument_from_token(token: &str, line_index: usize) -> Option<CandidateArgument> {
-    if token.starts_with('-')
-        || token.contains("--")
-        || !token.contains('<') && !token.contains('[')
-    {
-        return None;
-    }
-    let name = value_name_from_token(token)?;
-    if is_generic_usage_placeholder(&name) {
-        return None;
-    }
-
-    Some(CandidateArgument {
-        name,
-        required: !token.starts_with('['),
-        variadic: token.contains("..."),
-        evidence_detail: format!("usage line {}", line_index),
-    })
-}
-
-fn value_name_from_token(token: &str) -> Option<String> {
-    let start = token.find('<').or_else(|| token.find('['))?;
-    let mut value = token[start..].trim_matches(|ch: char| {
-        matches!(
-            ch,
-            '<' | '>' | '[' | ']' | '=' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '.'
-        )
-    });
-    if let Some(stripped) = value.strip_prefix('=') {
-        value = stripped;
-    }
-    let end = value.find(['>', ']', '.', '=', ',']).unwrap_or(value.len());
-    let name = value[..end].trim();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name.to_ascii_lowercase().replace('-', "_"))
-    }
-}
-
-fn bare_value_name_from_token(token: &str) -> Option<String> {
-    let cleaned = clean_token(token).trim_matches(|ch: char| matches!(ch, '[' | ']'));
-    if cleaned.is_empty()
-        || cleaned.starts_with('-')
-        || cleaned == "|"
-        || cleaned.eq_ignore_ascii_case("default")
-    {
-        return None;
-    }
-    if !cleaned
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-    {
-        return None;
-    }
-    Some(cleaned.to_ascii_lowercase().replace('-', "_"))
-}
-
-fn is_generic_usage_placeholder(name: &str) -> bool {
-    matches!(
-        name,
-        "options" | "option" | "command" | "commands" | "subcommand" | "subcommands" | "args"
-    )
-}
-
-fn usage_syntaxes(document: &HelpDocument) -> Vec<(usize, String)> {
-    let mut syntaxes = Vec::new();
-    let mut index = 0_usize;
-
-    while index < document.lines.len() {
-        let line = &document.lines[index];
-        if let Some((prefix, usage)) = line.text.split_once(':') {
-            if prefix.eq_ignore_ascii_case("usage") {
-                let usage = usage.trim();
-                if !usage.is_empty() {
-                    syntaxes.push((line.index, usage.to_owned()));
-                    index += 1;
-                    continue;
-                }
-            } else {
-                index += 1;
-                continue;
-            }
-        }
-
-        if !is_usage_heading(&line.text) {
-            index += 1;
-            continue;
-        }
-
-        index += 1;
-        while let Some(next) = document.lines.get(index) {
-            if next.text.is_empty() {
-                break;
-            }
-            if next.indent <= line.indent && next.is_header_like() {
-                break;
-            }
-            syntaxes.push((next.index, next.text.clone()));
-            index += 1;
-        }
-    }
-
-    syntaxes
-}
-
-fn command_path_from_usage(
-    usage: &str,
-    binary_name: &str,
-    current_path: &[String],
-) -> Option<Vec<String>> {
-    let mut path = Vec::new();
-    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
-    if tokens.peek().is_some_and(|token| *token == binary_name) {
-        tokens.next();
-    }
-    for token in tokens {
-        if token.starts_with('-') || is_argument_like(token) || !is_command_token(token) {
-            break;
-        }
-        path.push(token.to_owned());
-    }
-    if path.is_empty() {
-        return None;
-    }
-    if current_path.is_empty() || current_path.starts_with(&path) {
-        Some(path)
-    } else {
-        None
-    }
-}
-
-fn is_usage_heading(text: &str) -> bool {
-    text.trim_matches(|ch: char| matches!(ch, ':' | '-' | '='))
-        .eq_ignore_ascii_case("usage")
-}
-
-fn usage_matches_current_path(usage: &str, binary_name: &str, current_path: &[String]) -> bool {
-    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
-    if tokens.peek().is_some_and(|token| *token == binary_name) {
-        tokens.next();
-    }
-    for segment in current_path {
-        match tokens.peek() {
-            Some(token) if token == segment => {
-                tokens.next();
-            }
-            _ => return false,
-        }
-    }
-    true
-}
-
-fn usage_remainder_tokens<'a>(
-    usage: &'a str,
-    binary_name: &str,
-    current_path: &[String],
-) -> Vec<&'a str> {
-    let mut tokens = usage.split_whitespace().map(clean_token).peekable();
-    if tokens.peek().is_some_and(|token| *token == binary_name) {
-        tokens.next();
-    }
-    for segment in current_path {
-        if tokens.peek().is_some_and(|token| *token == segment) {
-            tokens.next();
-        }
-    }
-    tokens.collect()
 }
 
 fn output_modes_for_flag(flag: &CandidateFlag) -> Vec<OutputMode> {
