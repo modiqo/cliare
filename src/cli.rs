@@ -71,7 +71,7 @@ pub enum Command {
   5. Gate: cliare guard <target-cli> --baseline .cliare-baseline/scorecard.json --out .cliare --profile deep
   6. Publish: cliare describe .cliare --write && cliare report harness --out .cliare --write
 
-Profiles:
+Measure profiles used by this playbook:
   quick     Small local smoke pass for one help path, diagnostic, or output contract.
   standard  Balanced default for the normal maintainer loop.
   deep      Broader release-quality pass for CI baselines, releases, and agent-surface publishing.
@@ -82,6 +82,7 @@ Advanced traversal knobs:
   --concurrency controls simultaneous probes.
   --execution-mode host measures authenticated or host-specific behavior.
 
+Do not pass --profile to `cliare playbook`; pass it to `cliare measure` or `cliare guard`.
 Run `cliare playbook maintainer --target <target-cli>` to print the full command-by-command guide."
 )]
 pub struct PlaybookArgs {
@@ -1192,6 +1193,8 @@ mod tests {
 
         assert!(help.contains("Maintainer workflow"));
         assert!(help.contains("--profile quick|standard|deep"));
+        assert!(help.contains("Measure profiles used by this playbook"));
+        assert!(help.contains("Do not pass --profile to `cliare playbook`"));
         assert!(help.contains("quick"));
         assert!(help.contains("standard"));
         assert!(help.contains("deep"));
