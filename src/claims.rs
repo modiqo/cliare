@@ -1341,6 +1341,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn output_mode_probe_records_network_precondition() {
+        let path = vec!["issue".to_owned(), "list".to_owned()];
+        let observations = vec![
+            observation_with_argv_streams(
+                "e_000011",
+                ProbeIntent::Help,
+                path.clone(),
+                vec![
+                    "gh".to_owned(),
+                    "issue".to_owned(),
+                    "list".to_owned(),
+                    "--help".to_owned(),
+                ],
+                "USAGE\n  gh issue list [flags]\n\nFLAGS\n      --json fields        Output JSON with the specified fields\n",
+                "",
+                Some(0),
+            ),
+            observation_with_argv_streams(
+                "e_000013",
+                ProbeIntent::OutputJson,
+                path,
+                vec![
+                    "gh".to_owned(),
+                    "issue".to_owned(),
+                    "list".to_owned(),
+                    "--json".to_owned(),
+                    "number,title,url".to_owned(),
+                ],
+                "",
+                "error connecting to api.example.com\ncheck your internet connection",
+                Some(1),
+            ),
+        ];
+
+        let claims = ClaimSet::from_observations("gh", &observations);
+        let contract = claims
+            .output_contracts()
+            .find(|claim| {
+                claim.command_path().as_slice() == ["issue", "list"]
+                    && claim
+                        .preconditions()
+                        .any(|kind| kind == PreconditionKind::NetworkUnavailable)
+            })
+            .expect("network-blocked output contract exists");
+
+        assert!(contract.probed());
+        assert!(contract.precondition_blocked());
+        assert!(!contract.parse_success());
+        assert_eq!(
+            contract.preconditions().collect::<Vec<_>>(),
+            vec![PreconditionKind::NetworkUnavailable]
+        );
+    }
+
     fn observation(
         evidence_id: &str,
         intent: ProbeIntent,

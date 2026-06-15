@@ -260,8 +260,9 @@ fn token_class(token: &str) -> Option<TokenClass> {
         | "operand" | "operands" | "number" | "identifier" | "id" | "name" => {
             Some(TokenClass::FixtureInput)
         }
-        "network" | "host" | "dns" | "connection" | "connect" | "resolve" | "resolved"
-        | "timeout" | "timed" | "rate" | "limit" | "unreachable" => Some(TokenClass::Network),
+        "network" | "internet" | "host" | "dns" | "connection" | "connect" | "connecting"
+        | "connectivity" | "offline" | "online" | "resolve" | "resolved" | "timeout" | "timed"
+        | "rate" | "limit" | "unreachable" => Some(TokenClass::Network),
         "daemon" | "service" | "services" | "container" | "containers" | "socket" | "runtime"
         | "dependency" | "dependencies" | "prerequisite" | "executable" | "binary" | "docker" => {
             Some(TokenClass::RuntimeDependency)

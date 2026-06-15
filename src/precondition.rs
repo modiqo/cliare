@@ -65,6 +65,10 @@ mod tests {
             Some(PreconditionKind::NetworkUnavailable)
         );
         assert_eq!(
+            classify_text("error connecting to api.example.com\ncheck your internet connection"),
+            Some(PreconditionKind::NetworkUnavailable)
+        );
+        assert_eq!(
             classify_text("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
             Some(PreconditionKind::RuntimeDependencyUnavailable)
         );
