@@ -39,6 +39,18 @@ pub async fn fingerprint_target(requested: &Path) -> Result<TargetFingerprint> {
     })
 }
 
+pub fn preflight_target(requested: &Path) -> Result<PathBuf> {
+    let resolved = resolve_target(requested)?;
+    let metadata = std::fs::metadata(&resolved).map_err(|source| CliareError::Fingerprint {
+        path: resolved.clone(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(CliareError::TargetNotFile(resolved));
+    }
+    Ok(resolved)
+}
+
 fn resolve_target(requested: &Path) -> Result<PathBuf> {
     if requested.components().count() > 1 || requested.is_absolute() {
         return canonicalize_target(requested, requested);

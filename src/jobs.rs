@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use crate::cli::{JobsArgs, JobsCommand, MeasureArgs};
 use crate::context::{self, RuntimeContext, RuntimeContextInput};
 use crate::error::{CliareError, Result};
+use crate::fingerprint;
 
 #[derive(Debug)]
 pub struct DetachedMeasureSummary {
@@ -119,6 +120,7 @@ pub fn spawn_detached_measure(args: MeasureArgs) -> Result<DetachedMeasureSummar
         workdir: args.context_workdir.clone(),
     });
     let artifact_dir = context::measurement_dir(&args.out, &runtime_context);
+    let _resolved_target = fingerprint::preflight_target(&args.target)?;
     let jobs_dir = artifact_dir.join("jobs");
     fs::create_dir_all(&jobs_dir).map_err(|source| CliareError::CreateProgressDir {
         path: jobs_dir.clone(),
@@ -483,9 +485,12 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::cli::{MeasureArgs, TraversalProfile};
+    use crate::sandbox::SandboxProfile;
+
     use super::{
         JobStatus, classify_job_status, ensure_no_active_job, job_artifact_dir, job_status,
-        last_stream_line, parse_pointer,
+        last_stream_line, parse_pointer, spawn_detached_measure,
     };
 
     #[test]
@@ -615,6 +620,24 @@ mod tests {
     }
 
     #[test]
+    fn detached_measure_preflights_missing_target_before_creating_job_artifacts() {
+        let out = temp_dir("detached-missing-target");
+        let args = measure_args(
+            PathBuf::from("cliare-missing-target-for-detached-preflight"),
+            out.clone(),
+        );
+
+        let error = spawn_detached_measure(args).expect_err("rejects missing target");
+
+        assert!(
+            error
+                .to_string()
+                .contains("target executable was not found")
+        );
+        assert!(!out.exists());
+    }
+
+    #[test]
     fn job_artifact_dir_selects_named_context_without_finished_artifacts() {
         let root = PathBuf::from(".cliare");
 
@@ -636,6 +659,33 @@ mod tests {
 
         assert_eq!(line.as_deref(), Some("last"));
         let _ = fs::remove_file(path);
+    }
+
+    fn measure_args(target: PathBuf, out: PathBuf) -> MeasureArgs {
+        MeasureArgs {
+            target,
+            out,
+            timeout_ms: 5_000,
+            output_limit_bytes: 1_048_576,
+            profile: TraversalProfile::Standard,
+            execution_mode: SandboxProfile::Isolated,
+            max_depth: None,
+            max_probes: None,
+            min_expected_value: None,
+            concurrency: None,
+            context: None,
+            context_name: None,
+            auth_state: None,
+            local_context_state: None,
+            fixture_state: None,
+            network_state: None,
+            runtime_dependency_state: None,
+            context_workdir: None,
+            refresh: true,
+            detach: true,
+            detached_worker: false,
+            job_id: None,
+        }
     }
 
     fn temp_dir(name: &str) -> PathBuf {
