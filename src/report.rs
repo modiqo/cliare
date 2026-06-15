@@ -544,6 +544,7 @@ impl IssueLedger {
             .map(|item| {
                 issue_from_action_item(
                     item,
+                    artifact_dir,
                     artifacts,
                     &command_index,
                     &gaps_by_command,
@@ -1142,6 +1143,7 @@ fn action_item(input: ActionItemInput) -> ActionItem {
 
 fn issue_from_action_item(
     item: ActionItem,
+    artifact_dir: &Path,
     artifacts: &MeasuredArtifacts,
     command_index: &BTreeMap<Vec<String>, &ShapeCommand>,
     gaps_by_command: &BTreeMap<Vec<String>, Vec<&ShapeGap>>,
@@ -1157,7 +1159,7 @@ fn issue_from_action_item(
     let evidence_references = issue_evidence_references(&item, artifacts);
     let evidence = issue_evidence(&evidence_references, &artifacts.evidence, item.category);
     let score_dimensions = item.dimension.clone().into_iter().collect::<Vec<_>>();
-    let verification = issue_verification(&item, confidence, artifacts);
+    let verification = issue_verification(&item, confidence, artifact_dir, artifacts);
 
     Issue {
         id: item.id.clone().replace("shape.gap.", "issue."),
@@ -1626,10 +1628,12 @@ fn evidence_reference_rank(reference: &str, evidence: &EvidenceSummary) -> u8 {
 fn issue_verification(
     item: &ActionItem,
     confidence: IssueConfidence,
+    artifact_dir: &Path,
     artifacts: &MeasuredArtifacts,
 ) -> IssueVerification {
     let target = shell_arg(&artifacts.scorecard.target.requested.display().to_string());
-    let command = format!("cliare measure {target} --out .cliare --profile deep --refresh");
+    let out = shell_arg(&artifact_dir.display().to_string());
+    let command = format!("cliare measure {target} --out {out} --profile deep --refresh");
     let expected_change = match confidence {
         IssueConfidence::Observed if item.category == ActionCategory::Safety => {
             "The side-effect finding no longer appears in `issues.json` and the related score dimension improves."
