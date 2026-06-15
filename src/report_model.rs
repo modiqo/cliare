@@ -242,6 +242,16 @@ pub(crate) enum ActionSeverity {
     Low,
 }
 
+impl ActionSeverity {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ActionCategory {
@@ -255,6 +265,23 @@ pub(crate) enum ActionCategory {
     Policy,
     Publishing,
     Calibration,
+}
+
+impl ActionCategory {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Discovery => "discovery",
+            Self::Grammar => "grammar",
+            Self::Execution => "execution",
+            Self::Output => "output",
+            Self::Safety => "safety",
+            Self::Recovery => "recovery",
+            Self::Coverage => "coverage",
+            Self::Policy => "policy",
+            Self::Publishing => "publishing",
+            Self::Calibration => "calibration",
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -320,6 +347,18 @@ pub(crate) enum IssueConfidence {
     Inferred,
     NeedsFixture,
     Advisory,
+}
+
+impl IssueConfidence {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Observed => "observed",
+            Self::Blocked => "blocked",
+            Self::Inferred => "inferred",
+            Self::NeedsFixture => "needs_fixture",
+            Self::Advisory => "advisory",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -16,6 +16,9 @@ use crate::path_classification;
 use crate::report_evidence::{
     EvidenceSummary, EvidenceSummaryPacket, ProcessEvidence, SideEffectRecord,
 };
+use crate::report_format::{
+    command_path_label, escape_markdown, output_mode_label, shell_arg, shell_words,
+};
 use crate::report_model::*;
 
 pub use crate::report_model::Persona;
@@ -328,14 +331,6 @@ impl ActionSeverity {
             _ => Self::Low,
         }
     }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::High => "high",
-            Self::Medium => "medium",
-            Self::Low => "low",
-        }
-    }
 }
 
 impl ActionCategory {
@@ -348,21 +343,6 @@ impl ActionCategory {
             "safety" => Self::Safety,
             "recovery" => Self::Recovery,
             _ => Self::Coverage,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Discovery => "discovery",
-            Self::Grammar => "grammar",
-            Self::Execution => "execution",
-            Self::Output => "output",
-            Self::Safety => "safety",
-            Self::Recovery => "recovery",
-            Self::Coverage => "coverage",
-            Self::Policy => "policy",
-            Self::Publishing => "publishing",
-            Self::Calibration => "calibration",
         }
     }
 }
@@ -455,18 +435,6 @@ impl IssueLedgerSummary {
             affected_commands: affected_commands.len(),
             requires_fixtures,
             blocked_by_preconditions,
-        }
-    }
-}
-
-impl IssueConfidence {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Observed => "observed",
-            Self::Blocked => "blocked",
-            Self::Inferred => "inferred",
-            Self::NeedsFixture => "needs_fixture",
-            Self::Advisory => "advisory",
         }
     }
 }
@@ -1190,24 +1158,6 @@ fn issue_output_contract(
         help_behavior: contract.help_behavior.clone(),
         skip_reason,
         suggested_validation,
-    }
-}
-
-fn shell_words(words: &[String]) -> String {
-    if words.is_empty() {
-        "<none>".to_owned()
-    } else {
-        words.join(" ")
-    }
-}
-
-fn output_mode_label(mode: &str) -> String {
-    match mode {
-        "json" => "JSON".to_owned(),
-        "yaml" => "YAML".to_owned(),
-        "table" => "table".to_owned(),
-        "plain" => "plain text".to_owned(),
-        other => other.to_owned(),
     }
 }
 
@@ -3123,29 +3073,6 @@ fn render_written_summary(
         .expect("writing to string cannot fail");
     }
     text
-}
-
-fn command_path_label(path: &[String]) -> String {
-    if path.is_empty() {
-        "<root>".to_owned()
-    } else {
-        path.join(" ")
-    }
-}
-
-fn shell_arg(value: &str) -> String {
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':'))
-    {
-        value.to_owned()
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
-}
-
-fn escape_markdown(value: &str) -> String {
-    value.replace('|', "\\|").replace('\n', " ")
 }
 
 #[cfg(test)]
