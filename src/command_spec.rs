@@ -1,6 +1,7 @@
 use clap::builder::{OsStr, ValueRange};
 use clap::{Arg, ArgAction, Command, CommandFactory, ValueHint};
 use serde::Serialize;
+use std::fmt::Write as _;
 
 use crate::cli::Cli;
 
@@ -139,6 +140,68 @@ pub fn metadata_help() -> String {
             metadata.render_long_help().to_string()
         }
         None => "Print CLIARE implementation metadata\n".to_owned(),
+    }
+}
+
+pub fn metadata_text() -> String {
+    let metadata = metadata();
+    let mut text = String::new();
+    writeln!(&mut text, "{} {}", metadata.name, metadata.version)
+        .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "Command spec: {}",
+        metadata.command_spec.schema_version
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "Full structured spec: cliare metadata --format json"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+    writeln!(&mut text, "Commands").expect("writing to string cannot fail");
+    for command in &metadata.command_spec.root.subcommands {
+        render_command_text(&mut text, command, 0);
+    }
+    text
+}
+
+fn render_command_text(text: &mut String, command: &CommandNode, depth: usize) {
+    let indent = "  ".repeat(depth);
+    let about = command.about.as_deref().unwrap_or("");
+    if about.is_empty() {
+        writeln!(text, "{}- {}", indent, command.path.join(" "))
+            .expect("writing to string cannot fail");
+    } else {
+        writeln!(text, "{}- {} - {}", indent, command.path.join(" "), about)
+            .expect("writing to string cannot fail");
+    }
+    writeln!(text, "{}  {}", indent, command.usage).expect("writing to string cannot fail");
+    if !command.args.is_empty() {
+        let option_labels = command
+            .args
+            .iter()
+            .filter(|arg| matches!(arg.kind, ArgKind::Option | ArgKind::Flag))
+            .map(arg_label)
+            .collect::<Vec<_>>();
+        if !option_labels.is_empty() {
+            writeln!(text, "{}  options: {}", indent, option_labels.join(", "))
+                .expect("writing to string cannot fail");
+        }
+    }
+    for subcommand in &command.subcommands {
+        render_command_text(text, subcommand, depth + 1);
+    }
+}
+
+fn arg_label(arg: &ArgSpec) -> String {
+    match (&arg.short, &arg.long) {
+        (Some(short), Some(long)) => format!("-{short}, --{long}"),
+        (None, Some(long)) => format!("--{long}"),
+        (Some(short), None) => format!("-{short}"),
+        (None, None) => arg.id.clone(),
     }
 }
 
@@ -320,7 +383,7 @@ fn value_names(arg: &Arg, arity: ValueArity) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArgKind, metadata};
+    use super::{ArgKind, metadata, metadata_text};
 
     #[test]
     fn metadata_spec_contains_report_drilldown_flags() {
@@ -357,6 +420,19 @@ mod tests {
         );
         assert_eq!(issue.kind, ArgKind::Option);
         assert_eq!(with_evidence.kind, ArgKind::Flag);
+    }
+
+    #[test]
+    fn metadata_text_lists_command_tree() {
+        let text = metadata_text();
+
+        assert!(text.contains("cliare "));
+        assert!(text.contains("Full structured spec: cliare metadata --format json"));
+        assert!(text.contains("- cliare measure"));
+        assert!(text.contains("- cliare issues"));
+        assert!(text.contains("  - cliare issues list"));
+        assert!(text.contains("- cliare playbook"));
+        assert!(text.contains("Usage: cliare playbook [OPTIONS] <ROLE>"));
     }
 
     #[test]

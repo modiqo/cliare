@@ -94,7 +94,7 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
             if args.help {
                 print!("{}", cliare::command_spec::metadata_help());
             } else {
-                println!("cliare {}", env!("CARGO_PKG_VERSION"));
+                print!("{}", cliare::command_spec::metadata_text());
             }
         }
     }
