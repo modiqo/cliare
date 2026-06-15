@@ -13,6 +13,8 @@ pub mod error;
 pub mod evidence;
 pub mod fingerprint;
 pub mod guard;
+pub mod issue_disposition;
+pub mod issues;
 pub mod jobs;
 pub mod layout;
 mod layout_tokens;

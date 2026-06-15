@@ -5,6 +5,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum, ValueHint};
 use serde::{Deserialize, Serialize};
 
 use crate::context::{ContextArgs, RuntimeContextProfile, RuntimeContextState};
+use crate::issue_disposition::IssueDispositionStatus;
 use crate::sandbox::SandboxProfile;
 
 pub const QUICK_MAX_DEPTH: usize = 3;
@@ -51,8 +52,67 @@ pub enum Command {
     Describe(DescribeArgs),
     /// Install CLIARE artifact-review skills for coding agents.
     Skills(SkillsArgs),
+    /// Review, mark, and list evidence-backed CLIARE issues.
+    Issues(IssuesArgs),
     /// Print CLIARE implementation metadata.
     Metadata(MetadataArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct IssuesArgs {
+    #[command(subcommand)]
+    pub command: IssuesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IssuesCommand {
+    /// Record a maintainer disposition for an issue id.
+    Mark(IssuesMarkArgs),
+    /// List generated issues with maintainer dispositions.
+    List(IssuesListArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct IssuesMarkArgs {
+    /// Issue id to mark, such as issue.output_mode_unprobed.
+    pub issue_id: String,
+
+    /// Measurement artifact directory containing issues.json or issue-dispositions.json.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Maintainer disposition to record.
+    #[arg(long, value_enum)]
+    pub status: IssueDispositionStatus,
+
+    /// Maintainer rationale for the disposition.
+    #[arg(long)]
+    pub reason: String,
+}
+
+#[derive(Debug, Args)]
+pub struct IssuesListArgs {
+    /// Measurement artifact directory containing issues.json or issue-dispositions.json.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = IssuesListFormat::Markdown)]
+    pub format: IssuesListFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum IssuesListFormat {
+    Markdown,
+    Json,
 }
 
 #[derive(Debug, Args)]
@@ -725,6 +785,7 @@ mod tests {
         assert!(help.contains("report"));
         assert!(help.contains("describe"));
         assert!(help.contains("skills"));
+        assert!(help.contains("issues"));
         assert!(help.contains("context"));
         assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
@@ -755,6 +816,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -779,6 +841,7 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Context(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected guard command")
             }
@@ -806,6 +869,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected benchmark command")
             }
@@ -843,6 +907,7 @@ mod tests {
             | Command::Context(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected report command")
             }
@@ -878,6 +943,7 @@ mod tests {
             | Command::Context(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected report command")
             }
@@ -933,8 +999,55 @@ mod tests {
             | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected skills command")
+            }
+        }
+    }
+
+    #[test]
+    fn issues_mark_accepts_status_and_reason() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "issues",
+            "mark",
+            "issue.alternate_help_form_unavailable",
+            "--out",
+            ".cliare-current",
+            "--context",
+            "authenticated",
+            "--status",
+            "intentional",
+            "--reason",
+            "direct help is canonical",
+        ])
+        .expect("valid issues mark command");
+
+        match cli.command {
+            Command::Issues(args) => match args.command {
+                super::IssuesCommand::Mark(args) => {
+                    assert_eq!(args.issue_id, "issue.alternate_help_form_unavailable");
+                    assert_eq!(args.out, std::path::PathBuf::from(".cliare-current"));
+                    assert_eq!(args.context.as_deref(), Some("authenticated"));
+                    assert_eq!(
+                        args.status,
+                        crate::issue_disposition::IssueDispositionStatus::Intentional
+                    );
+                    assert_eq!(args.reason, "direct help is canonical");
+                }
+                super::IssuesCommand::List(_) => panic!("expected mark command"),
+            },
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected issues command")
             }
         }
     }
@@ -961,7 +1074,8 @@ mod tests {
             | Command::Context(_)
             | Command::Report(_)
             | Command::Describe(_)
-            | Command::Skills(_) => {
+            | Command::Skills(_)
+            | Command::Issues(_) => {
                 panic!("expected metadata command")
             }
         }
@@ -993,6 +1107,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -1015,6 +1130,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }
@@ -1048,6 +1164,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected jobs command")
             }
@@ -1082,6 +1199,7 @@ mod tests {
             | Command::Context(_)
             | Command::Report(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected describe command")
             }
@@ -1153,6 +1271,7 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
+            | Command::Issues(_)
             | Command::Metadata(_) => {
                 panic!("expected measure command")
             }

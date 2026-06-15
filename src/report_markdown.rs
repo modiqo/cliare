@@ -24,6 +24,7 @@ pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
     render_ci_action_brief(&mut text, packet);
     render_persona_score_summary(&mut text, packet);
     render_persona_findings(&mut text, packet);
+    render_reviewed_decisions(&mut text, packet);
     render_persona_command_guidance(&mut text, packet);
     render_run_recommendations(&mut text, packet);
     render_artifact_navigation(&mut text, packet);
@@ -64,17 +65,19 @@ pub(crate) fn render_drilldown_markdown(packet: &ReportDrilldownPacket) -> Strin
 
     writeln!(
         &mut text,
-        "| Area | Severity | Confidence | Affected | Issue | Agent Impact | Action |"
+        "| Area | Severity | Confidence | Disposition | Affected | Issue | Agent Impact | Action |"
     )
     .expect("writing to string cannot fail");
-    writeln!(&mut text, "|---|---|---|---:|---|---|---|").expect("writing to string cannot fail");
+    writeln!(&mut text, "|---|---|---|---|---:|---|---|---|")
+        .expect("writing to string cannot fail");
     for issue in &packet.issues {
         writeln!(
             &mut text,
-            "| {} | `{}` | `{}` | {} | `{}` {} | {} | {} |",
+            "| {} | `{}` | `{}` | `{}` | {} | `{}` {} | {} | {} |",
             escape_markdown(issue.agent_readiness_area.label()),
             issue.severity.label(),
             issue.confidence.label(),
+            issue_disposition_label(issue),
             issue.affected_commands.len(),
             escape_markdown(&issue.id),
             escape_markdown(&issue.title),
@@ -408,10 +411,10 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         writeln!(text).expect("writing to string cannot fail");
         writeln!(
             text,
-            "| Area | Severity | Confidence | Affected | Evidence | Issue | Agent Impact | Maintainer Action |"
+            "| Area | Severity | Confidence | Disposition | Affected | Evidence | Issue | Agent Impact | Maintainer Action |"
         )
         .expect("writing to string cannot fail");
-        writeln!(text, "|---|---|---|---:|---:|---|---|---|")
+        writeln!(text, "|---|---|---|---|---:|---:|---|---|---|")
             .expect("writing to string cannot fail");
         for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
             render_maintainer_finding_row(text, issue);
@@ -425,10 +428,10 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         writeln!(text).expect("writing to string cannot fail");
         writeln!(
             text,
-            "| Priority | Severity | Category | Confidence | Affected | Evidence | Issue | Persona Action |"
+            "| Priority | Severity | Category | Confidence | Disposition | Affected | Evidence | Issue | Persona Action |"
         )
         .expect("writing to string cannot fail");
-        writeln!(text, "|---:|---|---|---|---:|---:|---|---|")
+        writeln!(text, "|---:|---|---|---|---|---:|---:|---|---|")
             .expect("writing to string cannot fail");
         for (index, issue) in packet
             .top_issues
@@ -470,10 +473,11 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
 fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
     writeln!(
         text,
-        "| {} | `{}` | `{}` | {} | {} | `{}` {} | {} | {} |",
+        "| {} | `{}` | `{}` | `{}` | {} | {} | `{}` {} | {} | {} |",
         escape_markdown(issue.agent_readiness_area.label()),
         issue.severity.label(),
         issue.confidence.label(),
+        issue_disposition_label(issue),
         issue.affected_commands.len(),
         issue.evidence.len(),
         escape_markdown(&issue.id),
@@ -487,11 +491,12 @@ fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
 fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue, priority: usize) {
     writeln!(
         text,
-        "| P{} | `{}` | `{}` | `{}` | {} | {} | `{}` {} | {} |",
+        "| P{} | `{}` | `{}` | `{}` | `{}` | {} | {} | `{}` {} | {} |",
         priority,
         issue.severity.label(),
         issue.category.label(),
         issue.confidence.label(),
+        issue_disposition_label(issue),
         issue.affected_commands.len(),
         issue.evidence.len(),
         escape_markdown(&issue.id),
@@ -586,6 +591,15 @@ fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
         )
         .expect("writing to string cannot fail");
     }
+    if let Some(disposition) = &issue.disposition {
+        writeln!(
+            text,
+            "- Maintainer disposition: `{}` - {}",
+            disposition.status.label(),
+            escape_markdown(&disposition.reason)
+        )
+        .expect("writing to string cannot fail");
+    }
     writeln!(
         text,
         "- Role action: {}",
@@ -639,6 +653,77 @@ fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
         }
     }
     writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_reviewed_decisions(text: &mut String, packet: &PersonaOutcomePacket) {
+    if packet.reviewed_issues.is_empty() {
+        return;
+    }
+
+    writeln!(text, "## Reviewed Decisions").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "These findings remain in the evidence ledger, but maintainer disposition removes them from the action queue for this persona."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "| Disposition | Issue | Reason | Harness Guidance |")
+        .expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|---|").expect("writing to string cannot fail");
+    for issue in packet.reviewed_issues.iter().take(PERSONA_FINDING_LIMIT) {
+        let disposition = issue
+            .disposition
+            .as_ref()
+            .expect("reviewed issues always have a disposition");
+        writeln!(
+            text,
+            "| `{}` | `{}` {} | {} | {} |",
+            disposition.status.label(),
+            escape_markdown(&issue.id),
+            escape_markdown(&issue.title),
+            escape_markdown(&disposition.reason),
+            escape_markdown(reviewed_harness_guidance(issue))
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+}
+
+fn issue_disposition_label(issue: &Issue) -> &'static str {
+    issue
+        .disposition
+        .as_ref()
+        .map(|disposition| disposition.status.label())
+        .unwrap_or("open")
+}
+
+fn reviewed_harness_guidance(issue: &Issue) -> &'static str {
+    match issue
+        .disposition
+        .as_ref()
+        .map(|disposition| disposition.status)
+    {
+        Some(crate::issue_disposition::IssueDispositionStatus::Intentional) => {
+            "follow the recorded project convention"
+        }
+        Some(crate::issue_disposition::IssueDispositionStatus::NotApplicable) => {
+            "ignore for this CLI unless local policy says otherwise"
+        }
+        Some(crate::issue_disposition::IssueDispositionStatus::FalsePositive) => {
+            "do not route around this finding"
+        }
+        Some(crate::issue_disposition::IssueDispositionStatus::AcceptedRisk) => {
+            "route only when the harness can tolerate the recorded risk"
+        }
+        Some(crate::issue_disposition::IssueDispositionStatus::Deferred) => {
+            "treat as known debt rather than an immediate blocker"
+        }
+        Some(crate::issue_disposition::IssueDispositionStatus::Open)
+        | Some(crate::issue_disposition::IssueDispositionStatus::Accepted)
+        | Some(crate::issue_disposition::IssueDispositionStatus::NeedsFixture)
+        | None => issue.agent_readiness_area.agent_impact(),
+    }
 }
 
 fn command_section_heading(issue: &Issue) -> &'static str {
@@ -1246,6 +1331,24 @@ pub(crate) fn render_issue_ledger_markdown(ledger: &IssueLedger) -> String {
         ledger.summary.blocked_by_preconditions
     )
     .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "- Dispositioned issues: `{}`",
+        ledger.summary.dispositioned
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "- Action required: `{}`",
+        ledger.summary.action_required
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "- Reviewed decisions: `{}`",
+        ledger.summary.reviewed_decisions
+    )
+    .expect("writing to string cannot fail");
 
     for issue in &ledger.issues {
         render_issue_markdown(&mut text, issue, 2);
@@ -1268,6 +1371,15 @@ fn render_issue_markdown(text: &mut String, issue: &Issue, heading_level: usize)
         .expect("writing to string cannot fail");
     writeln!(text, "- Confidence: `{}`", issue.confidence.label())
         .expect("writing to string cannot fail");
+    if let Some(disposition) = &issue.disposition {
+        writeln!(
+            text,
+            "- Maintainer disposition: `{}` - {}",
+            disposition.status.label(),
+            escape_markdown(&disposition.reason)
+        )
+        .expect("writing to string cannot fail");
+    }
     writeln!(
         text,
         "- Affected commands: `{}`",
@@ -1518,7 +1630,7 @@ mod tests {
 
         let mut row = String::new();
         render_persona_finding_row(&mut row, Persona::Harness, &issue, 1);
-        assert!(row.starts_with("| P1 | `medium` | `safety` | `observed` | 1 | 0 |"));
+        assert!(row.starts_with("| P1 | `medium` | `safety` | `observed` | `open` | 1 | 0 |"));
         assert!(row.contains("Do not run this probe profile"));
 
         let mut detail = String::new();
@@ -1614,6 +1726,7 @@ mod tests {
                 })
                 .unwrap_or_default(),
             evidence: Vec::new(),
+            disposition: None,
             personas: Vec::new(),
             score_dimensions: Vec::new(),
         }

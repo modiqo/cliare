@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::artifacts::MeasurementArtifactPaths;
 use crate::cli::ReportPersona;
 use crate::fingerprint::TargetFingerprint;
+use crate::issue_disposition::IssueDisposition;
 use crate::report_evidence::EvidenceSummaryPacket;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -97,6 +98,7 @@ pub struct PersonaOutcomePacket {
     pub(crate) summary: OutcomeSummary,
     pub(crate) run_recommendations: Vec<RunRecommendation>,
     pub(crate) top_issues: Vec<Issue>,
+    pub(crate) reviewed_issues: Vec<Issue>,
     pub(crate) action_items: Vec<ActionItem>,
     pub(crate) command_health: Vec<CommandHealth>,
     pub(crate) score: ScoreSection,
@@ -351,6 +353,9 @@ pub(crate) struct IssueLedgerSummary {
     pub(crate) affected_commands: usize,
     pub(crate) requires_fixtures: usize,
     pub(crate) blocked_by_preconditions: usize,
+    pub(crate) dispositioned: usize,
+    pub(crate) action_required: usize,
+    pub(crate) reviewed_decisions: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -368,6 +373,8 @@ pub(crate) struct Issue {
     pub(crate) verification: IssueVerification,
     pub(crate) affected_commands: Vec<IssueCommand>,
     pub(crate) evidence: Vec<IssueEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) disposition: Option<IssueDisposition>,
     pub(crate) personas: Vec<Persona>,
     pub(crate) score_dimensions: Vec<String>,
 }

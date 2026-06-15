@@ -379,6 +379,45 @@ mod tests {
     }
 
     #[test]
+    fn metadata_spec_contains_issues_commands() {
+        let metadata = metadata();
+        let issues = metadata
+            .command_spec
+            .root
+            .subcommands
+            .iter()
+            .find(|command| command.name == "issues")
+            .expect("issues command is present");
+        let mark = issues
+            .subcommands
+            .iter()
+            .find(|command| command.name == "mark")
+            .expect("issues mark command is present");
+        let list = issues
+            .subcommands
+            .iter()
+            .find(|command| command.name == "list")
+            .expect("issues list command is present");
+
+        assert_eq!(
+            mark.usage,
+            "Usage: cliare issues mark [OPTIONS] --status <STATUS> --reason <REASON> <ISSUE_ID>"
+        );
+        assert!(mark.args.iter().any(|arg| {
+            arg.long.as_deref() == Some("status")
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "intentional")
+        }));
+        assert!(
+            list.args
+                .iter()
+                .any(|arg| arg.long.as_deref() == Some("format"))
+        );
+    }
+
+    #[test]
     fn metadata_spec_records_default_single_value_arity() {
         let metadata = metadata();
         let measure = metadata

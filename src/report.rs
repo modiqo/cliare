@@ -12,6 +12,7 @@ use crate::cli::{ReportArea, ReportArgs, ReportFormat};
 use crate::context;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
+use crate::issue_disposition::IssueDispositions;
 use crate::path_classification;
 use crate::report_evidence::{
     EvidenceSummary, EvidenceSummaryPacket, ProcessEvidence, SideEffectRecord,
@@ -74,7 +75,9 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
         context::resolve_measurement_dir(&args.out, args.context.as_deref(), "cliare report")
             .await?;
     let artifacts = MeasuredArtifacts::read(&artifact_dir).await?;
-    let issue_ledger = IssueLedger::build(&artifact_dir, &artifacts);
+    let mut issue_ledger = IssueLedger::build(&artifact_dir, &artifacts);
+    let dispositions = IssueDispositions::read_optional(&artifact_dir).await?;
+    issue_ledger.apply_dispositions(&dispositions);
     let packet = PersonaOutcomePacket::build(persona, &artifact_dir, &artifacts, &issue_ledger);
     let drilldown = ReportSelection::from_args(&args)
         .map(|selection| {
@@ -171,7 +174,9 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
 
 pub async fn write_all_persona_reports(out_dir: &Path) -> Result<PersonaArtifactSummary> {
     let artifacts = MeasuredArtifacts::read(out_dir).await?;
-    let issue_ledger = IssueLedger::build(out_dir, &artifacts);
+    let mut issue_ledger = IssueLedger::build(out_dir, &artifacts);
+    let dispositions = IssueDispositions::read_optional(out_dir).await?;
+    issue_ledger.apply_dispositions(&dispositions);
     let issues_markdown = render_issue_ledger_markdown(&issue_ledger);
     let issues_json = serde_json::to_string_pretty(&issue_ledger)
         .map_err(CliareError::SerializePersonaOutcome)?;
@@ -233,6 +238,7 @@ impl PersonaOutcomePacket {
         let run_recommendations = run_recommendations(persona, &artifacts.scorecard, artifact_dir);
         let notes = notes(persona, &artifacts.scorecard);
         let top_issues = top_issues_for_persona(persona, issue_ledger);
+        let reviewed_issues = reviewed_issues_for_persona(persona, issue_ledger);
 
         Self {
             schema_version: PACKET_SCHEMA_VERSION,
@@ -244,6 +250,7 @@ impl PersonaOutcomePacket {
             summary,
             run_recommendations,
             top_issues,
+            reviewed_issues,
             action_items,
             command_health,
             score: ScoreSection::from(&artifacts.scorecard),
@@ -560,6 +567,16 @@ impl IssueLedger {
             issues,
         }
     }
+
+    fn apply_dispositions(&mut self, dispositions: &IssueDispositions) {
+        let disposition_by_id = dispositions.by_issue_id();
+        for issue in &mut self.issues {
+            if let Some(disposition) = disposition_by_id.get(issue.id.as_str()) {
+                issue.disposition = Some((*disposition).clone());
+            }
+        }
+        self.summary = IssueLedgerSummary::from_issues(&self.issues);
+    }
 }
 
 impl IssueLedgerSummary {
@@ -570,6 +587,9 @@ impl IssueLedgerSummary {
         let mut low = 0_usize;
         let mut requires_fixtures = 0_usize;
         let mut blocked_by_preconditions = 0_usize;
+        let mut dispositioned = 0_usize;
+        let mut action_required = 0_usize;
+        let mut reviewed_decisions = 0_usize;
 
         for issue in issues {
             match issue.severity {
@@ -582,6 +602,15 @@ impl IssueLedgerSummary {
             }
             if issue.confidence == IssueConfidence::Blocked {
                 blocked_by_preconditions += 1;
+            }
+            if issue_action_required(issue) {
+                action_required += 1;
+            }
+            if let Some(disposition) = &issue.disposition {
+                dispositioned += 1;
+                if !disposition.status.is_action_required() {
+                    reviewed_decisions += 1;
+                }
             }
             for command in &issue.affected_commands {
                 affected_commands.insert(command.path.clone());
@@ -596,6 +625,9 @@ impl IssueLedgerSummary {
             affected_commands: affected_commands.len(),
             requires_fixtures,
             blocked_by_preconditions,
+            dispositioned,
+            action_required,
+            reviewed_decisions,
         }
     }
 }
@@ -1141,6 +1173,7 @@ fn issue_from_action_item(
         verification,
         affected_commands,
         evidence,
+        disposition: None,
         personas: personas_for_issue(item.category, confidence),
         score_dimensions,
     }
@@ -1730,7 +1763,7 @@ fn top_issues_for_persona(persona: Persona, issue_ledger: &IssueLedger) -> Vec<I
     let mut issues = issue_ledger
         .issues
         .iter()
-        .filter(|issue| issue.personas.contains(&persona))
+        .filter(|issue| issue.personas.contains(&persona) && issue_action_required(issue))
         .cloned()
         .collect::<Vec<_>>();
     issues.sort_by(|left, right| {
@@ -1741,6 +1774,31 @@ fn top_issues_for_persona(persona: Persona, issue_ledger: &IssueLedger) -> Vec<I
     });
     issues.truncate(TOP_ISSUE_LIMIT);
     issues
+}
+
+fn reviewed_issues_for_persona(persona: Persona, issue_ledger: &IssueLedger) -> Vec<Issue> {
+    let mut issues = issue_ledger
+        .issues
+        .iter()
+        .filter(|issue| issue.personas.contains(&persona) && !issue_action_required(issue))
+        .cloned()
+        .collect::<Vec<_>>();
+    issues.sort_by(|left, right| {
+        left.disposition
+            .as_ref()
+            .map(|entry| entry.status)
+            .cmp(&right.disposition.as_ref().map(|entry| entry.status))
+            .then(left.id.cmp(&right.id))
+    });
+    issues.truncate(TOP_ISSUE_LIMIT);
+    issues
+}
+
+fn issue_action_required(issue: &Issue) -> bool {
+    issue
+        .disposition
+        .as_ref()
+        .is_none_or(|disposition| disposition.status.is_action_required())
 }
 
 fn unique_command_paths(paths: Vec<Vec<String>>) -> Vec<Vec<String>> {
@@ -2284,6 +2342,7 @@ mod tests {
             },
             affected_commands: Vec::new(),
             evidence: Vec::new(),
+            disposition: None,
             personas: personas.to_vec(),
             score_dimensions: Vec::new(),
         }

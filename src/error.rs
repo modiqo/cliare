@@ -114,6 +114,44 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read issue ledger {path}")]
+    ReadIssueLedger {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse issue ledger {path}")]
+    ParseIssueLedger {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to read issue dispositions {path}")]
+    ReadIssueDispositions {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse issue dispositions {path}")]
+    ParseIssueDispositions {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize issue dispositions")]
+    SerializeIssueDispositions(#[source] serde_json::Error),
+
+    #[error("failed to write issue dispositions {path}")]
+    WriteIssueDispositions {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to read scorecard for CI artifacts {path}")]
     ReadCiScorecard {
         path: PathBuf,

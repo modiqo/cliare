@@ -10,6 +10,7 @@ pub const EVIDENCE_JSONL: &str = "evidence.jsonl";
 pub const JUNIT_XML: &str = "junit.xml";
 pub const ISSUES_JSON: &str = "issues.json";
 pub const ISSUES_MD: &str = "issues.md";
+pub const ISSUE_DISPOSITIONS_JSON: &str = "issue-dispositions.json";
 pub const README_MD: &str = "README.md";
 pub const REPORT_MD: &str = "report.md";
 pub const RUNTIME_CONTEXT_JSON: &str = "runtime-context.json";

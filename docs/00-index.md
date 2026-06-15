@@ -83,6 +83,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | **23** | [Agent Skill Installation](23-agent-skills-installation.md) | Installable CLIARE review skills and persona commands for coding agents | Claude, Codex, and Cursor can inspect CLIARE artifacts through the same table-first review discipline |
 | **24** | [CLI Benchmark Corpus Tracker](24-cli-benchmark-corpus-tracker.md) | Candidate vendor and popular OSS CLIs for the real-world benchmark corpus | P0/P1 tracker with blank measurement, score, traversal, and findings columns |
 | **25** | [Calibration Workflow TODO](25-calibration-workflow-todo.md) | Concrete TODO for `calibrate init`, `calibrate check`, and `calibrate evaluate` | Truth sets and metrics come before fitting or `cliare-score-v1` certification |
+| **26** | [Maintainer Issue Dispositions](26-maintainer-dispositions.md) | Maintainer review workflow for accepting, rejecting, deferring, or fixture-gating CLIARE issues | Dispositions annotate evidence instead of suppressing findings |
 
 ---
 
