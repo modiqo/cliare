@@ -28,6 +28,44 @@ The runtime context is written to `runtime-context.json`, embedded in `scorecard
 
 ---
 
+## Practical Model Summary
+
+The scoring model has two layers.
+
+The first layer builds evidence from runtime probes. CLIARE observes help output, invalid-command behavior, flag behavior, output-mode probes, precondition diagnostics, side effects, timeouts, spawn failures, and sandbox filesystem changes. Those observations become explicit claims, such as:
+
+```text
+this command exists
+this flag takes a value
+this path requires authentication
+this path requires local workspace context
+this output mode is parseable
+this safe probe created a persistent file
+```
+
+The second layer turns those claims into a scorecard. `cliare-score-v0` scores six readiness dimensions:
+
+| Dimension | Weight | What It Measures |
+|---|---:|---|
+| Discovery | `35%` | Whether agents can find and confirm the command surface. |
+| Grammar | `20%` | Whether agents can construct valid commands, flags, and arguments. |
+| Execution | `20%` | Whether probes complete without hangs, spawn failures, or timeouts. |
+| Recovery | `15%` | Whether invalid invocations fail clearly and helpfully. |
+| Output | `5%` | Whether machine-readable outputs are advertised and parseable. |
+| Safety | `5%` | Whether safe probes avoid persistent side effects. |
+
+The Bayesian component currently lives in the claim-confidence layer. For command and flag existence, CLIARE starts from a prior probability and updates log odds as evidence arrives:
+
+```text
+posterior log-odds = prior log-odds + sum(evidence weights)
+```
+
+A structural row in help is weak positive evidence. Reachable command-specific help is strong positive evidence. A classified auth, local-context, fixture, network, or dependency diagnostic is evidence that the command was recognized but blocked by a runtime precondition. Non-help output from a help probe is negative evidence. Clean rejection of invalid commands and flags improves recovery and parser-boundary confidence.
+
+This makes `cliare-score-v0` evidence-backed and useful for CI improvement loops. It does not make it a certified leaderboard model. `cliare-score-v1` should be frozen only after calibration on labeled train, validation, and holdout corpuses.
+
+---
+
 ## Formal Interpretation
 
 CLIARE scores are intended to approximate posterior expected utility for an agent operating a CLI from runtime evidence.

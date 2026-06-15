@@ -82,6 +82,7 @@ The score is not a black-box opinion. Every point traces to evidence:
 | **22** | [Agent-Ready CLI Standard Template](22-agent-ready-cli-standard-template.md) | Runtime behavior template for CLIs that want strong agent and CLIARE compatibility | Help, output, diagnostics, preconditions, fixtures, and CI artifacts form the measurable standard |
 | **23** | [Agent Skill Installation](23-agent-skills-installation.md) | Installable CLIARE review skills and persona commands for coding agents | Claude, Codex, and Cursor can inspect CLIARE artifacts through the same table-first review discipline |
 | **24** | [CLI Benchmark Corpus Tracker](24-cli-benchmark-corpus-tracker.md) | Candidate vendor and popular OSS CLIs for the real-world benchmark corpus | P0/P1 tracker with blank measurement, score, traversal, and findings columns |
+| **25** | [Calibration Workflow TODO](25-calibration-workflow-todo.md) | Concrete TODO for `calibrate init`, `calibrate check`, and `calibrate evaluate` | Truth sets and metrics come before fitting or `cliare-score-v1` certification |
 
 ---
 

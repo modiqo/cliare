@@ -65,23 +65,23 @@ The current implementation is useful for local measurement, CI regression checks
 
 ## Next Checkpoint
 
-### Checkpoint 27: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 27: Calibration Workflow Foundation
 
-Goal: turn the current measurement and benchmark core into a complete user-facing release flow for maintainers and CI.
+Goal: add the first honest calibration workflow so benchmark runs can become labeled truth sets and model-quality reports.
 
 Acceptance criteria:
 
-- Add baseline acceptance so projects can intentionally bless the current scorecard.
-- Add evidence replay/rescore so score-model changes can be evaluated without re-running every probe.
-- Add a `certify` surface that composes measure, guard policy, benchmark metadata, and profile labeling.
-- Add resumable checkpoints for long deep-profile runs and benchmark corpuses.
-- Keep every new command artifact-compatible with existing `scorecard.json`, `command-index.json`, `shape.json`, `evidence.jsonl`, and benchmark reports.
+- Add `cliare calibrate init` to scaffold `cliare.truth.v1` from an existing measurement artifact.
+- Add `cliare calibrate check` to validate corpus structure, split discipline, runtime-context labeling, and review readiness.
+- Add `cliare calibrate evaluate` to compare predicted claims against truth labels and emit calibration metrics.
+- Keep fitting out of scope until enough labeled train, validation, and holdout data exists.
+- Keep `cliare-score-v0` as the active score model until calibration evidence supports a candidate v1.
 
 Why this is next:
 
-- Maintainers need a stable workflow after the first measurement.
-- Replay/rescore is the missing bridge between experimental scoring and reproducible model evolution.
-- Certification should be a composition of measured evidence, policy, and provenance rather than a separate scoring path.
+- The benchmark tracker can only mature into a standard if measurements become truth-labeled evaluation data.
+- Calibration is the bridge between useful CI scoring and credible public leaderboard authority.
+- The workflow must be implemented before model fitting so the project does not train on its own unverified predictions.
 
 ## Latest Benchmark Snapshot
 
@@ -125,7 +125,8 @@ Corpus totals: 9 measured, 0 skipped, 0 failed, 2706 probes, 100% expected-band 
 
 ## Near-Term Order
 
-1. Baseline accept/rescore/certify command surfaces.
-2. Replay/resume checkpointing for long deep-profile and benchmark runs.
-3. Policy ergonomics: named policy presets and policy schema docs.
-4. Public scorecard publishing and leaderboard ingestion.
+1. Calibration workflow foundation: init, check, evaluate.
+2. Baseline accept/rescore/certify command surfaces.
+3. Replay/resume checkpointing for long deep-profile and benchmark runs.
+4. Policy ergonomics: named policy presets and policy schema docs.
+5. Public scorecard publishing and leaderboard ingestion.
