@@ -24,6 +24,7 @@ pub mod precondition;
 pub mod process;
 pub mod report;
 mod report_evidence;
+mod report_model;
 pub mod sandbox;
 pub mod score;
 pub mod score_model;

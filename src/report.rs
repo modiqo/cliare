@@ -3,14 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::fs;
 
 use crate::artifact_guide::{self, ArtifactGuideSummary};
-use crate::artifacts::{
-    EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, MeasurementArtifactPaths, SCORECARD_JSON, SHAPE_JSON,
-};
-use crate::cli::{ReportArgs, ReportFormat, ReportPersona};
+use crate::artifacts::{EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, SCORECARD_JSON, SHAPE_JSON};
+use crate::cli::{ReportArgs, ReportFormat};
 use crate::context;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
@@ -18,6 +16,9 @@ use crate::path_classification;
 use crate::report_evidence::{
     EvidenceSummary, EvidenceSummaryPacket, ProcessEvidence, SideEffectRecord,
 };
+use crate::report_model::*;
+
+pub use crate::report_model::Persona;
 
 const PACKET_SCHEMA_VERSION: &str = "cliare.persona-outcome.v1";
 const ISSUE_LEDGER_SCHEMA_VERSION: &str = "cliare.issue-ledger.v1";
@@ -172,103 +173,6 @@ async fn write_persona_artifact(path: &Path, bytes: &[u8]) -> Result<()> {
         })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Persona {
-    Maintainer,
-    Harness,
-    Platform,
-    Security,
-    Oss,
-    Devrel,
-    Research,
-}
-
-const ALL_PERSONAS: [Persona; 7] = [
-    Persona::Maintainer,
-    Persona::Harness,
-    Persona::Platform,
-    Persona::Security,
-    Persona::Oss,
-    Persona::Devrel,
-    Persona::Research,
-];
-
-impl Persona {
-    pub fn all() -> &'static [Self] {
-        &ALL_PERSONAS
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Maintainer => "maintainer",
-            Self::Harness => "harness",
-            Self::Platform => "platform",
-            Self::Security => "security",
-            Self::Oss => "oss",
-            Self::Devrel => "devrel",
-            Self::Research => "research",
-        }
-    }
-
-    fn title(self) -> &'static str {
-        match self {
-            Self::Maintainer => "CLI Maintainer",
-            Self::Harness => "Agent Harness Builder",
-            Self::Platform => "Platform Engineering",
-            Self::Security => "Security and Governance",
-            Self::Oss => "Open-Source Maintainer",
-            Self::Devrel => "Developer Relations",
-            Self::Research => "Benchmark and Research",
-        }
-    }
-
-    fn primary_question(self) -> &'static str {
-        match self {
-            Self::Maintainer => "What should change in the CLI to improve agent readiness?",
-            Self::Harness => "Which command subset is ready to expose to agents?",
-            Self::Platform => "Can this CLI pass an internal automation quality gate?",
-            Self::Security => "What runtime evidence matters for approval or restriction?",
-            Self::Oss => "Is this scorecard ready to publish credibly?",
-            Self::Devrel => "Which public readiness claims are supported by evidence?",
-            Self::Research => "Can this run support replay, labeling, and calibration?",
-        }
-    }
-}
-
-impl From<ReportPersona> for Persona {
-    fn from(value: ReportPersona) -> Self {
-        match value {
-            ReportPersona::Maintainer => Self::Maintainer,
-            ReportPersona::Harness => Self::Harness,
-            ReportPersona::Platform => Self::Platform,
-            ReportPersona::Security => Self::Security,
-            ReportPersona::Oss => Self::Oss,
-            ReportPersona::Devrel => Self::Devrel,
-            ReportPersona::Research => Self::Research,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct PersonaOutcomePacket {
-    schema_version: &'static str,
-    persona: Persona,
-    persona_title: &'static str,
-    primary_question: &'static str,
-    target: TargetFingerprint,
-    source_artifacts: SourceArtifacts,
-    summary: OutcomeSummary,
-    run_recommendations: Vec<RunRecommendation>,
-    top_issues: Vec<Issue>,
-    action_items: Vec<ActionItem>,
-    command_health: Vec<CommandHealth>,
-    score: ScoreSection,
-    coverage: CoverageSection,
-    evidence_summary: EvidenceSummaryPacket,
-    notes: Vec<OutcomeNote>,
-}
-
 impl PersonaOutcomePacket {
     fn build(
         persona: Persona,
@@ -301,62 +205,6 @@ impl PersonaOutcomePacket {
             notes,
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct SourceArtifacts {
-    artifact_dir: PathBuf,
-    evidence: PathBuf,
-    shape: PathBuf,
-    command_index: PathBuf,
-    command_index_markdown: PathBuf,
-    scorecard: PathBuf,
-}
-
-impl SourceArtifacts {
-    fn new(artifact_dir: &Path) -> Self {
-        let paths = MeasurementArtifactPaths::from_dir(artifact_dir);
-        Self {
-            artifact_dir: artifact_dir.to_path_buf(),
-            evidence: paths.evidence,
-            shape: paths.shape,
-            command_index: paths.command_index_json,
-            command_index_markdown: paths.command_index_markdown,
-            scorecard: paths.scorecard,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct OutcomeSummary {
-    score: f64,
-    score_model: String,
-    score_status: String,
-    measured_weight: f64,
-    max_weight: f64,
-    findings: usize,
-    shape_gaps: usize,
-    commands_discovered: usize,
-    commands_runtime_confirmed: usize,
-    commands_precondition_blocked: usize,
-    command_health_entries: usize,
-    output_contracts_discovered: usize,
-    machine_readable_output_contracts: usize,
-    output_mode_parse_successes: usize,
-    side_effect_files_total: usize,
-    credential_like_side_effects: usize,
-    precondition_blocked_probes: usize,
-    auth_required_probes: usize,
-    local_context_required_probes: usize,
-    fixture_required_probes: usize,
-    observed_max_depth: usize,
-    max_depth: usize,
-    max_probes: usize,
-    probes_completed: usize,
-    frontier_remaining: usize,
-    budget_exhausted: bool,
-    traversal_stop_reason: String,
-    traversal_complete: bool,
 }
 
 impl OutcomeSummary {
@@ -396,16 +244,6 @@ impl OutcomeSummary {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ScoreSection {
-    total: f64,
-    measured_weight: f64,
-    max_weight: f64,
-    model: String,
-    status: String,
-    subscores: BTreeMap<String, ScoreSubscorePacket>,
-}
-
 impl From<&ScorecardArtifact> for ScoreSection {
     fn from(scorecard: &ScorecardArtifact) -> Self {
         Self {
@@ -431,60 +269,6 @@ impl From<&ScorecardArtifact> for ScoreSection {
                 .collect(),
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct ScoreSubscorePacket {
-    score: Option<f64>,
-    weight: f64,
-    status: String,
-    rationale: String,
-}
-
-#[derive(Debug, Serialize)]
-struct CoverageSection {
-    commands_discovered: usize,
-    commands_runtime_confirmed: usize,
-    commands_precondition_blocked: usize,
-    command_confirmation_rate: f64,
-    flags_discovered: usize,
-    output_contracts_discovered: usize,
-    machine_readable_output_contracts: usize,
-    output_mode_probes_completed: usize,
-    output_mode_parse_successes: usize,
-    output_mode_precondition_blocked: usize,
-    side_effect_files_created: usize,
-    side_effect_files_modified: usize,
-    side_effect_files_deleted: usize,
-    side_effect_files_total: usize,
-    side_effect_probe_count: usize,
-    credential_like_side_effects: usize,
-    avg_command_confidence: f64,
-    avg_flag_confidence: f64,
-    observed_max_depth: usize,
-    traversal_profile: String,
-    max_depth: usize,
-    max_probes: usize,
-    min_expected_value: u16,
-    concurrency_limit: usize,
-    traversal_rounds: usize,
-    probes_scheduled: usize,
-    probes_completed: usize,
-    probes_cancelled: usize,
-    probes_timed_out: usize,
-    probes_failed_to_spawn: usize,
-    precondition_blocked_probes: usize,
-    auth_required_probes: usize,
-    local_context_required_probes: usize,
-    fixture_required_probes: usize,
-    frontier_remaining: usize,
-    highest_pending_expected_value: Option<u16>,
-    candidates_skipped_by_depth: usize,
-    candidates_skipped_by_convergence: usize,
-    probes_skipped_by_budget: usize,
-    budget_exhausted: bool,
-    traversal_stop_reason: String,
-    traversal_complete: bool,
 }
 
 impl From<&CoverageArtifact> for CoverageSection {
@@ -536,23 +320,6 @@ impl From<&CoverageArtifact> for CoverageSection {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct RunRecommendation {
-    id: String,
-    priority: u16,
-    command: String,
-    purpose: String,
-    when_to_use: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ActionSeverity {
-    High,
-    Medium,
-    Low,
-}
-
 impl ActionSeverity {
     fn from_scorecard(value: &str) -> Self {
         match value {
@@ -569,21 +336,6 @@ impl ActionSeverity {
             Self::Low => "low",
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ActionCategory {
-    Discovery,
-    Grammar,
-    Execution,
-    Output,
-    Safety,
-    Recovery,
-    Coverage,
-    Policy,
-    Publishing,
-    Calibration,
 }
 
 impl ActionCategory {
@@ -613,32 +365,6 @@ impl ActionCategory {
             Self::Calibration => "calibration",
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct ActionItem {
-    id: String,
-    severity: ActionSeverity,
-    category: ActionCategory,
-    title: String,
-    detail: String,
-    recommendation: String,
-    affected_count: usize,
-    sample_command_paths: Vec<Vec<String>>,
-    command_paths: Vec<Vec<String>>,
-    evidence_count: usize,
-    evidence: Vec<String>,
-    dimension: Option<String>,
-    persona_priority: u16,
-}
-
-#[derive(Debug, Serialize)]
-struct IssueLedger {
-    schema_version: &'static str,
-    target: TargetFingerprint,
-    source_artifacts: SourceArtifacts,
-    summary: IssueLedgerSummary,
-    issues: Vec<Issue>,
 }
 
 impl IssueLedger {
@@ -695,17 +421,6 @@ impl IssueLedger {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct IssueLedgerSummary {
-    issues_total: usize,
-    high: usize,
-    medium: usize,
-    low: usize,
-    affected_commands: usize,
-    requires_fixtures: usize,
-    blocked_by_preconditions: usize,
-}
-
 impl IssueLedgerSummary {
     fn from_issues(issues: &[Issue]) -> Self {
         let mut affected_commands = BTreeSet::<Vec<String>>::new();
@@ -744,34 +459,6 @@ impl IssueLedgerSummary {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct Issue {
-    id: String,
-    status: &'static str,
-    severity: ActionSeverity,
-    category: ActionCategory,
-    confidence: IssueConfidence,
-    title: String,
-    impact: String,
-    why_it_matters: String,
-    recommendation: String,
-    verification: IssueVerification,
-    affected_commands: Vec<IssueCommand>,
-    evidence: Vec<IssueEvidence>,
-    personas: Vec<Persona>,
-    score_dimensions: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum IssueConfidence {
-    Observed,
-    Blocked,
-    Inferred,
-    NeedsFixture,
-    Advisory,
-}
-
 impl IssueConfidence {
     fn label(self) -> &'static str {
         match self {
@@ -782,119 +469,6 @@ impl IssueConfidence {
             Self::Advisory => "advisory",
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueVerification {
-    command: String,
-    expected_change: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueCommand {
-    path: Vec<String>,
-    argv: Vec<String>,
-    state: String,
-    confidence: Option<f64>,
-    summary: Option<String>,
-    required_positionals: Vec<String>,
-    output_contracts: Vec<IssueOutputContract>,
-    reason: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueOutputContract {
-    mode: String,
-    flag_name: String,
-    argv_fragment: Vec<String>,
-    status: String,
-    probed: bool,
-    parse_success: bool,
-    precondition_blocked: bool,
-    diagnostic: Option<String>,
-    help_behavior: Option<String>,
-    skip_reason: Option<String>,
-    suggested_validation: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueEvidence {
-    kind: String,
-    reference: String,
-    detail: String,
-    probe_id: Option<String>,
-    intent: Option<String>,
-    scope: String,
-    argv: Vec<String>,
-    status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    interpretation: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    side_effects: Vec<IssueSideEffect>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueSideEffect {
-    operation: String,
-    region: String,
-    path: String,
-    credential_like: bool,
-    size_bytes: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum CommandReadinessState {
-    Ready,
-    Blocked,
-    Incomplete,
-    Unconfirmed,
-}
-
-#[derive(Debug, Serialize)]
-struct CommandHealth {
-    id: String,
-    path: Vec<String>,
-    argv: Vec<String>,
-    summary: Option<String>,
-    confidence: f64,
-    runtime_state: String,
-    readiness_state: CommandReadinessState,
-    preconditions: Vec<String>,
-    flags_discovered: usize,
-    output_contracts: Vec<CommandOutputContract>,
-    gaps: Vec<CommandGap>,
-    evidence: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct CommandOutputContract {
-    mode: String,
-    flag_name: String,
-    argv_fragment: Vec<String>,
-    advertised: bool,
-    probed: bool,
-    parse_success: bool,
-    precondition_blocked: bool,
-    observed_kind: Option<String>,
-    diagnostic: Option<String>,
-    help_probed: bool,
-    help_behavior: Option<String>,
-    help_parse_success: bool,
-    help_diagnostic: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct CommandGap {
-    kind: String,
-    reason: String,
-    evidence: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct OutcomeNote {
-    level: &'static str,
-    text: String,
 }
 
 struct MeasuredArtifacts {
