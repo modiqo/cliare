@@ -254,7 +254,8 @@ fn token_class(token: &str) -> Option<TokenClass> {
         }
         "workspace" | "workspaces" | "project" | "projects" | "repository" | "repositories"
         | "repo" | "repos" | "worktree" | "directory" | "directories" | "root" | "cwd"
-        | "config" | "configuration" | "git" => Some(TokenClass::LocalContext),
+        | "config" | "configuration" | "git" | "artifact" | "artifacts" | "measurement"
+        | "measurements" => Some(TokenClass::LocalContext),
         "argument" | "arguments" | "option" | "options" | "flag" | "flags" | "parameter"
         | "parameters" | "field" | "fields" | "value" | "values" | "input" | "inputs"
         | "operand" | "operands" | "number" | "identifier" | "id" | "name" => {

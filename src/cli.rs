@@ -76,10 +76,7 @@ Maintainer workflow:
   5. Gate: cliare guard <target-cli> --baseline .cliare-baseline/<target-cli>/scorecard.json --out .cliare/<target-cli> --profile deep
   6. Publish: cliare describe .cliare/<target-cli> --write && cliare report harness --out .cliare/<target-cli> --write
 
-Measure profiles used by this playbook:
-  quick     Small local smoke pass for one help path, diagnostic, or output contract.
-  standard  Balanced default for the normal maintainer loop.
-  deep      Broader release-quality pass for CI baselines, releases, and agent-surface publishing.
+Measure profiles used by generated commands: `quick` is the small local smoke pass, `standard` is the normal maintainer loop, and `deep` is the broader release-quality pass for CI baselines, releases, and agent-surface publishing.
 
 Advanced traversal knobs:
   --max-depth controls recursive command-path depth.
@@ -1243,7 +1240,7 @@ mod tests {
         assert!(help.contains(".cliare/<target-cli>"));
         assert!(help.contains("human"));
         assert!(help.contains("--profile quick|standard|deep"));
-        assert!(help.contains("Measure profiles used by this playbook"));
+        assert!(help.contains("Measure profiles used by generated commands"));
         assert!(help.contains("Do not pass --profile to `cliare playbook`"));
         assert!(help.contains("quick"));
         assert!(help.contains("standard"));

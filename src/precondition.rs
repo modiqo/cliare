@@ -86,6 +86,12 @@ mod tests {
             classify_text("failed to run git: fatal: not a git repository: .git"),
             Some(PreconditionKind::LocalContextRequired)
         );
+        assert_eq!(
+            classify_text(
+                "cliare issues list could not find CLIARE measurement artifact directory .cliare"
+            ),
+            Some(PreconditionKind::LocalContextRequired)
+        );
     }
 
     #[test]

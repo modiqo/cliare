@@ -1,0 +1,25 @@
+{
+  "schema_version": "cliare.issue-dispositions.v1",
+  "dispositions": [
+    {
+      "issue_id": "issue.alternate_help_form_unavailable",
+      "status": "intentional",
+      "reason": "Direct <command> --help is the canonical help contract; help <path> compatibility is optional."
+    },
+    {
+      "issue_id": "issue.invalid_flag_diagnostics_unknown",
+      "status": "deferred",
+      "reason": "Inferred diagnostic-probe coverage gap; not treated as a dogfood product blocker until command-level evidence shows unclear clap diagnostics."
+    },
+    {
+      "issue_id": "issue.output_mode_unprobed",
+      "status": "deferred",
+      "reason": "Requires safe fixture operands for role, persona, and context_dir; tracked separately from dogfood CI readiness."
+    },
+    {
+      "issue_id": "issue.precondition_blocked",
+      "status": "not_applicable",
+      "reason": "Blocked probes are expected for commands requiring target paths, artifact directories, baselines, or fixture context in isolated dogfood measurement."
+    }
+  ]
+}

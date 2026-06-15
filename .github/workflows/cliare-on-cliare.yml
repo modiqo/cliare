@@ -98,6 +98,9 @@ jobs:
           set -euo pipefail
 
           out=".cliare/cliare-on-cliare"
+          if [[ -f ".github/cliare-on-cliare/issue-dispositions.json" ]]; then
+            cp ".github/cliare-on-cliare/issue-dispositions.json" "$out/issue-dispositions.json"
+          fi
           ./target/debug/cliare issues list --out "$out" --format json > "$out/issues-list.json"
 
           node <<'NODE'
