@@ -19,6 +19,12 @@ The command form is:
 cliare playbook maintainer --target mycli
 ```
 
+The default output is `human`: a short terminal walkthrough that tells you exactly what to run next. Use `--format markdown` for a full document and `--format json` for automation.
+
+```sh
+cliare playbook maintainer --target mycli --format human
+```
+
 By default, the playbook uses `.cliare/<target-cli>` as the artifact directory. This is a project-local folder relative to the directory where you run CLIARE, not a global database. If the target is not known yet, the playbook prints placeholder commands with `<target-cli>`.
 
 Use `--out` only to override the artifact directory:

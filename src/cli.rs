@@ -109,7 +109,7 @@ pub struct PlaybookArgs {
     pub context: Option<String>,
 
     /// Output format.
-    #[arg(long, value_enum, default_value_t = PlaybookFormat::Markdown)]
+    #[arg(long, value_enum, default_value_t = PlaybookFormat::Human)]
     pub format: PlaybookFormat,
 }
 
@@ -134,6 +134,7 @@ impl std::fmt::Display for PlaybookRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum PlaybookFormat {
+    Human,
     Markdown,
     Json,
 }
@@ -1199,6 +1200,7 @@ mod tests {
 
         assert!(help.contains("Maintainer workflow"));
         assert!(help.contains(".cliare/<target-cli>"));
+        assert!(help.contains("human"));
         assert!(help.contains("--profile quick|standard|deep"));
         assert!(help.contains("Measure profiles used by this playbook"));
         assert!(help.contains("Do not pass --profile to `cliare playbook`"));

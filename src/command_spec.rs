@@ -442,6 +442,13 @@ mod tests {
                 .iter()
                 .any(|arg| arg.long.as_deref() == Some("target"))
         );
+        assert!(playbook.args.iter().any(|arg| {
+            arg.long.as_deref() == Some("format")
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "human")
+        }));
     }
 
     #[test]
