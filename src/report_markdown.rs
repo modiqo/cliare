@@ -81,9 +81,14 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
         .iter()
         .filter(|issue| issue.confidence == IssueConfidence::NeedsFixture)
         .count();
+    if packet.persona == Persona::Maintainer {
+        render_maintainer_action_brief(text, packet, high, fixture_required);
+        return;
+    }
+
     writeln!(
         text,
-        "Treat the rows below as the persona-specific CI work queue. Fix P1 first, rerun the verification command, and use `command-index.json` only when you need exact command parameters or evidence pointers."
+        "Treat the rows below as the persona-specific CI work queue. Fix the first row first, rerun the verification command, and use `command-index.json` only when you need exact command parameters or evidence pointers."
     )
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
@@ -130,6 +135,61 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text).expect("writing to string cannot fail");
 }
 
+fn render_maintainer_action_brief(
+    text: &mut String,
+    packet: &PersonaOutcomePacket,
+    high: usize,
+    fixture_required: usize,
+) {
+    writeln!(
+        text,
+        "Treat the rows below as agent-readiness work areas. Start with concrete contract gaps before advisory compatibility work, and use `command-index.json` only when you need exact command parameters or evidence pointers."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "| Field | Value |").expect("writing to string cannot fail");
+    writeln!(text, "|---|---|").expect("writing to string cannot fail");
+    writeln!(text, "| Score | `{:.0}/100` |", packet.summary.score)
+        .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Work queue | `{}` area(s), `{}` high severity, `{}` need fixtures |",
+        packet.top_issues.len(),
+        high,
+        fixture_required
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Command drill-down | `{}` |",
+        packet.source_artifacts.command_index.display()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+
+    writeln!(
+        text,
+        "| Area | Severity | Confidence | Affected | Agent Impact | Maintainer Action | Verify |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|---:|---|---|---|").expect("writing to string cannot fail");
+    for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
+        writeln!(
+            text,
+            "| {} | `{}` | `{}` | {} | {} | {} | `{}` |",
+            escape_markdown(issue.agent_readiness_area.label()),
+            issue.severity.label(),
+            issue.confidence.label(),
+            issue.affected_commands.len(),
+            escape_markdown(issue.agent_readiness_area.agent_impact()),
+            escape_markdown(persona_issue_action(packet.persona, issue)),
+            escape_markdown(&issue.verification.command)
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+}
+
 fn render_persona_score_summary(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text, "## Score Context").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
@@ -156,6 +216,16 @@ fn render_persona_score_summary(text: &mut String, packet: &PersonaOutcomePacket
         "| Output contracts | `{}` machine-readable, `{}` parse successes |",
         packet.summary.machine_readable_output_contracts,
         packet.summary.output_mode_parse_successes
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Agent routing | `{}` ready, `{}` conditional, `{}` need fixtures, `{}` blocked, `{}` candidates |",
+        packet.summary.commands_ready,
+        packet.summary.commands_conditional,
+        packet.summary.commands_needs_fixture,
+        packet.summary.commands_blocked,
+        packet.summary.commands_candidate
     )
     .expect("writing to string cannot fail");
     writeln!(
@@ -239,7 +309,12 @@ fn issue_where_label(issue: &Issue) -> String {
 }
 
 fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
-    writeln!(text, "## Priority Findings").expect("writing to string cannot fail");
+    let heading = if packet.persona == Persona::Maintainer {
+        "## Agent Readiness Findings"
+    } else {
+        "## Priority Findings"
+    };
+    writeln!(text, "{heading}").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     if packet.top_issues.is_empty() {
         writeln!(
@@ -251,25 +326,45 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         return;
     }
 
-    writeln!(
-        text,
-        "Start with this table, then open the matching drill-down section only when you need command samples, evidence, or verification details."
-    )
-    .expect("writing to string cannot fail");
-    writeln!(text).expect("writing to string cannot fail");
-    writeln!(
-        text,
-        "| Priority | Severity | Category | Confidence | Affected | Evidence | Issue | Persona Action |"
-    )
-    .expect("writing to string cannot fail");
-    writeln!(text, "|---:|---|---|---|---:|---:|---|---|").expect("writing to string cannot fail");
-    for (index, issue) in packet
-        .top_issues
-        .iter()
-        .take(PERSONA_FINDING_LIMIT)
-        .enumerate()
-    {
-        render_persona_finding_row(text, packet.persona, issue, index + 1);
+    if packet.persona == Persona::Maintainer {
+        writeln!(
+            text,
+            "Start with the area table, then open a drill-down only when you need command samples, evidence, or verification details."
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text).expect("writing to string cannot fail");
+        writeln!(
+            text,
+            "| Area | Severity | Confidence | Affected | Evidence | Issue | Agent Impact | Maintainer Action |"
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text, "|---|---|---|---:|---:|---|---|---|")
+            .expect("writing to string cannot fail");
+        for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
+            render_maintainer_finding_row(text, issue);
+        }
+    } else {
+        writeln!(
+            text,
+            "Start with this table, then open the matching drill-down section only when you need command samples, evidence, or verification details."
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text).expect("writing to string cannot fail");
+        writeln!(
+            text,
+            "| Priority | Severity | Category | Confidence | Affected | Evidence | Issue | Persona Action |"
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text, "|---:|---|---|---|---:|---:|---|---|")
+            .expect("writing to string cannot fail");
+        for (index, issue) in packet
+            .top_issues
+            .iter()
+            .take(PERSONA_FINDING_LIMIT)
+            .enumerate()
+        {
+            render_persona_finding_row(text, packet.persona, issue, index + 1);
+        }
     }
     writeln!(text).expect("writing to string cannot fail");
     if packet.top_issues.len() > PERSONA_FINDING_LIMIT {
@@ -291,8 +386,29 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         .take(PERSONA_FINDING_LIMIT)
         .enumerate()
     {
-        render_persona_finding(text, packet.persona, issue, index + 1);
+        if packet.persona == Persona::Maintainer {
+            render_maintainer_finding(text, issue);
+        } else {
+            render_persona_finding(text, packet.persona, issue, index + 1);
+        }
     }
+}
+
+fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
+    writeln!(
+        text,
+        "| {} | `{}` | `{}` | {} | {} | `{}` {} | {} | {} |",
+        escape_markdown(issue.agent_readiness_area.label()),
+        issue.severity.label(),
+        issue.confidence.label(),
+        issue.affected_commands.len(),
+        issue.evidence.len(),
+        escape_markdown(&issue.id),
+        escape_markdown(&issue.title),
+        escape_markdown(issue.agent_readiness_area.agent_impact()),
+        escape_markdown(persona_issue_action(Persona::Maintainer, issue))
+    )
+    .expect("writing to string cannot fail");
 }
 
 fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue, priority: usize) {
@@ -312,6 +428,31 @@ fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue
     .expect("writing to string cannot fail");
 }
 
+fn render_maintainer_finding(text: &mut String, issue: &Issue) {
+    let area = issue.agent_readiness_area.label();
+    writeln!(text, "<details>").expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "<summary>{}: {} (`{}`)</summary>",
+        escape_markdown(area),
+        escape_markdown(&issue.title),
+        escape_markdown(&issue.id)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "### {}: {}",
+        escape_markdown(area),
+        escape_markdown(&issue.title)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    render_finding_body(text, Persona::Maintainer, issue);
+    writeln!(text, "</details>").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+}
+
 fn render_persona_finding(text: &mut String, persona: Persona, issue: &Issue, priority: usize) {
     writeln!(text, "<details>").expect("writing to string cannot fail");
     writeln!(
@@ -326,6 +467,12 @@ fn render_persona_finding(text: &mut String, persona: Persona, issue: &Issue, pr
     writeln!(text, "### P{}: {}", priority, escape_markdown(&issue.title))
         .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
+    render_finding_body(text, persona, issue);
+    writeln!(text, "</details>").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
     writeln!(
         text,
         "- Issue: `{}` (`{}`, `{}`, `{}`)",
@@ -335,6 +482,20 @@ fn render_persona_finding(text: &mut String, persona: Persona, issue: &Issue, pr
         issue.confidence.label()
     )
     .expect("writing to string cannot fail");
+    if persona == Persona::Maintainer {
+        writeln!(
+            text,
+            "- Area: {}",
+            escape_markdown(issue.agent_readiness_area.label())
+        )
+        .expect("writing to string cannot fail");
+        writeln!(
+            text,
+            "- Agent impact: {}",
+            escape_markdown(issue.agent_readiness_area.agent_impact())
+        )
+        .expect("writing to string cannot fail");
+    }
     writeln!(
         text,
         "- Role action: {}",
@@ -387,8 +548,6 @@ fn render_persona_finding(text: &mut String, persona: Persona, issue: &Issue, pr
             render_issue_evidence_sample(text, evidence);
         }
     }
-    writeln!(text).expect("writing to string cannot fail");
-    writeln!(text, "</details>").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 }
 
@@ -537,15 +696,20 @@ fn render_persona_command_guidance(text: &mut String, packet: &PersonaOutcomePac
         .iter()
         .filter(|command| command.readiness_state == CommandReadinessState::Blocked)
         .collect::<Vec<_>>();
-    let incomplete = packet
+    let conditional = packet
         .command_health
         .iter()
-        .filter(|command| command.readiness_state == CommandReadinessState::Incomplete)
+        .filter(|command| command.readiness_state == CommandReadinessState::Conditional)
         .collect::<Vec<_>>();
-    let unconfirmed = packet
+    let needs_fixture = packet
         .command_health
         .iter()
-        .filter(|command| command.readiness_state == CommandReadinessState::Unconfirmed)
+        .filter(|command| command.readiness_state == CommandReadinessState::NeedsFixture)
+        .collect::<Vec<_>>();
+    let candidate = packet
+        .command_health
+        .iter()
+        .filter(|command| command.readiness_state == CommandReadinessState::Candidate)
         .collect::<Vec<_>>();
 
     writeln!(text, "## Command Set Guidance").expect("writing to string cannot fail");
@@ -567,29 +731,36 @@ fn render_persona_command_guidance(text: &mut String, packet: &PersonaOutcomePac
         text,
         "Ready",
         ready.len(),
-        "Candidate for routing or promotion after local policy review.",
+        "Candidate for automatic routing after local policy review.",
         &ready,
     );
     render_command_guidance_row(
         text,
-        "Hold: preconditions",
+        "Conditional",
+        conditional.len(),
+        "Expose only when the harness can satisfy the listed condition or review policy.",
+        &conditional,
+    );
+    render_command_guidance_row(
+        text,
+        "Needs fixtures",
+        needs_fixture.len(),
+        "Hold until safe operands, sample data, or command-local output validation exist.",
+        &needs_fixture,
+    );
+    render_command_guidance_row(
+        text,
+        "Blocked",
         blocked.len(),
-        "Requires auth, profile, fixture, or environment setup before agent use.",
+        "Unavailable for automatic routing until unsatisfied runtime preconditions are handled.",
         &blocked,
     );
     render_command_guidance_row(
         text,
-        "Hold: incomplete evidence",
-        incomplete.len(),
-        "Needs better help, diagnostics, output validation, or side-effect policy.",
-        &incomplete,
-    );
-    render_command_guidance_row(
-        text,
-        "Candidates only",
-        unconfirmed.len(),
+        "Candidates",
+        candidate.len(),
         "Do not expose automatically until runtime confirmation exists.",
-        &unconfirmed,
+        &candidate,
     );
     writeln!(
         text,
@@ -770,7 +941,14 @@ fn persona_decision(packet: &PersonaOutcomePacket) -> String {
             }
         }
         Persona::Harness => {
-            "Expose only runtime-confirmed commands with understood output and side-effect behavior. Hold blocked, unconfirmed, and fixture-required commands out of automatic routing until the listed findings are resolved.".to_owned()
+            format!(
+                "Expose the {} ready command(s) first. Treat {} conditional command(s), {} fixture-required command(s), {} blocked command(s), and {} candidate command(s) as policy or remediation work before automatic routing.",
+                packet.summary.commands_ready,
+                packet.summary.commands_conditional,
+                packet.summary.commands_needs_fixture,
+                packet.summary.commands_blocked,
+                packet.summary.commands_candidate
+            )
         }
         Persona::Platform => {
             "Use this run as CI feedback, not a final gate, until policy thresholds and side-effect rules are explicit. Convert the top findings into guard policy before enforcing readiness across teams.".to_owned()
@@ -800,6 +978,12 @@ fn persona_decision(packet: &PersonaOutcomePacket) -> String {
 
 fn persona_issue_action(persona: Persona, issue: &Issue) -> &'static str {
     match persona {
+        Persona::Maintainer if issue.id == "issue.alternate_help_form_unavailable" => {
+            "Treat this as optional compatibility. Add `help <command path>` only where it improves agent navigation enough to justify the maintenance cost."
+        }
+        Persona::Maintainer if issue.id == "issue.help_unavailable" => {
+            "Make canonical direct `<command> --help` available for real commands, with usage, operands, flags, and safe diagnostics that agents can parse."
+        }
         Persona::Maintainer
             if issue.confidence == IssueConfidence::Inferred
                 && issue_has_runtime_confirmed_commands(issue) =>
@@ -824,6 +1008,9 @@ fn persona_issue_action(persona: Persona, issue: &Issue) -> &'static str {
             }
             _ => "Fix the CLI contract behind this finding and rerun the same profile.",
         },
+        Persona::Harness if issue.id == "issue.alternate_help_form_unavailable" => {
+            "Do not demote otherwise ready commands solely because optional `help <command path>` compatibility is unavailable."
+        }
         Persona::Harness
             if issue.confidence == IssueConfidence::Inferred
                 && issue_has_runtime_confirmed_commands(issue) =>
@@ -877,7 +1064,7 @@ fn persona_issue_action(persona: Persona, issue: &Issue) -> &'static str {
 fn persona_command_guidance(persona: Persona) -> &'static str {
     match persona {
         Persona::Harness => {
-            "Use this section as the first-pass agent exposure map. Ready commands can be candidates for routing; every other bucket needs policy, fixtures, or manual review."
+            "Use this section as the first-pass agent exposure map. It mirrors `command-index.json` so harness routing, skill generation, and human review use the same readiness labels."
         }
         Persona::Security => {
             "Use this section to separate commands with confirmed safe shape from commands blocked by preconditions or incomplete evidence."
@@ -1180,12 +1367,13 @@ pub(crate) fn render_written_summary(
 #[cfg(test)]
 mod tests {
     use super::{
-        ci_action_text, command_section_heading, persona_issue_action, render_persona_finding,
-        render_persona_finding_row, use_when_text,
+        ci_action_text, command_section_heading, persona_issue_action, render_maintainer_finding,
+        render_maintainer_finding_row, render_persona_finding, render_persona_finding_row,
+        use_when_text,
     };
     use crate::report_model::{
-        ActionCategory, ActionSeverity, Issue, IssueCommand, IssueConfidence, IssueVerification,
-        Persona,
+        ActionCategory, ActionSeverity, AgentReadinessArea, Issue, IssueCommand, IssueConfidence,
+        IssueVerification, Persona,
     };
 
     #[test]
@@ -1251,6 +1439,28 @@ mod tests {
     }
 
     #[test]
+    fn maintainer_issue_markdown_uses_agent_readiness_area() {
+        let mut issue = test_issue(
+            IssueConfidence::NeedsFixture,
+            ActionCategory::Output,
+            Some("runtime_confirmed"),
+        );
+        issue.agent_readiness_area = AgentReadinessArea::OutputContracts;
+
+        let mut row = String::new();
+        render_maintainer_finding_row(&mut row, &issue);
+        assert!(row.starts_with("| Output Contracts | `medium` | `needs_fixture` |"));
+        assert!(row.contains("Agents cannot reliably read command results."));
+
+        let mut detail = String::new();
+        render_maintainer_finding(&mut detail, &issue);
+        assert!(detail.contains("<summary>Output Contracts: Test issue (`issue.test`)</summary>"));
+        assert!(detail.contains("- Area: Output Contracts"));
+        assert!(detail.contains("- Agent impact: Agents cannot reliably read command results."));
+        assert!(!detail.contains("P1"));
+    }
+
+    #[test]
     fn ci_action_text_makes_fixture_work_actionable() {
         let mut issue = test_issue(
             IssueConfidence::NeedsFixture,
@@ -1289,6 +1499,7 @@ mod tests {
             status: "open",
             severity: ActionSeverity::Medium,
             category,
+            agent_readiness_area: AgentReadinessArea::Diagnostics,
             confidence,
             title: "Test issue".to_owned(),
             impact: "impact".to_owned(),

@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, de::IgnoredAny};
 use tokio::fs;
 
 use crate::artifact_guide;
-use crate::artifacts::{EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, SCORECARD_JSON, SHAPE_JSON};
+use crate::artifacts::{
+    COMMAND_INDEX_JSON, EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, SCORECARD_JSON, SHAPE_JSON,
+};
 use crate::cli::{ReportArgs, ReportFormat};
 use crate::context;
 use crate::error::{CliareError, Result};
@@ -178,7 +180,7 @@ impl PersonaOutcomePacket {
         artifacts: &MeasuredArtifacts,
         issue_ledger: &IssueLedger,
     ) -> Self {
-        let command_health = command_health(&artifacts.shape);
+        let command_health = command_health(&artifacts.command_index);
         let summary = OutcomeSummary::from_artifacts(artifacts, command_health.len());
         let action_items = action_items(persona, artifacts);
         let run_recommendations = run_recommendations(persona, &artifacts.scorecard, artifact_dir);
@@ -221,6 +223,11 @@ impl OutcomeSummary {
             commands_runtime_confirmed: coverage.commands_runtime_confirmed,
             commands_precondition_blocked: coverage.commands_precondition_blocked,
             command_health_entries,
+            commands_ready: artifacts.command_index.summary.ready,
+            commands_conditional: artifacts.command_index.summary.conditional,
+            commands_needs_fixture: artifacts.command_index.summary.needs_fixture,
+            commands_blocked: artifacts.command_index.summary.blocked,
+            commands_candidate: artifacts.command_index.summary.candidate,
             output_contracts_discovered: coverage.output_contracts_discovered,
             machine_readable_output_contracts: coverage.machine_readable_output_contracts,
             output_mode_parse_successes: coverage.output_mode_parse_successes,
@@ -437,6 +444,7 @@ impl IssueLedgerSummary {
 struct MeasuredArtifacts {
     scorecard: ScorecardArtifact,
     shape: ShapeArtifact,
+    command_index: CommandIndexArtifact,
     evidence: EvidenceSummary,
 }
 
@@ -444,10 +452,13 @@ impl MeasuredArtifacts {
     async fn read(out_dir: &Path) -> Result<Self> {
         let scorecard = read_json::<ScorecardArtifact>(&out_dir.join(SCORECARD_JSON)).await?;
         let shape = read_json::<ShapeArtifact>(&out_dir.join(SHAPE_JSON)).await?;
+        let command_index =
+            read_json::<CommandIndexArtifact>(&out_dir.join(COMMAND_INDEX_JSON)).await?;
         let evidence = EvidenceSummary::read(&out_dir.join(EVIDENCE_JSONL)).await?;
         Ok(Self {
             scorecard,
             shape,
+            command_index,
             evidence,
         })
     }
@@ -557,22 +568,18 @@ struct FindingArtifact {
 #[derive(Debug, Deserialize)]
 struct ShapeArtifact {
     commands: Vec<ShapeCommand>,
-    flags: Vec<ShapeFlag>,
     output_contracts: Vec<ShapeOutputContract>,
     gaps: Vec<ShapeGap>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ShapeCommand {
-    id: String,
     path: Vec<String>,
     argv: Vec<String>,
     summary: Option<String>,
     positionals: Vec<ShapePositionalArgument>,
     confidence: f64,
     runtime_state: String,
-    preconditions: Vec<String>,
-    evidence: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -586,30 +593,18 @@ struct ShapePositionalArgument {
 }
 
 #[derive(Debug, Deserialize)]
-struct ShapeFlag {
-    command_path: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
 struct ShapeOutputContract {
     command_path: Vec<String>,
     mode: String,
     flag_name: String,
     argv_fragment: Vec<String>,
-    advertised: bool,
     probed: bool,
     parse_success: bool,
     precondition_blocked: bool,
     observed_kind: Option<String>,
     diagnostic: Option<String>,
     #[serde(default)]
-    help_probed: bool,
-    #[serde(default)]
     help_behavior: Option<String>,
-    #[serde(default)]
-    help_parse_success: bool,
-    #[serde(default)]
-    help_diagnostic: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -620,55 +615,79 @@ struct ShapeGap {
     evidence: Vec<String>,
 }
 
-fn command_health(shape: &ShapeArtifact) -> Vec<CommandHealth> {
-    let mut flags_by_command: BTreeMap<Vec<String>, usize> = BTreeMap::new();
-    for flag in &shape.flags {
-        *flags_by_command
-            .entry(flag.command_path.clone())
-            .or_default() += 1;
-    }
+#[derive(Debug, Deserialize)]
+struct CommandIndexArtifact {
+    summary: CommandIndexSummaryArtifact,
+    commands: Vec<CommandIndexCommand>,
+}
 
-    let mut contracts_by_command: BTreeMap<Vec<String>, Vec<CommandOutputContract>> =
-        BTreeMap::new();
-    for contract in &shape.output_contracts {
-        contracts_by_command
-            .entry(contract.command_path.clone())
-            .or_default()
-            .push(CommandOutputContract {
-                mode: contract.mode.clone(),
-                flag_name: contract.flag_name.clone(),
-                argv_fragment: contract.argv_fragment.clone(),
-                advertised: contract.advertised,
-                probed: contract.probed,
-                parse_success: contract.parse_success,
-                precondition_blocked: contract.precondition_blocked,
-                observed_kind: contract.observed_kind.clone(),
-                diagnostic: contract.diagnostic.clone(),
-                help_probed: contract.help_probed,
-                help_behavior: contract.help_behavior.clone(),
-                help_parse_success: contract.help_parse_success,
-                help_diagnostic: contract.help_diagnostic.clone(),
-            });
-    }
+#[derive(Debug, Deserialize)]
+struct CommandIndexSummaryArtifact {
+    ready: usize,
+    conditional: usize,
+    needs_fixture: usize,
+    blocked: usize,
+    candidate: usize,
+}
 
-    let mut gaps_by_command: BTreeMap<Vec<String>, Vec<CommandGap>> = BTreeMap::new();
-    for gap in &shape.gaps {
-        gaps_by_command
-            .entry(gap.command_path.clone())
-            .or_default()
-            .push(CommandGap {
-                kind: gap.kind.clone(),
-                reason: gap.reason.clone(),
-                evidence: gap.evidence.clone(),
-            });
-    }
+#[derive(Debug, Deserialize)]
+struct CommandIndexCommand {
+    id: String,
+    path: Vec<String>,
+    argv: Vec<String>,
+    summary: Option<String>,
+    runtime_state: String,
+    agent_suitability: String,
+    #[serde(default)]
+    suitability_reasons: Vec<String>,
+    confidence: f64,
+    parameters: CommandIndexParameters,
+    #[serde(default)]
+    preconditions: Vec<String>,
+    #[serde(default)]
+    output_contracts: Vec<CommandIndexOutputContract>,
+    #[serde(default)]
+    gaps: Vec<CommandIndexGap>,
+    evidence: Vec<String>,
+}
 
-    shape
+#[derive(Debug, Default, Deserialize)]
+struct CommandIndexParameters {
+    #[serde(default)]
+    flags: Vec<IgnoredAny>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommandIndexOutputContract {
+    mode: String,
+    flag_name: String,
+    argv_fragment: Vec<String>,
+    status: String,
+    #[serde(default)]
+    preconditions: Vec<String>,
+    observed_kind: Option<String>,
+    diagnostic: Option<String>,
+    #[serde(default)]
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommandIndexGap {
+    kind: String,
+    reason: String,
+    evidence: Vec<String>,
+}
+
+fn command_health(command_index: &CommandIndexArtifact) -> Vec<CommandHealth> {
+    command_index
         .commands
         .iter()
         .map(|command| {
-            let gaps = gaps_by_command.remove(&command.path).unwrap_or_default();
-            let readiness_state = readiness_state(command, &gaps);
+            let output_contracts = command
+                .output_contracts
+                .iter()
+                .map(command_health_output_contract)
+                .collect::<Vec<_>>();
             CommandHealth {
                 id: command.id.clone(),
                 path: command.path.clone(),
@@ -676,28 +695,54 @@ fn command_health(shape: &ShapeArtifact) -> Vec<CommandHealth> {
                 summary: command.summary.clone(),
                 confidence: command.confidence,
                 runtime_state: command.runtime_state.clone(),
-                readiness_state,
+                readiness_state: readiness_state(&command.agent_suitability),
+                suitability_reasons: command.suitability_reasons.clone(),
                 preconditions: command.preconditions.clone(),
-                flags_discovered: flags_by_command
-                    .get(&command.path)
-                    .copied()
-                    .unwrap_or_default(),
-                output_contracts: contracts_by_command
-                    .remove(&command.path)
-                    .unwrap_or_default(),
-                gaps,
+                flags_discovered: command.parameters.flags.len(),
+                output_contracts,
+                gaps: command
+                    .gaps
+                    .iter()
+                    .map(|gap| CommandGap {
+                        kind: gap.kind.clone(),
+                        reason: gap.reason.clone(),
+                        evidence: gap.evidence.clone(),
+                    })
+                    .collect(),
                 evidence: command.evidence.clone(),
             }
         })
         .collect()
 }
 
-fn readiness_state(command: &ShapeCommand, gaps: &[CommandGap]) -> CommandReadinessState {
-    match command.runtime_state.as_str() {
-        "runtime_confirmed" if gaps.is_empty() => CommandReadinessState::Ready,
-        "runtime_confirmed" => CommandReadinessState::Incomplete,
-        "precondition_blocked" => CommandReadinessState::Blocked,
-        _ => CommandReadinessState::Unconfirmed,
+fn command_health_output_contract(contract: &CommandIndexOutputContract) -> CommandOutputContract {
+    CommandOutputContract {
+        mode: contract.mode.clone(),
+        flag_name: contract.flag_name.clone(),
+        argv_fragment: contract.argv_fragment.clone(),
+        status: contract.status.clone(),
+        preconditions: contract.preconditions.clone(),
+        advertised: true,
+        probed: contract.status != "unprobed",
+        parse_success: contract.status == "parse_success",
+        precondition_blocked: contract.status == "precondition_blocked",
+        observed_kind: contract.observed_kind.clone(),
+        diagnostic: contract.diagnostic.clone(),
+        help_probed: false,
+        help_behavior: None,
+        help_parse_success: false,
+        help_diagnostic: None,
+        evidence: contract.evidence.clone(),
+    }
+}
+
+fn readiness_state(agent_suitability: &str) -> CommandReadinessState {
+    match agent_suitability {
+        "ready" => CommandReadinessState::Ready,
+        "conditional" => CommandReadinessState::Conditional,
+        "needs_fixture" => CommandReadinessState::NeedsFixture,
+        "blocked" => CommandReadinessState::Blocked,
+        _ => CommandReadinessState::Candidate,
     }
 }
 
@@ -928,6 +973,7 @@ fn issue_from_action_item(
         status: "open",
         severity: item.severity,
         category: item.category,
+        agent_readiness_area: agent_readiness_area(&item),
         confidence,
         title: item.title,
         impact: issue_impact(item.category, confidence).to_owned(),
@@ -941,7 +987,43 @@ fn issue_from_action_item(
     }
 }
 
+fn agent_readiness_area(item: &ActionItem) -> AgentReadinessArea {
+    if item.id.contains("output_mode") {
+        return AgentReadinessArea::OutputContracts;
+    }
+    if item.id.contains("precondition") || item.id.contains("auth_required") {
+        return AgentReadinessArea::Preconditions;
+    }
+    if item.id.contains("existence_unconfirmed") {
+        return AgentReadinessArea::CommandDiscovery;
+    }
+    if item.id.contains("alternate_help_form_unavailable") {
+        return AgentReadinessArea::Compatibility;
+    }
+    if item.id.contains("help_unavailable") {
+        return AgentReadinessArea::HelpCoverage;
+    }
+    if item.id.contains("diagnostics_unknown") {
+        return AgentReadinessArea::Diagnostics;
+    }
+
+    match item.category {
+        ActionCategory::Discovery => AgentReadinessArea::CommandDiscovery,
+        ActionCategory::Grammar | ActionCategory::Recovery => AgentReadinessArea::Diagnostics,
+        ActionCategory::Execution => AgentReadinessArea::Execution,
+        ActionCategory::Output => AgentReadinessArea::OutputContracts,
+        ActionCategory::Safety => AgentReadinessArea::Safety,
+        ActionCategory::Coverage => AgentReadinessArea::Coverage,
+        ActionCategory::Policy => AgentReadinessArea::Policy,
+        ActionCategory::Publishing => AgentReadinessArea::Publishing,
+        ActionCategory::Calibration => AgentReadinessArea::Calibration,
+    }
+}
+
 fn issue_confidence(item: &ActionItem) -> IssueConfidence {
+    if item.id.contains("alternate_help_form_unavailable") {
+        return IssueConfidence::Advisory;
+    }
     if item.id.contains("output_mode_unprobed") || item.id.contains("output_mode_unvalidated") {
         return IssueConfidence::NeedsFixture;
     }
@@ -1385,6 +1467,9 @@ fn issue_verification(
 
 fn issue_impact(category: ActionCategory, confidence: IssueConfidence) -> &'static str {
     match (category, confidence) {
+        (ActionCategory::Discovery, IssueConfidence::Advisory) => {
+            "Optional compatibility can improve agent navigation, but canonical direct help remains the routing contract."
+        }
         (ActionCategory::Output, IssueConfidence::NeedsFixture) => {
             "Agents and harnesses cannot rely on the advertised output contract until safe operands or fixtures validate it."
         }
@@ -1580,9 +1665,10 @@ fn evidence_for_finding(finding: &FindingArtifact, artifacts: &MeasuredArtifacts
 
 fn category_for_gap(kind: &str) -> ActionCategory {
     match kind {
-        "existence_unconfirmed" | "help_unavailable" | "precondition_blocked" => {
-            ActionCategory::Discovery
-        }
+        "existence_unconfirmed"
+        | "help_unavailable"
+        | "alternate_help_form_unavailable"
+        | "precondition_blocked" => ActionCategory::Discovery,
         "flags_unknown" | "argument_arity_unknown" => ActionCategory::Grammar,
         "invalid_child_diagnostics_unknown" | "invalid_flag_diagnostics_unknown" => {
             ActionCategory::Recovery
@@ -1618,6 +1704,10 @@ fn grouped_title_for_gap(kind: &str, count: usize) -> String {
         ),
         "help_unavailable" => format!(
             "{count} command{} did not expose usable help",
+            plural_suffix(count)
+        ),
+        "alternate_help_form_unavailable" => format!(
+            "{count} command{} lack optional `help <path>` compatibility",
             plural_suffix(count)
         ),
         "precondition_blocked" => format!(
@@ -1677,6 +1767,9 @@ fn recommendation_for_gap(kind: &str) -> &'static str {
         }
         "help_unavailable" => {
             "Make command-specific help available without side effects and with CI-safe output."
+        }
+        "alternate_help_form_unavailable" => {
+            "Treat direct `<command> --help` as canonical; add `help <command path>` compatibility only if it is cheap and useful for agent navigation."
         }
         "precondition_blocked" => {
             "Document required runtime preconditions separately from command existence, and keep help paths available where practical."
@@ -1906,7 +1999,11 @@ fn notes(persona: Persona, scorecard: &ScorecardArtifact) -> Vec<OutcomeNote> {
 }
 #[cfg(test)]
 mod tests {
-    use super::{ActionCategory, Persona, persona_priority};
+    use super::{
+        ActionCategory, CommandIndexArtifact, CommandIndexCommand, CommandIndexGap,
+        CommandIndexParameters, CommandIndexSummaryArtifact, CommandReadinessState, Persona,
+        command_health, persona_priority,
+    };
 
     #[test]
     fn persona_priority_matches_primary_users() {
@@ -1917,6 +2014,51 @@ mod tests {
         assert!(
             persona_priority(Persona::Harness, ActionCategory::Output)
                 < persona_priority(Persona::Harness, ActionCategory::Recovery)
+        );
+    }
+
+    #[test]
+    fn command_health_uses_command_index_readiness() {
+        let index = CommandIndexArtifact {
+            summary: CommandIndexSummaryArtifact {
+                ready: 1,
+                conditional: 0,
+                needs_fixture: 0,
+                blocked: 0,
+                candidate: 0,
+            },
+            commands: vec![CommandIndexCommand {
+                id: "rote.flow.list".to_owned(),
+                path: vec!["flow".to_owned(), "list".to_owned()],
+                argv: vec!["rote".to_owned(), "flow".to_owned(), "list".to_owned()],
+                summary: Some("List flows".to_owned()),
+                runtime_state: "runtime_confirmed".to_owned(),
+                agent_suitability: "ready".to_owned(),
+                suitability_reasons: vec![
+                    "runtime-confirmed with parseable machine-readable output".to_owned(),
+                ],
+                confidence: 0.99,
+                parameters: CommandIndexParameters::default(),
+                preconditions: Vec::new(),
+                output_contracts: Vec::new(),
+                gaps: vec![CommandIndexGap {
+                    kind: "alternate_help_form_unavailable".to_owned(),
+                    reason: "optional `help <command path>` probe did not resolve this command"
+                        .to_owned(),
+                    evidence: vec!["e_000345".to_owned()],
+                }],
+                evidence: vec!["e_000889".to_owned()],
+            }],
+        };
+
+        let health = command_health(&index);
+
+        assert_eq!(health.len(), 1);
+        assert_eq!(health[0].readiness_state, CommandReadinessState::Ready);
+        assert_eq!(health[0].gaps[0].kind, "alternate_help_form_unavailable");
+        assert_eq!(
+            health[0].suitability_reasons,
+            ["runtime-confirmed with parseable machine-readable output"]
         );
     }
 }

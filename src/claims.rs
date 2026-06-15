@@ -144,6 +144,7 @@ impl ClaimSet {
 
         if !current_path.is_empty() {
             self.command_mut(current_path.clone()).apply_runtime_help(
+                observation,
                 &observation.evidence_id,
                 help_like,
                 help_matches_current_path,
@@ -397,6 +398,21 @@ struct OutputContractKey {
     argv_fragment: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HelpProbeForm {
+    Canonical,
+    Alternate,
+}
+
+fn help_probe_form(path: &CommandPath, observation: &ShapeObservation) -> HelpProbeForm {
+    let argv_tail = observation.process.argv.get(1..).unwrap_or_default();
+    if !path.is_empty() && argv_tail.first().is_some_and(|arg| arg == "help") {
+        HelpProbeForm::Alternate
+    } else {
+        HelpProbeForm::Canonical
+    }
+}
+
 #[derive(Debug)]
 pub struct CommandClaim {
     path: CommandPath,
@@ -406,7 +422,9 @@ pub struct CommandClaim {
     usage_observed: bool,
     belief: Belief,
     runtime_confirmed: bool,
-    help_unavailable: bool,
+    canonical_help_unavailable: bool,
+    alternate_help_unavailable: bool,
+    alternate_help_evidence: Vec<String>,
     preconditions: BTreeSet<PreconditionKind>,
     has_child_candidates: bool,
     invalid_child_rejected: bool,
@@ -424,7 +442,9 @@ impl CommandClaim {
             usage_observed: false,
             belief: Belief::with_prior(COMMAND_PRIOR),
             runtime_confirmed: false,
-            help_unavailable: false,
+            canonical_help_unavailable: false,
+            alternate_help_unavailable: false,
+            alternate_help_evidence: Vec::new(),
             preconditions: BTreeSet::new(),
             has_child_candidates: false,
             invalid_child_rejected: false,
@@ -478,14 +498,36 @@ impl CommandClaim {
 
     fn apply_runtime_help(
         &mut self,
+        observation: &ShapeObservation,
         evidence_id: &str,
         help_like: bool,
         help_matches_current_path: bool,
         precondition: Option<PreconditionKind>,
     ) {
+        let probe_form = help_probe_form(&self.path, observation);
+        self.apply_runtime_help_with_form(
+            evidence_id,
+            help_like,
+            help_matches_current_path,
+            precondition,
+            probe_form,
+        );
+    }
+
+    fn apply_runtime_help_with_form(
+        &mut self,
+        evidence_id: &str,
+        help_like: bool,
+        help_matches_current_path: bool,
+        precondition: Option<PreconditionKind>,
+        probe_form: HelpProbeForm,
+    ) {
         if help_matches_current_path {
             self.belief.update(4.0);
             self.runtime_confirmed = true;
+            if matches!(probe_form, HelpProbeForm::Canonical) {
+                self.canonical_help_unavailable = false;
+            }
         } else if let Some(precondition) = precondition {
             self.apply_precondition_blocked(evidence_id, precondition);
             return;
@@ -493,9 +535,13 @@ impl CommandClaim {
             self.belief.update(0.5);
             self.evidence.push(format!("{evidence_id}:help observed"));
             return;
+        } else if matches!(probe_form, HelpProbeForm::Alternate) {
+            self.belief.update(-0.25);
+            self.alternate_help_unavailable = true;
+            self.alternate_help_evidence.push(evidence_id.to_owned());
         } else {
             self.belief.update(-2.0);
-            self.help_unavailable = true;
+            self.canonical_help_unavailable = true;
         }
         self.evidence.push(evidence_id.to_owned());
     }
@@ -558,7 +604,15 @@ impl CommandClaim {
     }
 
     pub fn help_unavailable(&self) -> bool {
-        self.help_unavailable
+        self.canonical_help_unavailable && !self.runtime_confirmed
+    }
+
+    pub fn alternate_help_unavailable(&self) -> bool {
+        self.alternate_help_unavailable && self.runtime_confirmed
+    }
+
+    pub fn alternate_help_evidence(&self) -> &[String] {
+        &self.alternate_help_evidence
     }
 
     pub fn precondition_blocked(&self) -> bool {

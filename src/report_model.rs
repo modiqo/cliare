@@ -142,6 +142,11 @@ pub(crate) struct OutcomeSummary {
     pub(crate) commands_runtime_confirmed: usize,
     pub(crate) commands_precondition_blocked: usize,
     pub(crate) command_health_entries: usize,
+    pub(crate) commands_ready: usize,
+    pub(crate) commands_conditional: usize,
+    pub(crate) commands_needs_fixture: usize,
+    pub(crate) commands_blocked: usize,
+    pub(crate) commands_candidate: usize,
     pub(crate) output_contracts_discovered: usize,
     pub(crate) machine_readable_output_contracts: usize,
     pub(crate) output_mode_parse_successes: usize,
@@ -327,6 +332,7 @@ pub(crate) struct Issue {
     pub(crate) status: &'static str,
     pub(crate) severity: ActionSeverity,
     pub(crate) category: ActionCategory,
+    pub(crate) agent_readiness_area: AgentReadinessArea,
     pub(crate) confidence: IssueConfidence,
     pub(crate) title: String,
     pub(crate) impact: String,
@@ -337,6 +343,59 @@ pub(crate) struct Issue {
     pub(crate) evidence: Vec<IssueEvidence>,
     pub(crate) personas: Vec<Persona>,
     pub(crate) score_dimensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AgentReadinessArea {
+    OutputContracts,
+    Preconditions,
+    CommandDiscovery,
+    HelpCoverage,
+    Compatibility,
+    Diagnostics,
+    Execution,
+    Safety,
+    Coverage,
+    Policy,
+    Publishing,
+    Calibration,
+}
+
+impl AgentReadinessArea {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::OutputContracts => "Output Contracts",
+            Self::Preconditions => "Preconditions",
+            Self::CommandDiscovery => "Command Discovery",
+            Self::HelpCoverage => "Help Coverage",
+            Self::Compatibility => "Compatibility",
+            Self::Diagnostics => "Diagnostics",
+            Self::Execution => "Execution",
+            Self::Safety => "Safety",
+            Self::Coverage => "Coverage",
+            Self::Policy => "Policy",
+            Self::Publishing => "Publishing",
+            Self::Calibration => "Calibration",
+        }
+    }
+
+    pub(crate) fn agent_impact(self) -> &'static str {
+        match self {
+            Self::OutputContracts => "Agents cannot reliably read command results.",
+            Self::Preconditions => "Agents cannot distinguish missing setup from missing commands.",
+            Self::CommandDiscovery => "Agents may route to commands that are not real.",
+            Self::HelpCoverage => "Agents must guess syntax or recover through retries.",
+            Self::Compatibility => "Navigation is less convenient, but routing can still work.",
+            Self::Diagnostics => "Agents get weaker repair signals after bad invocations.",
+            Self::Execution => "Agents need predictable behavior between probes and real tasks.",
+            Self::Safety => "Agents may trigger unexpected persistent state changes.",
+            Self::Coverage => "Agents and reviewers have incomplete evidence.",
+            Self::Policy => "Teams cannot turn evidence into a repeatable gate.",
+            Self::Publishing => "Public agent-readiness claims may overstate the evidence.",
+            Self::Calibration => "Benchmark reuse is weak without labels and provenance.",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -423,9 +482,10 @@ pub(crate) struct IssueSideEffect {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CommandReadinessState {
     Ready,
+    Conditional,
+    NeedsFixture,
     Blocked,
-    Incomplete,
-    Unconfirmed,
+    Candidate,
 }
 
 #[derive(Debug, Serialize)]
@@ -437,6 +497,7 @@ pub(crate) struct CommandHealth {
     pub(crate) confidence: f64,
     pub(crate) runtime_state: String,
     pub(crate) readiness_state: CommandReadinessState,
+    pub(crate) suitability_reasons: Vec<String>,
     pub(crate) preconditions: Vec<String>,
     pub(crate) flags_discovered: usize,
     pub(crate) output_contracts: Vec<CommandOutputContract>,
@@ -449,6 +510,8 @@ pub(crate) struct CommandOutputContract {
     pub(crate) mode: String,
     pub(crate) flag_name: String,
     pub(crate) argv_fragment: Vec<String>,
+    pub(crate) status: String,
+    pub(crate) preconditions: Vec<String>,
     pub(crate) advertised: bool,
     pub(crate) probed: bool,
     pub(crate) parse_success: bool,
@@ -459,6 +522,7 @@ pub(crate) struct CommandOutputContract {
     pub(crate) help_behavior: Option<String>,
     pub(crate) help_parse_success: bool,
     pub(crate) help_diagnostic: Option<String>,
+    pub(crate) evidence: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

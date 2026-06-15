@@ -206,6 +206,7 @@ pub struct Gap {
 pub enum GapKind {
     ExistenceUnconfirmed,
     HelpUnavailable,
+    AlternateHelpFormUnavailable,
     PreconditionBlocked,
     FlagsUnknown,
     ArgumentArityUnknown,
@@ -821,6 +822,7 @@ fn gap_kind_label(kind: GapKind) -> &'static str {
     match kind {
         GapKind::ExistenceUnconfirmed => "existence_unconfirmed",
         GapKind::HelpUnavailable => "help_unavailable",
+        GapKind::AlternateHelpFormUnavailable => "alternate_help_form_unavailable",
         GapKind::PreconditionBlocked => "precondition_blocked",
         GapKind::FlagsUnknown => "flags_unknown",
         GapKind::ArgumentArityUnknown => "argument_arity_unknown",
@@ -877,6 +879,15 @@ fn gap_items<'a>(
                 command_path: command.path().to_vec(),
                 reason: "safe help probe did not produce help-like output".to_owned(),
                 evidence: command.evidence().to_vec(),
+            });
+        }
+        if command.alternate_help_unavailable() {
+            gaps.push(Gap {
+                kind: GapKind::AlternateHelpFormUnavailable,
+                command_path: command.path().to_vec(),
+                reason: "optional `help <command path>` probe did not resolve this command"
+                    .to_owned(),
+                evidence: command.alternate_help_evidence().to_vec(),
             });
         }
         if command.runtime_confirmed() && has_unknown_flag_grammar(flags, command.path().as_slice())
@@ -1084,6 +1095,82 @@ mod tests {
     }
 
     #[test]
+    fn alternate_help_failure_is_nonblocking_when_direct_help_succeeds() {
+        let target = target();
+        let root = observation(
+            "e_000003",
+            ProbeIntent::Help,
+            vec![],
+            "Commands:\n  flow  Manage flows\n",
+            Some(0),
+        );
+        let direct_help = observation_with_args(
+            "e_000005",
+            ProbeIntent::Help,
+            vec!["flow".to_owned(), "list".to_owned()],
+            vec![
+                "cliare".to_owned(),
+                "flow".to_owned(),
+                "list".to_owned(),
+                "--help".to_owned(),
+            ],
+            "cliare flow list\nList flows\n\nUSAGE:\n  cliare flow list [OPTIONS]\n\nOPTIONS:\n  --filter <TEXT>  Filter flows\n",
+            Some(0),
+        );
+        let alternate_help = observation_with_args(
+            "e_000007",
+            ProbeIntent::Help,
+            vec!["flow".to_owned(), "list".to_owned()],
+            vec![
+                "cliare".to_owned(),
+                "help".to_owned(),
+                "flow".to_owned(),
+                "list".to_owned(),
+            ],
+            "No help available for 'flow'\n\nTry: cliare help\n",
+            Some(0),
+        );
+        let invalid_flag = observation_with_args(
+            "e_000009",
+            ProbeIntent::InvalidFlag,
+            vec!["flow".to_owned(), "list".to_owned()],
+            vec![
+                "cliare".to_owned(),
+                "flow".to_owned(),
+                "list".to_owned(),
+                "--__cliare_unknown_flow_list_flag__".to_owned(),
+            ],
+            "error: unknown flag",
+            Some(2),
+        );
+
+        let index =
+            super::infer_command_index(target, &[root, direct_help, alternate_help, invalid_flag]);
+        let flow_list = index
+            .commands
+            .iter()
+            .find(|command| command.path == ["flow", "list"])
+            .expect("flow list command exists");
+
+        assert!(matches!(
+            flow_list.agent_suitability,
+            super::AgentSuitability::Ready
+        ));
+        assert!(
+            flow_list
+                .gaps
+                .iter()
+                .any(|gap| matches!(gap.kind, super::GapKind::AlternateHelpFormUnavailable))
+        );
+        assert!(
+            !flow_list
+                .gaps
+                .iter()
+                .any(|gap| matches!(gap.kind, super::GapKind::HelpUnavailable))
+        );
+    }
+
+    #[test]
     fn local_context_precondition_is_conditional_in_command_index() {
         let target = target();
         let root = observation(
@@ -1276,13 +1363,29 @@ mod tests {
         stdout: &str,
         exit_code: Option<i32>,
     ) -> ShapeObservation {
+        let mut argv = vec!["cliare".to_owned()];
+        argv.extend(path.iter().cloned());
+        if matches!(intent, ProbeIntent::Help) {
+            argv.push("--help".to_owned());
+        }
+        observation_with_args(evidence_id, intent, path, argv, stdout, exit_code)
+    }
+
+    fn observation_with_args(
+        evidence_id: &str,
+        intent: ProbeIntent,
+        path: Vec<String>,
+        argv: Vec<String>,
+        stdout: &str,
+        exit_code: Option<i32>,
+    ) -> ShapeObservation {
         ShapeObservation {
             evidence_id: evidence_id.to_owned(),
             intent,
             path,
             process: ProcessCompleted {
                 probe_id: "p_000001".to_owned(),
-                argv: vec!["cliare".to_owned(), "--help".to_owned()],
+                argv,
                 status: ProcessStatus::Exited { code: exit_code },
                 duration_ms: 1,
                 stdout: output(stdout),
