@@ -1,36 +1,74 @@
 # CLIARE
 
-CLIARE turns black-box command-line tools into evidence-backed command indexes for agents.
+**CLIARE audits command-line interfaces for agent readiness.**
 
-Agents increasingly operate through terminals, but most CLIs were designed for humans reading help text, not for tool routers that need to know which commands exist, which flags are safe, which outputs are parseable, and which paths require auth, project context, fixtures, or local daemons.
+Agents increasingly use terminals as their operating surface, but most CLIs were designed for humans reading help text. An agent harness needs a different contract before it spends tokens trying commands:
 
-CLIARE measures the CLI that users actually install. It probes the executable under bounded runtime controls, records the evidence, and emits a command index that an agent harness can use before trying commands by trial and error.
+- Which commands actually exist?
+- Which flags and positionals are safe to use?
+- Which commands have parseable JSON/YAML output?
+- Which paths require auth, a project directory, fixtures, network access, or a local daemon?
+- Which "safe" discovery commands quietly write files?
+
+CLIARE answers those questions by measuring the released CLI binary as a black box. It probes runtime behavior under bounded controls, records evidence, infers the command surface, detects side effects, and emits command indexes, issue ledgers, scorecards, persona reports, CI artifacts, and agent skills.
 
 CLIARE stands for **CLI Agent Readiness Evaluation**.
 
+## Why Run CLIARE?
+
+### For CLI Maintainers
+
+CLIARE turns vague "is this CLI agent-friendly?" feedback into a concrete implementation queue.
+
+It shows where agents will struggle with command discovery, help coverage, diagnostics, output contracts, preconditions, and unsafe discovery behavior. Instead of guessing what to improve, maintainers get evidence-backed issues, affected commands, recommendations, and verification commands.
+
+### For Security Reviewers
+
+CLIARE catches undocumented runtime behavior in binaries.
+
+It snapshots filesystem state around each probe and reports persistent side effects from safe-looking commands such as help, version, invalid flag, and output-mode probes. This helps security teams find cache/config writes, credential-like paths, and host/auth behavior before a CLI is exposed to autonomous agents.
+
+### For Agent Harness Builders
+
+CLIARE creates a command index that agents can read before exploring.
+
+Harnesses can load `command-index.json` to route through known commands, prefer parseable output contracts, honor preconditions, and avoid rediscovering syntax by trial and error. The result is lower token cost, fewer bad invocations, and more deliberate CLI use.
+
 ## What You Get
 
-The primary artifact is the command index:
+A measurement writes one artifact directory:
 
 ```text
-.cliare/<cli>/
-  command-index.json    # agent-facing command catalog
-  command-index.md      # human-readable command catalog
-  scorecard.json        # readiness score and subscores
-  summary.md            # short run summary
-  issues.md             # reviewable findings
-  persona-harness.md    # agent-routing review packet
-  persona-maintainer.md # CLI implementation review packet
-  evidence.jsonl        # raw runtime evidence
+.cliare/<target-cli>/
+  command-index.json      # agent-facing command catalog
+  command-index.md        # human-readable command catalog
+  AGENT_SKILL.md          # generated guidance agents can read
+  scorecard.json          # readiness score, subscores, coverage, findings
+  issues.json             # reviewable issue ledger
+  issues.md               # human issue report
+  issue-dispositions.json # reviewed decisions, when present
+  persona-maintainer.md   # maintainer action packet
+  persona-harness.md      # agent harness packet
+  persona-security.md     # side-effect and approval packet
+  evidence.jsonl          # raw runtime evidence
+  shape.json              # inferred command shape
+  findings.sarif          # CI/security upload format
+  junit.xml               # CI test result format
 ```
 
-`command-index.json` is the first artifact to integrate. It records command paths, argv forms, summaries, confidence, runtime state, agent suitability, flags, positionals, preconditions, output contracts, gaps, and evidence pointers.
-
-Scoring, persona reports, SARIF, JUnit, benchmark manifests, and guard policies are already implemented, but they support the main workflow: build a reliable command index that lets agents route through CLIs deliberately.
+The key artifact is `command-index.json`. It records command paths, argv forms, summaries, confidence, runtime state, agent suitability, flags, positionals, preconditions, output contracts, gaps, and evidence references.
 
 ## Install
 
-From source:
+CLIARE is prepared for these official release channels:
+
+```sh
+cargo install cliare
+brew tap modiqo/tap
+brew install cliare
+```
+
+Those commands become the stable install path after the first crates.io and Homebrew tap publish. Until then, install from source:
 
 ```sh
 git clone https://github.com/modiqo/cliare.git
@@ -46,62 +84,167 @@ cargo build --locked --bin cliare
 ./target/debug/cliare metadata --format json
 ```
 
-## First Command Index
+Release preparation lives in [RELEASE.md](RELEASE.md). The Homebrew formula template is [packaging/homebrew/cliare.rb](packaging/homebrew/cliare.rb), and the version history is [CHANGELOG.md](CHANGELOG.md).
 
-Measure any CLI available on `PATH`:
+## Quick Start: Maintainer Audit
+
+Use this when you maintain a CLI and want a fix list.
 
 ```sh
-cliare measure gh --out .cliare/gh --profile standard --refresh
-cliare describe .cliare/gh --write
+cliare measure mycli --out .cliare/mycli --profile standard --refresh
+cliare issues list --out .cliare/mycli --format markdown
+cliare report maintainer --out .cliare/mycli --format markdown
 ```
 
-Open the index:
+For launch or release-quality review:
 
 ```sh
-less .cliare/gh/command-index.md
-jq '.commands[0]' .cliare/gh/command-index.json
-```
-
-Use a deeper run for large command surfaces:
-
-```sh
-cliare measure kubectl \
-  --out .cliare/kubectl \
+cliare measure mycli \
+  --out .cliare/mycli \
   --profile deep \
   --max-depth 12 \
   --max-probes 5000 \
+  --concurrency 8 \
   --refresh
 ```
 
-Use context-specific runs when a CLI changes behavior based on login state, project directory, local services, or fixtures:
+If a finding is real, fix the CLI and rerun. If the behavior is intentional, record a disposition so CI keeps the evidence but stops treating it as unreviewed noise:
+
+```sh
+cliare issues mark <issue-id> \
+  --out .cliare/mycli \
+  --status intentional \
+  --reason "Direct <command> --help is the canonical help contract."
+```
+
+Print the full maintainer walkthrough:
+
+```sh
+cliare playbook maintainer --target mycli
+```
+
+## Quick Start: Security Side-Effect Review
+
+Use this when you need to know what a CLI does during safe discovery.
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile standard --refresh
+cliare report security --out .cliare/mycli --format markdown
+cliare issues list --out .cliare/mycli --format markdown
+```
+
+CLIARE's default execution mode is isolated. It clears most inherited environment variables, uses sandboxed runtime directories, bounds output, bounds time, and records filesystem changes observed around each probe.
+
+For authenticated or host-specific review, run an explicit context so the result is not confused with a clean run:
+
+```sh
+cliare measure mycli \
+  --out .cliare/mycli \
+  --context authenticated \
+  --auth-state present \
+  --execution-mode host \
+  --profile deep \
+  --refresh
+
+cliare report security --out .cliare/mycli --context authenticated --format markdown
+```
+
+Print the full security walkthrough:
+
+```sh
+cliare playbook security --target mycli
+```
+
+## Quick Start: Agent Harness Command Index
+
+Use this when you want agents to understand a CLI before they invoke it.
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile deep --refresh
+cliare describe .cliare/mycli --write
+cliare report harness --out .cliare/mycli --write
+```
+
+Then point your harness at:
+
+```text
+.cliare/mycli/command-index.json
+.cliare/mycli/AGENT_SKILL.md
+.cliare/mycli/persona-harness.json
+```
+
+Harness routing should:
+
+1. Load `command-index.json`.
+2. Prefer commands with `agent_suitability` of `ready`.
+3. Treat `conditional` commands as requiring their listed preconditions.
+4. Prefer parseable output contracts when state needs to be read.
+5. Avoid `blocked`, `needs_fixture`, and low-confidence paths unless the harness can satisfy the missing context.
+6. Use evidence references only when a route needs audit or debugging.
+
+Print the full harness walkthrough:
+
+```sh
+cliare playbook harness --target mycli
+```
+
+## Understanding Profiles
+
+Most users should pick a profile first and only tune advanced knobs when the report says traversal pressure exists.
+
+| Profile | Use When |
+|---|---|
+| `quick` | Fast local smoke pass while editing help, diagnostics, or one command family. |
+| `standard` | Normal maintainer/security/harness review loop. |
+| `deep` | Release-quality pass, CI baselines, large command surfaces, and agent-surface publishing. |
+
+Advanced knobs:
+
+| Option | Meaning |
+|---|---|
+| `--max-depth` | Maximum recursive command-path depth. Increase when nested commands are missing. |
+| `--max-probes` | Runtime probe budget. Increase when `budget_exhausted` or `frontier_remaining` appears. |
+| `--concurrency` | Probes run at the same time. Lower for flaky CLIs, shared state, or rate limits. |
+| `--timeout-ms` | Per-probe timeout. Raise for slow, network-backed, or daemon-backed CLIs. |
+| `--execution-mode host` | Use host auth/config/plugins/local state. Only use when that context is intentional. |
+
+For long runs:
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile deep --refresh --detach
+cliare jobs status --out .cliare/mycli
+```
+
+## Context-Specific Measurements
+
+Many CLIs change behavior based on auth, project directory, local config, installed plugins, fixtures, network, or daemons. Keep those runs separate:
 
 ```sh
 cliare measure mycli --out .cliare/mycli --context clean --profile standard --refresh
-cliare measure mycli --out .cliare/mycli --context repo --context-workdir /path/to/project --profile deep --refresh
-cliare describe .cliare/mycli --context repo --write
+
+cliare measure mycli \
+  --out .cliare/mycli \
+  --context local-context \
+  --context-workdir /path/to/project \
+  --profile deep \
+  --refresh
 ```
 
-## Use The Index In An Agent Harness
+Context artifacts live under:
 
-Read `command-index.json` before executing the target CLI. Prefer commands marked `ready`, treat `conditional` commands as requiring their listed preconditions, and avoid `blocked`, `needs_fixture`, or low-confidence paths unless the harness can satisfy the missing context.
+```text
+.cliare/mycli/contexts/<context>/
+```
 
-Typical routing flow:
-
-1. Load `command-index.json`.
-2. Find commands by path, summary, output contract, or parameter names.
-3. Check `agent_suitability`, `runtime_state`, and `preconditions`.
-4. Prefer commands with parseable output contracts when the task needs structured data.
-5. Use `evidence_refs` to inspect raw proof only when a route is disputed.
-
-For a human review packet focused on harness use:
+Compare contexts:
 
 ```sh
-cliare report harness --out .cliare/mycli --write
+cliare context compare .cliare/mycli/contexts/clean .cliare/mycli/contexts/local-context --write
 ```
 
 ## CI Usage
 
-CLIARE ships a composite GitHub Action in this repository. A minimal workflow for a project that wants a command index artifact:
+CLIARE ships a composite GitHub Action in this repository.
 
 ```yaml
 name: CLIARE
@@ -112,7 +255,7 @@ on:
     branches: [main]
 
 jobs:
-  command-index:
+  cliare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -126,43 +269,75 @@ jobs:
           extra-args: --refresh
 ```
 
-The action appends the CLIARE summary to the job summary, uploads the artifact directory, and exposes output paths for `scorecard.json`, `summary.md`, `findings.sarif`, and `junit.xml`.
+The action appends a summary to the job summary, uploads the artifact directory, and exposes output paths for `scorecard.json`, `summary.md`, `findings.sarif`, and `junit.xml`.
 
-For release gates, use `guard` with a baseline:
+For release gates, keep a baseline and use `guard`:
 
 ```sh
 cliare guard mycli \
-  --baseline .cliare/baseline.scorecard.json \
+  --baseline .cliare-baseline/mycli/scorecard.json \
   --policy cliare.policy.json \
-  --out .cliare/mycli
+  --out .cliare/mycli \
+  --profile deep
 ```
 
-## Auto-PR Command Index Registry
+## Issue Dispositions
 
-This repository includes a manual workflow for building a public index entry from CI:
+CLIARE keeps evidence visible even when a finding is reviewed. That means `issues_total` can remain nonzero while `action_required` is zero.
+
+Useful statuses:
+
+| Status | Use When |
+|---|---|
+| `intentional` | The behavior is deliberate and documented. |
+| `needs-fixture` | Safe operands or fixture data are needed before judging the finding. |
+| `not-applicable` | The finding does not apply to this measured profile. |
+| `accepted-risk` | Security/platform owners reviewed and accepted the residual risk. |
+| `false-positive` | The evidence is misleading for this CLI. |
+| `deferred` | The issue is real but scheduled for later. |
+
+Review queue:
+
+```sh
+cliare issues list --out .cliare/mycli --format markdown
+cliare issues list --out .cliare/mycli --format json
+```
+
+Mark a reviewed decision:
+
+```sh
+cliare issues mark <issue-id> \
+  --out .cliare/mycli \
+  --status not-applicable \
+  --reason "This command requires a project fixture and is not part of clean CI."
+```
+
+## Agent Skills
+
+CLIARE can install local artifact-review skills so coding agents know how to inspect CLIARE outputs:
+
+```sh
+cliare skills list
+cliare skills install --agent all --scope project
+```
+
+Use `--agent claude`, `--agent codex`, or `--agent cursor` for one integration. Use `--scope user` for user-level install.
+
+## Command Index Registry Workflow
+
+This repository includes a manual workflow for building public command-index entries:
 
 ```text
 Actions -> Extract Command Index PR
 ```
 
-Inputs:
+Inputs include `artifact_id`, `target`, optional `install_command`, `profile`, `max_depth`, and `max_probes`.
 
-| Input | Purpose |
-|---|---|
-| `artifact_id` | Stable registry id, such as `gh`, `ruff`, or `supabase`. |
-| `target` | Executable name or path to measure. |
-| `install_command` | Optional setup command that installs the target CLI before measurement. |
-| `profile` | `quick`, `standard`, or `deep`. |
-| `max_depth` | Optional traversal depth override. |
-| `max_probes` | Optional probe budget override. |
-
-The workflow builds CLIARE, optionally installs the target CLI, measures it, copies the public review artifacts into `registry/<artifact_id>/`, and opens or updates a pull request with the measured score.
-
-This is the launch path for the command-index registry: each extracted CLI gets a reviewable PR with the command index first, plus score and findings as supporting evidence.
+The workflow builds CLIARE, optionally installs the target CLI, measures it, copies public review artifacts into `registry/<artifact_id>/`, and opens or updates a pull request with the measured command index, score, and issue ledger.
 
 ## Benchmark Corpuses
 
-The repo includes launch planning manifests:
+The repo includes launch and calibration manifests:
 
 ```sh
 cliare benchmark --manifest benchmarks/local-corpus.json --out .cliare-bench --refresh
@@ -171,35 +346,11 @@ cliare benchmark --manifest benchmarks/launch-low-pretraining-corpus.json --out 
 cliare benchmark --manifest benchmarks/agent-harness-corpus.json --out .cliare-agent-harness --refresh
 ```
 
-The low-pretraining launch corpus focuses on newer and faster-moving CLIs where a generated command index is most likely to help agents. The agent-harness corpus is kept separate so CLIARE's main product claim remains about ordinary operational CLIs.
-
-## Reports And Scores
-
-`cliare measure` writes persona reports automatically. Regenerate any report from an existing artifact directory:
-
-```sh
-cliare report maintainer --out .cliare/mycli --write
-cliare report harness --out .cliare/mycli --write
-cliare report security --out .cliare/mycli --write
-cliare report platform --out .cliare/mycli --write
-```
-
-Scores are useful for local CI, release-to-release improvement tracking, and regression detection. Public rankings should wait for calibrated corpuses and frozen score models. The evidence and command index are the source of trust.
-
-## Agent Skills
-
-CLIARE can install local artifact-review skills so coding agents know how to inspect a CLIARE output directory:
-
-```sh
-cliare skills list
-cliare skills install --agent all
-```
-
-Use `--agent claude`, `--agent codex`, or `--agent cursor` to install one integration. Use `--scope project --project-dir .` to attach the skill to a repository instead of a user profile.
+The low-pretraining launch corpus focuses on newer and faster-moving CLIs where generated command indexes are most likely to help agents.
 
 ## Design Packet
 
-The full design and implementation notes live under [`docs/`](docs/00-index.md). Start with:
+The design and implementation notes live under [`docs/`](docs/00-index.md). Start with:
 
 - [Design index](docs/00-index.md)
 - [Runtime evidence for agent-ready CLIs](docs/19-runtime-evidence-for-agent-ready-clis.md)
@@ -207,7 +358,7 @@ The full design and implementation notes live under [`docs/`](docs/00-index.md).
 - [Agent-ready CLI standard template](docs/22-agent-ready-cli-standard-template.md)
 - [Agent skills installation](docs/23-agent-skills-installation.md)
 - [CLI benchmark corpus tracker](docs/24-cli-benchmark-corpus-tracker.md)
-- [Calibration workflow TODO](docs/25-calibration-workflow-todo.md)
+- [Maintainer playbook](docs/27-maintainer-playbook.md)
 
 The previous long-form README is preserved at [README.backup.md](README.backup.md).
 

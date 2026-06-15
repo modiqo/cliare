@@ -2,10 +2,26 @@
 name = "cliare"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.89"
 license = "Apache-2.0"
 repository = "https://github.com/modiqo/cliare"
+homepage = "https://github.com/modiqo/cliare"
+documentation = "https://github.com/modiqo/cliare#readme"
 description = "CLI agent-readiness measurement, command-shape inference, and CI scorecards"
 readme = "README.md"
+keywords = ["cli", "agent", "security", "automation", "devtools"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+exclude = [
+    ".cliare/**",
+    ".cliare-bench/**",
+    ".github/**",
+    "target/**",
+    ".DS_Store",
+    "AGENTS.md",
+    "README.backup.md",
+    "action.yml",
+    "docs/*.pdf",
+]
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
