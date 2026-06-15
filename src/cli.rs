@@ -62,8 +62,13 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 #[command(
-    long_about = "Print a role-specific operational playbook. For maintainers, this includes the measure, view, act, disposition, remeasure, CI, and agent-surface publishing loop.",
-    after_help = "Maintainer workflow:
+    long_about = "Print a role-specific operational playbook. Maintainers get the measure, view, act, disposition, remeasure, CI, and agent-surface publishing loop. Harness and security teams get focused execution loops over the same CLIARE artifacts.",
+    after_help = "Available playbooks:
+  maintainer  Measure, inspect, fix or disposition, remeasure, gate in CI, and publish the agent surface.
+  harness     Consume the command index, harness packet, and generated skill to route agents through the CLI deliberately.
+  security    Review safety, credential-like side effects, host/auth exposure, and policy evidence before approving agent use.
+
+Maintainer workflow:
   1. Measure: cliare measure <target-cli> --out .cliare/<target-cli> --profile quick|standard|deep --refresh
   2. View: cliare report maintainer --out .cliare/<target-cli> --format markdown
   3. Act or disposition: fix the CLI, or use cliare issues mark <issue-id> --status intentional|needs-fixture
@@ -84,7 +89,7 @@ Advanced traversal knobs:
 
 Do not pass --profile to `cliare playbook`; pass it to `cliare measure` or `cliare guard`.
 `.cliare/<target-cli>` is a project-scoped artifact directory, relative to the directory where you run CLIARE.
-Run `cliare playbook maintainer --target <target-cli>` to print the full command-by-command guide."
+Run `cliare playbook maintainer --target <target-cli>`, `cliare playbook harness --target <target-cli>`, or `cliare playbook security --target <target-cli>` to print the full command-by-command guide."
 )]
 pub struct PlaybookArgs {
     /// Playbook role to print.
@@ -116,12 +121,16 @@ pub struct PlaybookArgs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum PlaybookRole {
     Maintainer,
+    Harness,
+    Security,
 }
 
 impl PlaybookRole {
     pub fn label(self) -> &'static str {
         match self {
             Self::Maintainer => "maintainer",
+            Self::Harness => "harness",
+            Self::Security => "security",
         }
     }
 }
@@ -1191,6 +1200,35 @@ mod tests {
     }
 
     #[test]
+    fn playbook_accepts_harness_and_security_roles() {
+        for (role, expected) in [
+            ("harness", super::PlaybookRole::Harness),
+            ("security", super::PlaybookRole::Security),
+        ] {
+            let cli =
+                Cli::try_parse_from(["cliare", "playbook", role]).expect("valid playbook role");
+
+            match cli.command {
+                Command::Playbook(args) => {
+                    assert_eq!(args.role, expected);
+                }
+                Command::Measure(_)
+                | Command::Jobs(_)
+                | Command::Guard(_)
+                | Command::Benchmark(_)
+                | Command::Context(_)
+                | Command::Report(_)
+                | Command::Describe(_)
+                | Command::Skills(_)
+                | Command::Issues(_)
+                | Command::Metadata(_) => {
+                    panic!("expected playbook command")
+                }
+            }
+        }
+    }
+
+    #[test]
     fn playbook_help_includes_maintainer_workflow_and_profiles() {
         let mut command = Cli::command();
         let playbook = command
@@ -1199,6 +1237,9 @@ mod tests {
         let help = playbook.render_long_help().to_string();
 
         assert!(help.contains("Maintainer workflow"));
+        assert!(help.contains("Available playbooks"));
+        assert!(help.contains("harness"));
+        assert!(help.contains("security"));
         assert!(help.contains(".cliare/<target-cli>"));
         assert!(help.contains("human"));
         assert!(help.contains("--profile quick|standard|deep"));

@@ -494,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_spec_contains_playbook_maintainer() {
+    fn metadata_spec_contains_playbook_roles() {
         let metadata = metadata();
         let playbook = metadata
             .command_spec
@@ -511,6 +511,20 @@ mod tests {
                     .possible_values
                     .iter()
                     .any(|value| value.value == "maintainer")
+        }));
+        assert!(playbook.args.iter().any(|arg| {
+            arg.id == "role"
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "harness")
+        }));
+        assert!(playbook.args.iter().any(|arg| {
+            arg.id == "role"
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "security")
         }));
         assert!(
             playbook

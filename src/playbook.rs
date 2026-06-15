@@ -25,11 +25,13 @@ impl PlaybookSummary {
 
 pub fn playbook(args: PlaybookArgs) -> Result<PlaybookSummary> {
     let packet = match args.role {
-        PlaybookRole::Maintainer => MaintainerPlaybook::build(&args),
+        PlaybookRole::Maintainer => RolePlaybook::build_maintainer(&args),
+        PlaybookRole::Harness => RolePlaybook::build_harness(&args),
+        PlaybookRole::Security => RolePlaybook::build_security(&args),
     };
     let stdout = match args.format {
-        PlaybookFormat::Human => render_maintainer_human(&packet),
-        PlaybookFormat::Markdown => render_maintainer_markdown(&packet),
+        PlaybookFormat::Human => render_human(&packet),
+        PlaybookFormat::Markdown => render_markdown(&packet),
         PlaybookFormat::Json => format!(
             "{}\n",
             serde_json::to_string_pretty(&packet)
@@ -40,9 +42,10 @@ pub fn playbook(args: PlaybookArgs) -> Result<PlaybookSummary> {
 }
 
 #[derive(Debug, Serialize)]
-struct MaintainerPlaybook {
+struct RolePlaybook {
     schema_version: &'static str,
     role: &'static str,
+    title: &'static str,
     goal: &'static str,
     target: String,
     out: PathBuf,
@@ -78,8 +81,8 @@ struct ParameterGuide {
     use_when: &'static str,
 }
 
-impl MaintainerPlaybook {
-    fn build(args: &PlaybookArgs) -> Self {
+impl RolePlaybook {
+    fn build_maintainer(args: &PlaybookArgs) -> Self {
         let target = args
             .target
             .clone()
@@ -91,16 +94,12 @@ impl MaintainerPlaybook {
         Self {
             schema_version: PLAYBOOK_SCHEMA_VERSION,
             role: PlaybookRole::Maintainer.label(),
+            title: "CLIARE Maintainer Playbook",
             goal: "Measure the CLI, inspect evidence-backed findings, fix or disposition issues, remeasure, gate in CI, and publish the agent-facing command surface.",
             target,
             out,
             context: args.context.clone(),
-            artifact_layout: vec![
-                "`--out` names one target's artifact root, not a global CLIARE database.",
-                "Use `.cliare/<target-cli>` for normal project-local runs.",
-                "Context runs write under `.cliare/<target-cli>/contexts/<context>`.",
-                "If you use `--detach`, wait for `cliare jobs status --out <artifact-dir>` to report `complete` before reading reports or issues.",
-            ],
+            artifact_layout: artifact_layout(),
             lifecycle,
             parameter_guide: parameter_guide(),
             increase_budget_when: vec![
@@ -134,6 +133,106 @@ impl MaintainerPlaybook {
                 "`cliare issues list` shows reviewed decisions instead of repeated noise.",
                 "CI runs `cliare measure` or `cliare guard`.",
                 "Agent-facing artifacts are published or attached.",
+            ],
+        }
+    }
+
+    fn build_harness(args: &PlaybookArgs) -> Self {
+        let target = args
+            .target
+            .clone()
+            .unwrap_or_else(|| TARGET_PLACEHOLDER.to_owned());
+        let out = effective_artifact_dir(args, &target);
+        let commands = CommandBuilder::new(&target, &out, args.context.as_deref());
+        let lifecycle = harness_lifecycle(&commands);
+
+        Self {
+            schema_version: PLAYBOOK_SCHEMA_VERSION,
+            role: PlaybookRole::Harness.label(),
+            title: "CLIARE Harness Playbook",
+            goal: "Consume CLIARE artifacts as an agent-routing contract: command index first, harness packet second, generated skill third, then validate agent behavior against evidence.",
+            target,
+            out,
+            context: args.context.clone(),
+            artifact_layout: artifact_layout(),
+            lifecycle,
+            parameter_guide: parameter_guide(),
+            increase_budget_when: vec![
+                "The command index still has many candidate commands that agents need.",
+                "The harness packet reports traversal pressure or missing nested command families.",
+                "The generated skill lacks enough runtime-confirmed commands for the intended workflows.",
+            ],
+            do_not_increase_budget_when: vec![
+                "A command is blocked by auth, fixture data, local repository context, daemon state, network, or runtime dependencies.",
+                "The harness needs a curated routing policy rather than more command discovery.",
+                "The command is intentionally not part of the agent-facing surface.",
+            ],
+            publish_artifacts: vec![
+                "command-index.json",
+                "command-index.md",
+                "persona-harness.json",
+                "persona-harness.md",
+                "AGENT_SKILL.md",
+                "artifact-map.json",
+                "artifact-map.md",
+                "issue-dispositions.json",
+            ],
+            completion_criteria: vec![
+                "Agent routing starts from `command-index.json`, not from ad hoc help probing.",
+                "The harness packet identifies safe commands, preconditions, output contracts, and known gaps.",
+                "The generated skill explains how to select commands, handle fixtures, and avoid unsafe probes.",
+                "Critical harness issues are fixed, dispositioned, or excluded from the agent-facing surface.",
+                "CI or release automation regenerates artifacts when the CLI surface changes.",
+            ],
+        }
+    }
+
+    fn build_security(args: &PlaybookArgs) -> Self {
+        let target = args
+            .target
+            .clone()
+            .unwrap_or_else(|| TARGET_PLACEHOLDER.to_owned());
+        let out = effective_artifact_dir(args, &target);
+        let commands = CommandBuilder::new(&target, &out, args.context.as_deref());
+        let lifecycle = security_lifecycle(&commands);
+
+        Self {
+            schema_version: PLAYBOOK_SCHEMA_VERSION,
+            role: PlaybookRole::Security.label(),
+            title: "CLIARE Security Playbook",
+            goal: "Review CLIARE evidence for safe agent use: side effects, credential-like paths, host/auth exposure, preconditions, policy gates, and publishable caveats.",
+            target,
+            out,
+            context: args.context.clone(),
+            artifact_layout: artifact_layout(),
+            lifecycle,
+            parameter_guide: parameter_guide(),
+            increase_budget_when: vec![
+                "Safety or execution findings are inconclusive because traversal stopped early.",
+                "Security-relevant command families are still candidates instead of runtime-confirmed.",
+                "A controlled host-context pass is required to verify authenticated behavior.",
+            ],
+            do_not_increase_budget_when: vec![
+                "The issue requires credentials, fixtures, or production-like data that should not be probed automatically.",
+                "The finding is a policy decision that needs an explicit disposition.",
+                "The next step is manual review of evidence paths or side-effect traces.",
+            ],
+            publish_artifacts: vec![
+                "persona-security.json",
+                "persona-security.md",
+                "issues.json",
+                "issues.md",
+                "issue-dispositions.json",
+                "scorecard.json",
+                "evidence.jsonl",
+                "command-index.json",
+            ],
+            completion_criteria: vec![
+                "Credential-like and persistent side effects are fixed, allowlisted by policy, or accepted with a written disposition.",
+                "Host/authenticated measurements are clearly separated from isolated measurements.",
+                "Preconditions are explicit enough that agent harnesses can avoid unsafe retries.",
+                "Security-relevant issues have evidence bundles or reviewed dispositions.",
+                "A guard or policy check exists before publishing agent-facing artifacts.",
             ],
         }
     }
@@ -216,6 +315,14 @@ impl<'a> CommandBuilder<'a> {
         command.push_str(" --format ");
         command.push_str(format);
         command
+    }
+
+    fn skills_install(&self) -> String {
+        "cliare skills install --agent all --scope project".to_owned()
+    }
+
+    fn metadata_json(&self) -> String {
+        "cliare metadata --format json".to_owned()
     }
 
     fn issues_mark(&self, status: &str, reason: &str) -> String {
@@ -420,16 +527,294 @@ fn maintainer_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
                 },
                 PlaybookCommand {
                     title: "Install review skills",
-                    command: "cliare skills install --agent all --scope project".to_owned(),
+                    command: commands.skills_install(),
                     why: "Installs local CLIARE artifact-review skills for supported agents.",
                 },
                 PlaybookCommand {
                     title: "CLIARE command spec",
-                    command: "cliare metadata --format json".to_owned(),
+                    command: commands.metadata_json(),
                     why: "Publishes CLIARE's own command contract for agents.",
                 },
             ],
         },
+    ]
+}
+
+fn harness_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
+    vec![
+        PlaybookSection {
+            order: 1,
+            title: "Acquire Artifacts",
+            purpose: "Start from a fresh CLIARE run or a maintainer-published artifact directory.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Release-quality measurement",
+                    command: commands.measure("deep"),
+                    why: "Use when the harness team owns measurement for the target CLI.",
+                },
+                PlaybookCommand {
+                    title: "Detached long run",
+                    command: commands.detached_measure(),
+                    why: "Use for large command surfaces, then wait for completion before consuming artifacts.",
+                },
+                PlaybookCommand {
+                    title: "Detached job status",
+                    command: commands.job_status(),
+                    why: "Confirms whether artifacts are ready for agent consumption.",
+                },
+                PlaybookCommand {
+                    title: "Artifact map",
+                    command: commands.describe(&["--format", "markdown"]),
+                    why: "Shows exactly where the command index, harness packet, and skill live.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 2,
+            title: "Read Agent Surface",
+            purpose: "Use the command index and harness persona packet as the routing contract.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Harness packet",
+                    command: commands.report("harness", &["--format", "markdown"]),
+                    why: "Summarizes what agents can safely route through and what requires preconditions.",
+                },
+                PlaybookCommand {
+                    title: "Command index map",
+                    command: commands.describe(&["--format", "json"]),
+                    why: "Lets automation locate `command-index.json`, `AGENT_SKILL.md`, and reports.",
+                },
+                PlaybookCommand {
+                    title: "Harness output contracts",
+                    command: commands.report(
+                        "harness",
+                        &["--area", "output-contracts", "--format", "markdown"],
+                    ),
+                    why: "Use this before wiring structured output parsing in an agent harness.",
+                },
+                PlaybookCommand {
+                    title: "Harness safety view",
+                    command: commands
+                        .report("harness", &["--area", "safety", "--format", "markdown"]),
+                    why: "Use this before allowing agents to run probes or operational commands.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 3,
+            title: "Install Skill",
+            purpose: "Make the measured CLI behavior available where agents look for operational instructions.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Install local review skills",
+                    command: commands.skills_install(),
+                    why: "Installs CLIARE artifact-review skills for supported local agent harnesses.",
+                },
+                PlaybookCommand {
+                    title: "Write harness artifacts",
+                    command: commands.report("harness", &["--write"]),
+                    why: "Persists the harness packet and generated agent-facing artifacts.",
+                },
+                PlaybookCommand {
+                    title: "Write artifact map",
+                    command: commands.describe(&["--write"]),
+                    why: "Persists navigation files that agents can consume without guessing paths.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 4,
+            title: "Configure Routing",
+            purpose: "Teach the harness to prefer runtime-confirmed commands and to respect documented preconditions.",
+            commands: Vec::new(),
+        },
+        PlaybookSection {
+            order: 5,
+            title: "Review Gaps",
+            purpose: "Escalate gaps back to maintainers instead of letting agents rediscover syntax by trial and error.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Issue ledger",
+                    command: commands.issues_list("human"),
+                    why: "Shows the action queue in a concise review format.",
+                },
+                PlaybookCommand {
+                    title: "Issue evidence bundle",
+                    command: commands.report(
+                        "harness",
+                        &[
+                            "--issue",
+                            ISSUE_PLACEHOLDER,
+                            "--with-evidence",
+                            "--format",
+                            "bundle",
+                        ],
+                    ),
+                    why: "Attach this when filing harness-blocking CLI issues.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 6,
+            title: "Publish for Agents",
+            purpose: "Publish the command index, harness packet, and skill together so agents have one evidence-backed source of truth.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Publish harness packet",
+                    command: commands.report("harness", &["--write"]),
+                    why: "Writes files that agent harnesses should read before invoking the target CLI.",
+                },
+                PlaybookCommand {
+                    title: "CLIARE command spec",
+                    command: commands.metadata_json(),
+                    why: "Exposes CLIARE's own command surface to agent harnesses.",
+                },
+            ],
+        },
+    ]
+}
+
+fn security_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
+    vec![
+        PlaybookSection {
+            order: 1,
+            title: "Measure Safely",
+            purpose: "Start with isolated measurement; add host or authenticated context only when reviewing a controlled environment.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Isolated safety pass",
+                    command: commands.measure("standard"),
+                    why: "Default security review pass for discovery-time side effects and CLI shape.",
+                },
+                PlaybookCommand {
+                    title: "Deep isolated pass",
+                    command: commands.measure("deep"),
+                    why: "Use before approval when safety-relevant command families are still shallow or candidate-only.",
+                },
+                PlaybookCommand {
+                    title: "Authenticated host-context pass",
+                    command: commands.authenticated_measure(),
+                    why: "Use only in a controlled environment when auth, plugins, or host config change behavior.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 2,
+            title: "Review Security Evidence",
+            purpose: "Inspect the security packet, safety area, preconditions, and policy impact before approving agent use.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Security packet",
+                    command: commands.report("security", &["--format", "markdown"]),
+                    why: "Shows security-oriented findings and recommendations.",
+                },
+                PlaybookCommand {
+                    title: "Safety drilldown",
+                    command: commands
+                        .report("security", &["--area", "safety", "--format", "markdown"]),
+                    why: "Focuses on side effects and credential-like filesystem evidence.",
+                },
+                PlaybookCommand {
+                    title: "Precondition drilldown",
+                    command: commands.report(
+                        "security",
+                        &["--area", "preconditions", "--format", "markdown"],
+                    ),
+                    why: "Separates auth, fixture, daemon, local repo, network, and runtime dependency blockers.",
+                },
+                PlaybookCommand {
+                    title: "Policy drilldown",
+                    command: commands
+                        .report("security", &["--area", "policy", "--format", "markdown"]),
+                    why: "Use when CI gates or security policy thresholds are involved.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 3,
+            title: "Inspect Evidence",
+            purpose: "Attach evidence before accepting risk, allowlisting side effects, or escalating to maintainers.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Issue ledger",
+                    command: commands.issues_list("human"),
+                    why: "Shows open and reviewed security-relevant decisions.",
+                },
+                PlaybookCommand {
+                    title: "Issue evidence bundle",
+                    command: commands.report(
+                        "security",
+                        &[
+                            "--issue",
+                            ISSUE_PLACEHOLDER,
+                            "--with-evidence",
+                            "--format",
+                            "bundle",
+                        ],
+                    ),
+                    why: "Use before writing an exception, policy allowlist, or bug report.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 4,
+            title: "Decide",
+            purpose: "Record whether the behavior is fixed, intentionally allowed, fixture-gated, not applicable, deferred, or accepted risk.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Accepted risk",
+                    command: commands.issues_mark(
+                        "accepted-risk",
+                        "Security reviewed evidence and accepted the documented residual risk.",
+                    ),
+                    why: "Use when the finding is real but approved for agent use under constraints.",
+                },
+                PlaybookCommand {
+                    title: "Not applicable",
+                    command: commands.issues_mark(
+                        "not-applicable",
+                        "Finding does not apply to the approved deployment profile.",
+                    ),
+                    why: "Use when the evidence is valid but out of scope for this environment.",
+                },
+                PlaybookCommand {
+                    title: "Review decisions",
+                    command: commands.issues_list("human"),
+                    why: "Confirm decisions are visible and no longer repeat as unreviewed action items.",
+                },
+            ],
+        },
+        PlaybookSection {
+            order: 5,
+            title: "Gate and Publish",
+            purpose: "Keep security decisions attached to the same artifact set agents and maintainers consume.",
+            commands: vec![
+                PlaybookCommand {
+                    title: "Score guard",
+                    command: commands.guard(),
+                    why: "Use after a baseline exists to catch score and policy regressions.",
+                },
+                PlaybookCommand {
+                    title: "Write security packet",
+                    command: commands.report("security", &["--write"]),
+                    why: "Persists security review output beside the measured artifacts.",
+                },
+                PlaybookCommand {
+                    title: "Write artifact map",
+                    command: commands.describe(&["--write"]),
+                    why: "Publishes navigation files with security and agent-facing artifacts.",
+                },
+            ],
+        },
+    ]
+}
+
+fn artifact_layout() -> Vec<&'static str> {
+    vec![
+        "`--out` names one target's artifact root, not a global CLIARE database.",
+        "Use `.cliare/<target-cli>` for normal project-local runs.",
+        "Context runs write under `.cliare/<target-cli>/contexts/<context>`.",
+        "If you use `--detach`, wait for `cliare jobs status --out <artifact-dir>` to report `complete` before reading reports or issues.",
     ]
 }
 
@@ -488,9 +873,9 @@ fn parameter_guide() -> Vec<ParameterGuide> {
     ]
 }
 
-fn render_maintainer_markdown(playbook: &MaintainerPlaybook) -> String {
+fn render_markdown(playbook: &RolePlaybook) -> String {
     let mut text = String::new();
-    writeln!(&mut text, "# CLIARE Maintainer Playbook").expect("writing to string cannot fail");
+    writeln!(&mut text, "# {}", playbook.title).expect("writing to string cannot fail");
     writeln!(&mut text).expect("writing to string cannot fail");
     writeln!(&mut text, "{}", escape_markdown(playbook.goal))
         .expect("writing to string cannot fail");
@@ -542,7 +927,11 @@ fn render_maintainer_markdown(playbook: &MaintainerPlaybook) -> String {
     text
 }
 
-fn render_maintainer_human(playbook: &MaintainerPlaybook) -> String {
+fn render_human(playbook: &RolePlaybook) -> String {
+    if playbook.role != PlaybookRole::Maintainer.label() {
+        return render_role_human(playbook);
+    }
+
     let mut text = String::new();
     writeln!(text, "CLIARE maintainer walkthrough").expect("writing to string cannot fail");
     writeln!(text, "target: {}", playbook.target).expect("writing to string cannot fail");
@@ -725,6 +1114,63 @@ fn render_maintainer_human(playbook: &MaintainerPlaybook) -> String {
     text
 }
 
+fn render_role_human(playbook: &RolePlaybook) -> String {
+    let mut text = String::new();
+    writeln!(text, "CLIARE {} walkthrough", playbook.role).expect("writing to string cannot fail");
+    writeln!(text, "target: {}", playbook.target).expect("writing to string cannot fail");
+    writeln!(text, "artifacts: {}", playbook.out.display()).expect("writing to string cannot fail");
+    if let Some(context) = &playbook.context {
+        writeln!(text, "context: {context}").expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "Goal").expect("writing to string cannot fail");
+    writeln!(text, "  {}", playbook.goal).expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "Artifact rule").expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "  {} is this target's artifact root, relative to your current directory.",
+        playbook.out.display()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+
+    for section in &playbook.lifecycle {
+        render_human_step_from_section(&mut text, section);
+    }
+
+    writeln!(text, "Completion criteria").expect("writing to string cannot fail");
+    for item in &playbook.completion_criteria {
+        writeln!(text, "  - {item}").expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "Use --format markdown for the full document or --format json for automation."
+    )
+    .expect("writing to string cannot fail");
+
+    text
+}
+
+fn render_human_step_from_section(text: &mut String, section: &PlaybookSection) {
+    writeln!(text, "{}. {}", section.order, section.title).expect("writing to string cannot fail");
+    writeln!(text, "   {}", section.purpose).expect("writing to string cannot fail");
+    if section.commands.is_empty() {
+        writeln!(
+            text,
+            "   Review the generated artifacts and apply the guidance manually."
+        )
+        .expect("writing to string cannot fail");
+    }
+    for command in &section.commands {
+        writeln!(text, "   {}:", command.title).expect("writing to string cannot fail");
+        writeln!(text, "     {}", command.command).expect("writing to string cannot fail");
+        writeln!(text, "     {}", command.why).expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+}
+
 fn render_human_step(
     text: &mut String,
     number: u8,
@@ -742,7 +1188,7 @@ fn render_human_step(
 }
 
 fn required_command<'a>(
-    playbook: &'a MaintainerPlaybook,
+    playbook: &'a RolePlaybook,
     section_title: &str,
     command_title: &str,
 ) -> &'a str {
@@ -760,7 +1206,7 @@ fn required_command<'a>(
         .unwrap_or("missing playbook command")
 }
 
-fn render_artifact_layout(text: &mut String, playbook: &MaintainerPlaybook) {
+fn render_artifact_layout(text: &mut String, playbook: &RolePlaybook) {
     writeln!(text, "## Artifact Directory").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     for item in &playbook.artifact_layout {
@@ -802,7 +1248,7 @@ fn render_triage_order(text: &mut String) {
     writeln!(text).expect("writing to string cannot fail");
 }
 
-fn render_parameter_guide(text: &mut String, playbook: &MaintainerPlaybook) {
+fn render_parameter_guide(text: &mut String, playbook: &RolePlaybook) {
     writeln!(text, "## Parameter Guide").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     writeln!(
@@ -837,7 +1283,7 @@ fn render_parameter_guide(text: &mut String, playbook: &MaintainerPlaybook) {
     writeln!(text).expect("writing to string cannot fail");
 }
 
-fn render_publish_artifacts(text: &mut String, playbook: &MaintainerPlaybook) {
+fn render_publish_artifacts(text: &mut String, playbook: &RolePlaybook) {
     writeln!(text, "## Agent-Facing Artifacts").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     writeln!(
@@ -852,7 +1298,7 @@ fn render_publish_artifacts(text: &mut String, playbook: &MaintainerPlaybook) {
     writeln!(text).expect("writing to string cannot fail");
 }
 
-fn render_completion_criteria(text: &mut String, playbook: &MaintainerPlaybook) {
+fn render_completion_criteria(text: &mut String, playbook: &RolePlaybook) {
     writeln!(text, "## Completion Criteria").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     for item in &playbook.completion_criteria {
@@ -923,7 +1369,7 @@ mod tests {
 
     use crate::cli::{PlaybookArgs, PlaybookFormat, PlaybookRole};
 
-    use super::{DEFAULT_OUT_PLACEHOLDER, MaintainerPlaybook, playbook};
+    use super::{DEFAULT_OUT_PLACEHOLDER, RolePlaybook, playbook};
 
     #[test]
     fn maintainer_playbook_contains_full_lifecycle() {
@@ -966,6 +1412,7 @@ mod tests {
 
         assert_eq!(value["schema_version"], "cliare.playbook.v1");
         assert_eq!(value["role"], "maintainer");
+        assert_eq!(value["title"], "CLIARE Maintainer Playbook");
         assert_eq!(value["target"], "<target-cli>");
         assert_eq!(value["out"], ".cliare/<target-cli>");
         assert_eq!(value["context"], "authenticated");
@@ -1005,9 +1452,53 @@ mod tests {
             format: PlaybookFormat::Markdown,
         };
 
-        let packet = MaintainerPlaybook::build(&args);
+        let packet = RolePlaybook::build_maintainer(&args);
         let report_command = packet.lifecycle[1].commands[1].command.as_str();
 
         assert!(report_command.contains("--context authenticated"));
+    }
+
+    #[test]
+    fn harness_playbook_contains_agent_execution_loop() {
+        let args = PlaybookArgs {
+            role: PlaybookRole::Harness,
+            target: Some("rote".to_owned()),
+            out: PathBuf::from(DEFAULT_OUT_PLACEHOLDER),
+            context: None,
+            format: PlaybookFormat::Markdown,
+        };
+
+        let summary = playbook(args).expect("playbook renders");
+        let text = summary.terminal_summary();
+
+        assert!(text.contains("# CLIARE Harness Playbook"));
+        assert!(text.contains("## 2. Read Agent Surface"));
+        assert!(text.contains("cliare report harness --out .cliare/rote --format markdown"));
+        assert!(text.contains("cliare skills install --agent all --scope project"));
+        assert!(text.contains("AGENT_SKILL.md"));
+    }
+
+    #[test]
+    fn security_playbook_contains_review_and_decision_loop() {
+        let args = PlaybookArgs {
+            role: PlaybookRole::Security,
+            target: Some("rote".to_owned()),
+            out: PathBuf::from(DEFAULT_OUT_PLACEHOLDER),
+            context: None,
+            format: PlaybookFormat::Human,
+        };
+
+        let summary = playbook(args).expect("playbook renders");
+        let text = summary.terminal_summary();
+
+        assert!(text.contains("CLIARE security walkthrough"));
+        assert!(text.contains("1. Measure Safely"));
+        assert!(text.contains("cliare report security --out .cliare/rote --format markdown"));
+        assert!(
+            text.contains(
+                "cliare issues mark <issue-id> --out .cliare/rote --status accepted-risk"
+            )
+        );
+        assert!(text.contains("Completion criteria"));
     }
 }
