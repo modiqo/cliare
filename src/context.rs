@@ -334,7 +334,7 @@ pub async fn resolve_measurement_dir(
 
     let contexts = persisted_contexts(root).await?;
     match contexts.as_slice() {
-        [] => Ok(root.to_path_buf()),
+        [] => Err(invalid_measurement_artifact(root, command).await?),
         [context] => Ok(context.artifact_dir.clone()),
         _ => Err(CliareError::ContextSelectionRequired {
             message: context_required_message(root, command, &contexts),
@@ -665,6 +665,87 @@ fn context_list(contexts: &[PersistedContext]) -> String {
         .join(", ")
 }
 
+async fn invalid_measurement_artifact(root: &Path, command: &str) -> Result<CliareError> {
+    let metadata = match fs::metadata(root).await {
+        Ok(metadata) => metadata,
+        Err(source) if source.kind() == ErrorKind::NotFound => {
+            return Ok(CliareError::MeasurementArtifactNotFound {
+                command: command.to_owned(),
+                path: root.to_path_buf(),
+            });
+        }
+        Err(source) => {
+            return Err(CliareError::ReadArtifactDirectory {
+                path: root.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    if !metadata.is_dir() {
+        return Ok(CliareError::ArtifactPathNotDirectory {
+            path: root.to_path_buf(),
+        });
+    }
+
+    let child_dirs = child_directory_names(root).await?;
+    let hint = if child_dirs.is_empty() {
+        format!(
+            "Run `cliare measure <target-cli> --out {}` first, or pass --out to an existing measurement directory.",
+            root.display()
+        )
+    } else {
+        format!(
+            "This looks like a workspace root with child directories: {}. Pass --out {}/<project>, add --context <name> when that project has multiple contexts, or pass a concrete context directory.",
+            child_dirs.join(", "),
+            root.display()
+        )
+    };
+
+    Ok(CliareError::InvalidMeasurementArtifact {
+        message: format!(
+            "{command} needs a CLIARE measurement artifact directory, but {} does not contain scorecard.json or contexts/<context>/scorecard.json. {hint}",
+            root.display()
+        ),
+    })
+}
+
+async fn child_directory_names(root: &Path) -> Result<Vec<String>> {
+    let mut entries =
+        fs::read_dir(root)
+            .await
+            .map_err(|source| CliareError::ReadArtifactDirectory {
+                path: root.to_path_buf(),
+                source,
+            })?;
+    let mut dirs = Vec::new();
+    while let Some(entry) =
+        entries
+            .next_entry()
+            .await
+            .map_err(|source| CliareError::ReadArtifactDirectory {
+                path: root.to_path_buf(),
+                source,
+            })?
+    {
+        let metadata =
+            entry
+                .metadata()
+                .await
+                .map_err(|source| CliareError::ReadArtifactDirectory {
+                    path: entry.path(),
+                    source,
+                })?;
+        if metadata.is_dir()
+            && let Some(name) = entry.file_name().to_str()
+        {
+            dirs.push(name.to_owned());
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
+}
+
 async fn read_scorecard(dir: &Path) -> Result<ScorecardArtifact> {
     let path = dir.join(SCORECARD_JSON);
     let bytes = fs::read(&path)
@@ -869,6 +950,42 @@ mod tests {
                 .expect("underscore aliases sanitize to context folder"),
             local
         );
+
+        let _ = tokio::fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn resolver_rejects_missing_measurement_root() {
+        let root = unique_test_dir("context-resolver-missing");
+
+        let error = resolve_measurement_dir(&root, None, "cliare issues list")
+            .await
+            .expect_err("missing artifact root is rejected");
+        let message = error.to_string();
+
+        assert!(message.contains("cliare issues list could not find"));
+        assert!(message.contains(&root.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn resolver_rejects_workspace_root_without_project_selection() {
+        let root = unique_test_dir("context-resolver-workspace");
+        tokio::fs::create_dir_all(root.join("rote"))
+            .await
+            .expect("creates rote workspace child");
+        tokio::fs::create_dir_all(root.join("corpus-runs"))
+            .await
+            .expect("creates corpus workspace child");
+
+        let error = resolve_measurement_dir(&root, None, "cliare issues list")
+            .await
+            .expect_err("workspace root is not a measurement");
+        let message = error.to_string();
+
+        assert!(message.contains("does not contain scorecard.json"));
+        assert!(message.contains("corpus-runs, rote"));
+        assert!(message.contains("Pass --out"));
+        assert!(message.contains("<project>"));
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }

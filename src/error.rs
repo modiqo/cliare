@@ -275,6 +275,12 @@ pub enum CliareError {
     #[error("artifact path is not a directory: {path}")]
     ArtifactPathNotDirectory { path: PathBuf },
 
+    #[error("{command} could not find CLIARE measurement artifact directory {path}")]
+    MeasurementArtifactNotFound { command: String, path: PathBuf },
+
+    #[error("{message}")]
+    InvalidMeasurementArtifact { message: String },
+
     #[error("failed to read artifact directory {path}")]
     ReadArtifactDirectory {
         path: PathBuf,
