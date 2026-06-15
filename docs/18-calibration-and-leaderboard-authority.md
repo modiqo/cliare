@@ -135,6 +135,12 @@ Initial targets:
 - `gcloud`
 - `vercel`
 - `stripe`
+- `valyu`
+- `posthog`
+- `elevenlabs`
+- `ramp`
+- `google-workspace`
+- `agentmail`
 
 Real truth sets do not need complete coverage on day one. They should start with representative command families and grow over time.
 
@@ -398,7 +404,7 @@ Leaderboard scores should display intervals, not only point estimates.
 Example:
 
 ```text
-CLIARE Score: 84.2
+CLIARE Score: 84
 95% interval: 81.0 - 87.4
 Model: cliare-score-v1
 Profile: certified

@@ -5,6 +5,9 @@ use clap::{Args, Subcommand, ValueEnum, ValueHint};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use crate::artifacts::{
+    CONTEXT_COMPARE_MD, CONTEXT_SUITE_JSON, RUNTIME_CONTEXT_JSON, SCORECARD_JSON,
+};
 use crate::error::{CliareError, Result};
 
 pub const RUNTIME_CONTEXT_SCHEMA_VERSION: &str = "cliare.runtime-context.v1";
@@ -316,7 +319,7 @@ pub async fn resolve_measurement_dir(
 ) -> Result<PathBuf> {
     if let Some(context) = context {
         let artifact_dir = contexts_dir(root).join(sanitize_context_name(context));
-        if artifact_dir.join("scorecard.json").is_file() {
+        if artifact_dir.join(SCORECARD_JSON).is_file() {
             return Ok(artifact_dir);
         }
         let contexts = persisted_contexts(root).await?;
@@ -325,7 +328,7 @@ pub async fn resolve_measurement_dir(
         });
     }
 
-    if root.join("scorecard.json").is_file() {
+    if root.join(SCORECARD_JSON).is_file() {
         return Ok(root.to_path_buf());
     }
 
@@ -340,7 +343,7 @@ pub async fn resolve_measurement_dir(
 }
 
 pub async fn is_context_suite_root(root: &Path) -> Result<bool> {
-    if root.join("context-suite.json").is_file() {
+    if root.join(CONTEXT_SUITE_JSON).is_file() {
         return Ok(true);
     }
     Ok(!persisted_contexts(root).await?.is_empty())
@@ -353,7 +356,7 @@ pub async fn write_runtime_context(out_dir: &Path, context: &RuntimeContext) -> 
             path: out_dir.to_path_buf(),
             source,
         })?;
-    let path = out_dir.join("runtime-context.json");
+    let path = out_dir.join(RUNTIME_CONTEXT_JSON);
     let bytes = serde_json::to_vec_pretty(context).map_err(CliareError::SerializeRuntimeContext)?;
     fs::write(&path, bytes)
         .await
@@ -558,14 +561,14 @@ async fn write_context_suite(root: &Path, json: &[u8], markdown: &[u8]) -> Resul
             path: root.to_path_buf(),
             source,
         })?;
-    let json_path = root.join("context-suite.json");
+    let json_path = root.join(CONTEXT_SUITE_JSON);
     fs::write(&json_path, json)
         .await
         .map_err(|source| CliareError::WriteContextSuite {
             path: json_path,
             source,
         })?;
-    let markdown_path = root.join("context-compare.md");
+    let markdown_path = root.join(CONTEXT_COMPARE_MD);
     fs::write(&markdown_path, markdown)
         .await
         .map_err(|source| CliareError::WriteContextSuite {
@@ -602,7 +605,7 @@ async fn discover_context_dirs(root: &Path) -> Result<Vec<PathBuf>> {
                     path: path.clone(),
                     source,
                 })?;
-        if metadata.is_dir() && path.join("scorecard.json").is_file() {
+        if metadata.is_dir() && path.join(SCORECARD_JSON).is_file() {
             dirs.push(path);
         }
     }
@@ -611,7 +614,7 @@ async fn discover_context_dirs(root: &Path) -> Result<Vec<PathBuf>> {
 }
 
 async fn read_runtime_context(dir: &Path) -> Result<Option<RuntimeContext>> {
-    let path = dir.join("runtime-context.json");
+    let path = dir.join(RUNTIME_CONTEXT_JSON);
     let bytes = match fs::read(&path).await {
         Ok(bytes) => bytes,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
@@ -663,7 +666,7 @@ fn context_list(contexts: &[PersistedContext]) -> String {
 }
 
 async fn read_scorecard(dir: &Path) -> Result<ScorecardArtifact> {
-    let path = dir.join("scorecard.json");
+    let path = dir.join(SCORECARD_JSON);
     let bytes = fs::read(&path)
         .await
         .map_err(|source| CliareError::ReadContextScorecard {

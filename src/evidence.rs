@@ -6,6 +6,7 @@ use time::format_description::well_known::Rfc3339;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
+use crate::artifacts::EVIDENCE_JSONL;
 use crate::context::RuntimeContext;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
@@ -40,7 +41,7 @@ impl EvidenceWriter {
                 source,
             })?;
 
-        let path = out_dir.join("evidence.jsonl");
+        let path = out_dir.join(EVIDENCE_JSONL);
         let file = OpenOptions::new()
             .create(true)
             .truncate(true)

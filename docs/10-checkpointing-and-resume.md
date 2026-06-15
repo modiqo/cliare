@@ -337,7 +337,7 @@ Analysis completed with partial coverage.
 
 Completed probes: 500 / estimated 730
 Discovery confidence: medium
-Score interval: 71.2 to 84.8
+Score interval: 71 to 85
 Reason: probe budget exhausted during grammar confirmation wave
 ```
 

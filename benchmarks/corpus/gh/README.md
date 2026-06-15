@@ -28,7 +28,7 @@ cliare describe ~/.cliare/corpus-runs/20260614T170817Z-gh --write
 
 | Field | Value |
 |---|---:|
-| Score | `94.4/100` |
+| Score | `94/100` |
 | Score model | `cliare-score-v0` |
 | Status | `experimental_partial` |
 | Commands indexed | `185` |

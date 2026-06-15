@@ -347,7 +347,7 @@ cliare-score-v2.0: new safety weighting and remote-dynamic penalty
 Public pages should show:
 
 ```text
-Score: 84.2
+Score: 84
 Model: cliare-score-v1
 ```
 

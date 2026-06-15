@@ -1,0 +1,78 @@
+{
+  "schema_version": "cliare.score-model.v1",
+  "id": "cliare-score-v0",
+  "status": "experimental_partial",
+  "source": "bundled reference model for local CI and improvement tracking; not certified for public leaderboard authority",
+  "normalization": "declared_weight",
+  "precision": {
+    "score_decimals": 0,
+    "weight_decimals": 2
+  },
+  "dimension_weights": {
+    "discovery": 0.35,
+    "grammar": 0.2,
+    "execution": 0.2,
+    "recovery": 0.15,
+    "output": 0.05,
+    "safety": 0.05
+  },
+  "scoring": {
+    "discovery": {
+      "recognition_weight": 70.0,
+      "confidence_weight": 30.0
+    },
+    "grammar": {
+      "flag_presence_score": 30.0,
+      "flag_confidence_score": 25.0,
+      "flag_grammar_score": 20.0,
+      "command_gap_score": 25.0
+    },
+    "output": {
+      "advertised_score": 40.0,
+      "parse_score": 60.0
+    },
+    "recovery": {
+      "invalid_probe_weight": 0.7,
+      "precondition_recovery_weight": 0.3
+    },
+    "safety": {
+      "changed_probe_penalty": 45.0,
+      "file_penalty_per_file": 8.0,
+      "file_penalty_cap": 35.0,
+      "credential_penalty_per_path": 20.0,
+      "credential_penalty_cap": 40.0
+    }
+  },
+  "thresholds": {
+    "low_runtime_confirmation": 0.5,
+    "grammar_gap_rate": 0.5,
+    "recovery_score_minimum": 80.0,
+    "extraction_limited_min_help_probes": 2
+  },
+  "claim_priors": {
+    "command_exists": 0.08,
+    "flag_exists": 0.12,
+    "output_contract_exists": 0.12
+  },
+  "evidence_weights": {
+    "layout_candidate": 1.0,
+    "usage_syntax": 0.8,
+    "runtime_help_match": 2.4,
+    "runtime_precondition_block": 1.6,
+    "runtime_rejection": 0.5,
+    "non_help_output_from_help_probe": -2.0
+  },
+  "calibration": {
+    "stage": "uncalibrated_v0",
+    "required_splits": ["train", "validation", "holdout"],
+    "metrics": [
+      "brier_score",
+      "log_loss",
+      "expected_calibration_error",
+      "false_safe_rate",
+      "false_confirmed_command_rate",
+      "depth_weighted_recall"
+    ],
+    "freeze_rule": "A certified model version requires human-reviewed truth labels, stable certified profiles, published calibration metrics, and a frozen immutable score-model hash."
+  }
+}

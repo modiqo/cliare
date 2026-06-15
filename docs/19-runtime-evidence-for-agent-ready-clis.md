@@ -284,7 +284,7 @@ A standard-profile CLIARE-on-CLIARE run produced:
 
 | Target | Score | Probes | Commands discovered | Commands runtime-confirmed | Output contracts | Parse successes | Findings | Side effects | Traversal complete |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| cliare | 97.4 | 23 | 5 | 5 | 1 | 1 | 0 | 0 | true |
+| cliare | 97 | 23 | 5 | 5 | 1 | 1 | 0 | 0 | true |
 
 This result is not presented as a benchmark claim about the ecosystem. It is a sanity check for the reference implementation: the tool can measure itself through the generic path, identify a parseable metadata contract, avoid false output-contract discoveries, and complete traversal under the standard profile.
 
@@ -296,15 +296,15 @@ The run used `cliare-score-v0`, the local benchmark manifest, target concurrency
 
 | Target | Score | Probes | Traversal complete | Budget exhausted | Machine contracts | Parse successes | Findings | Side-effect files |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| cliare | 97.4 | 23 | true | false | 1 | 1 | 0 | 0 |
-| rote | 63.1 | 768 | false | true | 21 | 0 | 4 | 993 |
-| git | 92.2 | 73 | true | false | 0 | 0 | 1 | 0 |
-| supabase | 90.1 | 403 | true | false | 0 | 0 | 1 | 0 |
-| gh | 87.8 | 512 | false | true | 44 | 0 | 1 | 0 |
-| cargo | 92.0 | 152 | true | false | 0 | 0 | 2 | 1 |
-| npm | 36.0 | 7 | true | false | 0 | 0 | 2 | 530 |
-| docker | 86.3 | 253 | true | false | 0 | 0 | 1 | 0 |
-| deno | 71.7 | 512 | false | true | 57 | 0 | 4 | 2876 |
+| cliare | 97 | 23 | true | false | 1 | 1 | 0 | 0 |
+| rote | 63 | 768 | false | true | 21 | 0 | 4 | 993 |
+| git | 92 | 73 | true | false | 0 | 0 | 1 | 0 |
+| supabase | 90 | 403 | true | false | 0 | 0 | 1 | 0 |
+| gh | 88 | 512 | false | true | 44 | 0 | 1 | 0 |
+| cargo | 92 | 152 | true | false | 0 | 0 | 2 | 1 |
+| npm | 36 | 7 | true | false | 0 | 0 | 2 | 530 |
+| docker | 86 | 253 | true | false | 0 | 0 | 1 | 0 |
+| deno | 72 | 512 | false | true | 57 | 0 | 4 | 2876 |
 
 The table is most useful when read by column, not as a leaderboard. Probe-budget exhaustion on `rote`, `gh`, and `deno` indicates large or branching surfaces that need deeper profiles or improved convergence. Side-effect files on `rote`, `npm`, and `deno` show why discovery-time filesystem evidence matters. The gap between discovered machine-readable contracts and parse successes shows where safe output-mode probing and command-specific fixtures need to mature. These are engineering signals, not certified quality judgments.
 

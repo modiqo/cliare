@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tokio::fs;
 
+use crate::artifacts::{REPORT_MD, SCORECARD_JSON};
 use crate::claims::{
     ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
 };
@@ -12,14 +13,16 @@ use crate::diagnostic::{self, RecoveryQuality};
 use crate::error::{CliareError, Result};
 use crate::evidence::{ProbeIntent, ProcessStatus};
 use crate::fingerprint::TargetFingerprint;
+use crate::layout;
 use crate::observation::ShapeObservation;
 use crate::output::ObservedOutputKind;
+use crate::path_classification;
 use crate::precondition::PreconditionKind;
 use crate::sandbox::SandboxMetadata;
+pub use crate::score_model::ScoreDimension as Dimension;
+use crate::score_model::ScoreModelSpec;
 
 const SCHEMA_VERSION: &str = "cliare.scorecard.v1";
-const SCORE_MODEL: &str = "cliare-score-v0";
-
 #[derive(Debug, Serialize)]
 pub struct Scorecard {
     schema_version: &'static str,
@@ -37,7 +40,7 @@ pub struct ScoreSummary {
     total: f64,
     measured_weight: f64,
     max_weight: f64,
-    model: &'static str,
+    model: String,
     status: ScoreStatus,
 }
 
@@ -45,17 +48,6 @@ pub struct ScoreSummary {
 #[serde(rename_all = "snake_case")]
 pub enum ScoreStatus {
     ExperimentalPartial,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Dimension {
-    Discovery,
-    Grammar,
-    Execution,
-    Output,
-    Safety,
-    Recovery,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,6 +76,11 @@ pub struct Coverage {
     commands_runtime_confirmed: usize,
     commands_precondition_blocked: usize,
     command_confirmation_rate: f64,
+    help_text_probes: usize,
+    help_text_probes_with_shape: usize,
+    help_text_probes_without_shape: usize,
+    help_text_probes_not_recognized: usize,
+    parser_extraction_rate: f64,
     flags_discovered: usize,
     output_contracts_discovered: usize,
     machine_readable_output_contracts: usize,
@@ -156,8 +153,11 @@ pub enum Severity {
 
 #[derive(Debug, Serialize)]
 pub struct ScoreModel {
-    name: &'static str,
-    source: &'static str,
+    name: String,
+    sha256: String,
+    source: String,
+    status: String,
+    normalization: String,
 }
 
 #[derive(Debug, Clone)]
@@ -167,10 +167,15 @@ pub struct ScoreArtifactSummary {
     pub total: f64,
     pub measured_weight: f64,
     pub max_weight: f64,
-    pub model: &'static str,
+    pub model: String,
     pub status: &'static str,
     pub findings: usize,
     pub commands_precondition_blocked: usize,
+    pub help_text_probes: usize,
+    pub help_text_probes_with_shape: usize,
+    pub help_text_probes_without_shape: usize,
+    pub help_text_probes_not_recognized: usize,
+    pub parser_extraction_rate: f64,
     pub output_contracts_discovered: usize,
     pub machine_readable_output_contracts: usize,
     pub output_mode_probes_completed: usize,
@@ -268,10 +273,15 @@ pub async fn write_score_artifacts(
         total: scorecard.score.total,
         measured_weight: scorecard.score.measured_weight,
         max_weight: scorecard.score.max_weight,
-        model: scorecard.score.model,
+        model: scorecard.score.model.clone(),
         status: score_status_label(&scorecard.score.status),
         findings: scorecard.findings.len(),
         commands_precondition_blocked: scorecard.coverage.commands_precondition_blocked,
+        help_text_probes: scorecard.coverage.help_text_probes,
+        help_text_probes_with_shape: scorecard.coverage.help_text_probes_with_shape,
+        help_text_probes_without_shape: scorecard.coverage.help_text_probes_without_shape,
+        help_text_probes_not_recognized: scorecard.coverage.help_text_probes_not_recognized,
+        parser_extraction_rate: scorecard.coverage.parser_extraction_rate,
         output_contracts_discovered: scorecard.coverage.output_contracts_discovered,
         machine_readable_output_contracts: scorecard.coverage.machine_readable_output_contracts,
         output_mode_probes_completed: scorecard.coverage.output_mode_probes_completed,
@@ -318,7 +328,7 @@ pub async fn write_score_artifacts(
 }
 
 async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
-    let path = out_dir.join("scorecard.json");
+    let path = out_dir.join(SCORECARD_JSON);
     let bytes = serde_json::to_vec_pretty(&scorecard).map_err(CliareError::SerializeScorecard)?;
     fs::write(&path, bytes)
         .await
@@ -330,7 +340,7 @@ async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBu
 }
 
 async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
-    let path = out_dir.join("report.md");
+    let path = out_dir.join(REPORT_MD);
     fs::write(&path, render_report(scorecard))
         .await
         .map_err(|source| CliareError::WriteReport {
@@ -348,11 +358,14 @@ pub fn scorecard(
     let binary_name = target_binary_name(&target);
     let claims = ClaimSet::from_observations(&binary_name, observations);
     let runtime_context = run_context.runtime_context.clone();
-    let metrics = Metrics::from_claims_and_observations(&claims, observations, run_context);
+    let metrics =
+        Metrics::from_claims_and_observations(&claims, &binary_name, observations, run_context);
+    let model_spec = ScoreModelSpec::bundled();
 
-    let subscores = subscores(&metrics);
-    let score = total_score(&subscores);
-    let findings = findings(&metrics);
+    let subscores = subscores(&metrics, model_spec);
+    let score = total_score(&subscores, model_spec);
+    let score_status = score_status_label(&score.status).to_owned();
+    let findings = findings(&metrics, model_spec);
 
     Scorecard {
         schema_version: SCHEMA_VERSION,
@@ -363,23 +376,27 @@ pub fn scorecard(
         coverage: metrics.coverage,
         findings,
         model: ScoreModel {
-            name: SCORE_MODEL,
-            source: "experimental evidence-only score over measured dimensions",
+            name: model_spec.id.clone(),
+            sha256: ScoreModelSpec::bundled_sha256().to_owned(),
+            source: model_spec.source.clone(),
+            status: score_status,
+            normalization: normalization_label(model_spec.normalization).to_owned(),
         },
     }
 }
 
-fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
+fn subscores(metrics: &Metrics, model: &ScoreModelSpec) -> BTreeMap<Dimension, DimensionScore> {
     let mut subscores = BTreeMap::new();
 
     subscores.insert(
         Dimension::Discovery,
         DimensionScore {
             score: Some(round_score(
-                70.0 * metrics.command_recognition_rate()
-                    + 30.0 * metrics.coverage.avg_command_confidence,
+                model.scoring.discovery.recognition_weight * metrics.command_recognition_rate()
+                    + model.scoring.discovery.confidence_weight
+                        * metrics.coverage.avg_command_confidence,
             )),
-            weight: 0.35,
+            weight: model.weight(Dimension::Discovery),
             status: DimensionStatus::Measured,
             rationale: "confirmed command coverage plus average command confidence".to_owned(),
         },
@@ -387,8 +404,8 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Grammar,
         DimensionScore {
-            score: Some(round_score(grammar_score(metrics))),
-            weight: 0.20,
+            score: Some(round_score(grammar_score(metrics, model))),
+            weight: model.weight(Dimension::Grammar),
             status: DimensionStatus::Measured,
             rationale: "flag discovery, flag confidence, and confirmed-command grammar gaps"
                 .to_owned(),
@@ -398,7 +415,7 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
         Dimension::Execution,
         DimensionScore {
             score: Some(round_score(execution_score(metrics))),
-            weight: 0.20,
+            weight: model.weight(Dimension::Execution),
             status: DimensionStatus::Measured,
             rationale: "probe completion without timeouts or spawn failures".to_owned(),
         },
@@ -406,8 +423,8 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Recovery,
         DimensionScore {
-            score: Some(round_score(recovery_score(metrics))),
-            weight: 0.15,
+            score: Some(round_score(recovery_score(metrics, model))),
+            weight: model.weight(Dimension::Recovery),
             status: DimensionStatus::Measured,
             rationale: "invalid-command, invalid-child, and invalid-flag probes reject cleanly"
                 .to_owned(),
@@ -416,8 +433,8 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Output,
         DimensionScore {
-            score: Some(round_score(output_score(metrics))),
-            weight: 0.05,
+            score: Some(round_score(output_score(metrics, model))),
+            weight: model.weight(Dimension::Output),
             status: DimensionStatus::Measured,
             rationale: "advertised machine-readable output modes and safe parse probes".to_owned(),
         },
@@ -425,8 +442,8 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores.insert(
         Dimension::Safety,
         DimensionScore {
-            score: Some(round_score(safety_score(metrics))),
-            weight: 0.05,
+            score: Some(round_score(safety_score(metrics, model))),
+            weight: model.weight(Dimension::Safety),
             status: DimensionStatus::Measured,
             rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
         },
@@ -435,7 +452,10 @@ fn subscores(metrics: &Metrics) -> BTreeMap<Dimension, DimensionScore> {
     subscores
 }
 
-fn total_score(subscores: &BTreeMap<Dimension, DimensionScore>) -> ScoreSummary {
+fn total_score(
+    subscores: &BTreeMap<Dimension, DimensionScore>,
+    model: &ScoreModelSpec,
+) -> ScoreSummary {
     let mut weighted = 0.0;
     let mut measured_weight = 0.0;
     let mut max_weight = 0.0;
@@ -448,8 +468,8 @@ fn total_score(subscores: &BTreeMap<Dimension, DimensionScore>) -> ScoreSummary 
         }
     }
 
-    let total = if measured_weight > 0.0 {
-        weighted / measured_weight
+    let total = if max_weight > 0.0 {
+        weighted / max_weight
     } else {
         0.0
     };
@@ -458,12 +478,12 @@ fn total_score(subscores: &BTreeMap<Dimension, DimensionScore>) -> ScoreSummary 
         total: round_score(total),
         measured_weight: round_weight(measured_weight),
         max_weight: round_weight(max_weight),
-        model: SCORE_MODEL,
+        model: model.id.clone(),
         status: ScoreStatus::ExperimentalPartial,
     }
 }
 
-fn grammar_score(metrics: &Metrics) -> f64 {
+fn grammar_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {
     if metrics.coverage.commands_runtime_confirmed == 0 {
         return 0.0;
     }
@@ -475,10 +495,10 @@ fn grammar_score(metrics: &Metrics) -> f64 {
     };
     let grammar_gap_rate = metrics.grammar_gap_rate();
 
-    30.0 * flag_presence
-        + 25.0 * metrics.coverage.avg_flag_confidence
-        + 20.0 * metrics.flag_grammar_rate()
-        + 25.0 * (1.0 - grammar_gap_rate)
+    model.scoring.grammar.flag_presence_score * flag_presence
+        + model.scoring.grammar.flag_confidence_score * metrics.coverage.avg_flag_confidence
+        + model.scoring.grammar.flag_grammar_score * metrics.flag_grammar_rate()
+        + model.scoring.grammar.command_gap_score * (1.0 - grammar_gap_rate)
 }
 
 fn execution_score(metrics: &Metrics) -> f64 {
@@ -490,7 +510,7 @@ fn execution_score(metrics: &Metrics) -> f64 {
     100.0 * (1.0 - ratio(bad, metrics.coverage.probes_completed))
 }
 
-fn recovery_score(metrics: &Metrics) -> f64 {
+fn recovery_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {
     let invalid_recovery = if metrics.invalid_probe_count == 0 {
         None
     } else {
@@ -507,17 +527,21 @@ fn recovery_score(metrics: &Metrics) -> f64 {
 
     100.0
         * match (invalid_recovery, precondition_recovery) {
-            (Some(invalid), Some(precondition)) => 0.7 * invalid + 0.3 * precondition,
+            (Some(invalid), Some(precondition)) => {
+                model.scoring.recovery.invalid_probe_weight * invalid
+                    + model.scoring.recovery.precondition_recovery_weight * precondition
+            }
             (Some(invalid), None) => invalid,
             (None, Some(precondition)) => precondition,
             (None, None) => 0.0,
         }
 }
 
-fn findings(metrics: &Metrics) -> Vec<Finding> {
+fn findings(metrics: &Metrics, model: &ScoreModelSpec) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    if metrics.coverage.command_confirmation_rate < 0.50 && metrics.coverage.commands_discovered > 0
+    if metrics.coverage.command_confirmation_rate < model.thresholds.low_runtime_confirmation
+        && metrics.coverage.commands_discovered > 0
     {
         findings.push(Finding {
             id: "finding.discovery.low_runtime_confirmation",
@@ -534,7 +558,25 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
         });
     }
 
-    if metrics.grammar_gap_rate() > 0.50 && metrics.coverage.commands_runtime_confirmed > 0 {
+    if metrics.extraction.measurement_limited(model) {
+        findings.push(Finding {
+            id: "finding.discovery.extraction_limited",
+            dimension: Dimension::Discovery,
+            severity: Severity::Medium,
+            title: "Help text was not converted into reliable command shape",
+            detail: format!(
+                "{} help-text probes produced output, but none yielded structural shape signals. Help-like-but-unparsed: {}; not recognized as help-like: {}.",
+                metrics.coverage.help_text_probes,
+                metrics.coverage.help_text_probes_without_shape,
+                metrics.coverage.help_text_probes_not_recognized
+            ),
+            recommendation: "Treat discovery and grammar scores as measurement-limited until the help layout is reviewed, a machine-readable catalog is provided, or CLIARE parser support is improved.",
+        });
+    }
+
+    if metrics.grammar_gap_rate() > model.thresholds.grammar_gap_rate
+        && metrics.coverage.commands_runtime_confirmed > 0
+    {
         findings.push(Finding {
             id: "finding.grammar.unconfirmed_arity",
             dimension: Dimension::Grammar,
@@ -559,7 +601,9 @@ fn findings(metrics: &Metrics) -> Vec<Finding> {
         });
     }
 
-    if metrics.invalid_probe_count > 0 && recovery_score(metrics) < 80.0 {
+    if metrics.invalid_probe_count > 0
+        && recovery_score(metrics, model) < model.thresholds.recovery_score_minimum
+    {
         findings.push(Finding {
             id: "finding.recovery.invalid_probe_acceptance",
             dimension: Dimension::Recovery,
@@ -668,7 +712,7 @@ fn render_report(scorecard: &Scorecard) -> String {
         scorecard.target.binary_sha256
     ));
     report.push_str(&format!(
-        "- Score: `{:.1}` / 100 (`{}`)\n",
+        "- Score: `{:.0}` / 100 (`{}`)\n",
         scorecard.score.total,
         score_status_label(&scorecard.score.status)
     ));
@@ -766,6 +810,26 @@ fn render_report(scorecard: &Scorecard) -> String {
     report.push_str(&format!(
         "- Command confirmation rate: `{:.1}%`\n",
         scorecard.coverage.command_confirmation_rate * 100.0
+    ));
+    report.push_str(&format!(
+        "- Help-text probes: `{}`\n",
+        scorecard.coverage.help_text_probes
+    ));
+    report.push_str(&format!(
+        "- Help-text probes with extracted shape: `{}`\n",
+        scorecard.coverage.help_text_probes_with_shape
+    ));
+    report.push_str(&format!(
+        "- Help-text probes without extracted shape: `{}`\n",
+        scorecard.coverage.help_text_probes_without_shape
+    ));
+    report.push_str(&format!(
+        "- Help-text probes not recognized as help-like: `{}`\n",
+        scorecard.coverage.help_text_probes_not_recognized
+    ));
+    report.push_str(&format!(
+        "- Parser extraction rate: `{:.1}%`\n",
+        scorecard.coverage.parser_extraction_rate * 100.0
     ));
     report.push_str(&format!(
         "- Flags discovered: `{}`\n",
@@ -955,12 +1019,18 @@ fn render_report(scorecard: &Scorecard) -> String {
 }
 
 fn score_label(score: Option<f64>) -> String {
-    score.map_or_else(|| "not measured".to_owned(), |score| format!("{score:.1}"))
+    score.map_or_else(|| "not measured".to_owned(), |score| format!("{score:.0}"))
 }
 
 fn score_status_label(status: &ScoreStatus) -> &'static str {
     match status {
         ScoreStatus::ExperimentalPartial => "experimental partial",
+    }
+}
+
+fn normalization_label(normalization: crate::score_model::Normalization) -> &'static str {
+    match normalization {
+        crate::score_model::Normalization::DeclaredWeight => "declared_weight",
     }
 }
 
@@ -1027,11 +1097,13 @@ struct Metrics {
     credential_like_side_effects: usize,
     invalid_probe_count: usize,
     invalid_probe_rejections: usize,
+    extraction: ExtractionMetrics,
 }
 
 impl Metrics {
     fn from_claims_and_observations(
         claims: &ClaimSet,
+        binary_name: &str,
         observations: &[ShapeObservation],
         run_context: ScoreRunContext,
     ) -> Self {
@@ -1094,6 +1166,7 @@ impl Metrics {
             .count();
 
         let process_metrics = ProcessMetrics::from_observations(observations);
+        let extraction = ExtractionMetrics::from_observations(binary_name, observations);
         let probes_skipped_by_budget =
             if run_context.max_probes > 0 && observations.len() >= run_context.max_probes {
                 run_context.frontier_remaining
@@ -1118,6 +1191,11 @@ impl Metrics {
                 commands_runtime_confirmed,
                 commands_precondition_blocked,
                 command_confirmation_rate: ratio(commands_runtime_confirmed, commands_discovered),
+                help_text_probes: extraction.help_text_probes,
+                help_text_probes_with_shape: extraction.help_text_probes_with_shape,
+                help_text_probes_without_shape: extraction.help_text_probes_without_shape,
+                help_text_probes_not_recognized: extraction.help_text_probes_not_recognized,
+                parser_extraction_rate: extraction.extraction_rate(),
                 flags_discovered: flags.len(),
                 output_contracts_discovered,
                 machine_readable_output_contracts,
@@ -1180,6 +1258,7 @@ impl Metrics {
             credential_like_side_effects: process_metrics.credential_like_side_effects,
             invalid_probe_count: process_metrics.invalid_probe_count,
             invalid_probe_rejections: process_metrics.invalid_probe_rejections,
+            extraction,
         }
     }
 
@@ -1211,12 +1290,11 @@ impl Metrics {
     }
 }
 
-fn output_score(metrics: &Metrics) -> f64 {
+fn output_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {
     if metrics.machine_readable_output_contracts == 0 {
         return 0.0;
     }
 
-    let advertised_score = 40.0;
     let non_blocked_probe_count = metrics
         .output_mode_probe_count
         .saturating_sub(metrics.output_mode_precondition_blocked)
@@ -1225,21 +1303,26 @@ fn output_score(metrics: &Metrics) -> f64 {
     let denominator = metrics
         .output_mode_scored_contracts
         .max(non_blocked_probe_count);
-    advertised_score + 60.0 * ratio(metrics.output_mode_parse_successes, denominator)
+    model.scoring.output.advertised_score
+        + model.scoring.output.parse_score * ratio(metrics.output_mode_parse_successes, denominator)
 }
 
-fn safety_score(metrics: &Metrics) -> f64 {
+fn safety_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {
     if metrics.coverage.probes_completed == 0 {
         return 0.0;
     }
 
-    let changed_probe_penalty = 45.0
+    let changed_probe_penalty = model.scoring.safety.changed_probe_penalty
         * ratio(
             metrics.side_effect_probe_count,
             metrics.coverage.probes_completed,
         );
-    let file_penalty = (metrics.side_effect_files_total as f64 * 8.0).min(35.0);
-    let credential_penalty = (metrics.credential_like_side_effects as f64 * 20.0).min(40.0);
+    let file_penalty = (metrics.side_effect_files_total as f64
+        * model.scoring.safety.file_penalty_per_file)
+        .min(model.scoring.safety.file_penalty_cap);
+    let credential_penalty = (metrics.credential_like_side_effects as f64
+        * model.scoring.safety.credential_penalty_per_path)
+        .min(model.scoring.safety.credential_penalty_cap);
 
     (100.0 - changed_probe_penalty - file_penalty - credential_penalty).max(0.0)
 }
@@ -1295,6 +1378,53 @@ struct ProcessMetrics {
     invalid_probe_rejections: usize,
 }
 
+#[derive(Debug, Default)]
+struct ExtractionMetrics {
+    help_text_probes: usize,
+    help_text_probes_with_shape: usize,
+    help_text_probes_without_shape: usize,
+    help_text_probes_not_recognized: usize,
+}
+
+impl ExtractionMetrics {
+    fn from_observations(binary_name: &str, observations: &[ShapeObservation]) -> Self {
+        let mut metrics = Self::default();
+
+        for observation in observations {
+            if observation.intent != ProbeIntent::Help || !exited_zero(&observation.process.status)
+            {
+                continue;
+            }
+
+            let Some(text) = process_text(&observation.process) else {
+                continue;
+            };
+
+            metrics.help_text_probes += 1;
+            let profile = layout::extraction_profile(text, binary_name, &observation.path);
+            if profile.help_like && profile.has_shape_signal() {
+                metrics.help_text_probes_with_shape += 1;
+            } else if profile.help_like {
+                metrics.help_text_probes_without_shape += 1;
+            } else {
+                metrics.help_text_probes_not_recognized += 1;
+            }
+        }
+
+        metrics
+    }
+
+    fn extraction_rate(&self) -> f64 {
+        ratio(self.help_text_probes_with_shape, self.help_text_probes)
+    }
+
+    fn measurement_limited(&self, model: &ScoreModelSpec) -> bool {
+        self.help_text_probes >= model.thresholds.extraction_limited_min_help_probes
+            && self.help_text_probes_with_shape == 0
+            && (self.help_text_probes_without_shape > 0 || self.help_text_probes_not_recognized > 0)
+    }
+}
+
 impl ProcessMetrics {
     fn from_observations(observations: &[ShapeObservation]) -> Self {
         let mut metrics = Self::default();
@@ -1317,7 +1447,7 @@ impl ProcessMetrics {
             metrics.credential_like_side_effects += side_effects
                 .changes
                 .iter()
-                .filter(|change| credential_like_path(&change.path))
+                .filter(|change| path_classification::credential_like_path(&change.path))
                 .count();
 
             let diagnostic = diagnostic::analyze_process(
@@ -1356,11 +1486,19 @@ impl ProcessMetrics {
     }
 }
 
-fn credential_like_path(path: &Path) -> bool {
-    let text = path.display().to_string().to_ascii_lowercase();
-    ["token", "secret", "credential", "credentials", "key"]
-        .iter()
-        .any(|needle| text.contains(needle))
+fn process_text(process: &crate::evidence::ProcessCompleted) -> Option<&str> {
+    process
+        .stdout
+        .text
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| {
+            process
+                .stderr
+                .text
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+        })
 }
 
 fn grammar_gaps_for(command: &CommandClaim) -> usize {
@@ -1385,6 +1523,10 @@ fn exited_nonzero(status: &ProcessStatus) -> bool {
     matches!(status, ProcessStatus::Exited { code: Some(code) } if *code != 0)
 }
 
+fn exited_zero(status: &ProcessStatus) -> bool {
+    matches!(status, ProcessStatus::Exited { code: Some(0) })
+}
+
 fn average(values: impl Iterator<Item = f64>) -> f64 {
     let mut sum = 0.0;
     let mut count = 0_usize;
@@ -1406,7 +1548,7 @@ fn ratio(numerator: usize, denominator: usize) -> f64 {
 }
 
 fn round_score(score: f64) -> f64 {
-    (score * 10.0).round() / 10.0
+    score.clamp(0.0, 100.0).round()
 }
 
 fn round_weight(weight: f64) -> f64 {
@@ -1424,11 +1566,17 @@ fn target_binary_name(target: &TargetFingerprint) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Dimension, SandboxScoreContext, ScoreRunContext, render_report, scorecard};
+    use std::collections::BTreeMap;
+
+    use super::{
+        Dimension, DimensionScore, DimensionStatus, SandboxScoreContext, ScoreRunContext,
+        render_report, scorecard, total_score,
+    };
     use crate::evidence::{ProbeIntent, ProcessCompleted, ProcessStatus};
     use crate::fingerprint::TargetFingerprint;
     use crate::observation::ShapeObservation;
     use crate::process::OutputCapture;
+    use crate::score_model::ScoreModelSpec;
 
     #[test]
     fn runtime_confirmation_improves_discovery_score() {
@@ -1626,9 +1774,12 @@ mod tests {
         let report = render_report(&scorecard);
 
         assert!(report.contains("# CLIARE Report"));
-        assert!(report.contains("| output | 0.0 | 0.05 | measured |"));
+        assert!(report.contains("| output | 0 | 0.05 | measured |"));
         assert!(report.contains("experimental partial"));
         assert!(report.contains("- Output contracts discovered: `0`"));
+        assert!(report.contains("- Help-text probes: `1`"));
+        assert!(report.contains("- Help-text probes with extracted shape: `1`"));
+        assert!(report.contains("- Parser extraction rate: `100.0%`"));
         assert!(report.contains("## Runtime Context"));
         assert!(report.contains("- Profile: `single`"));
         assert!(report.contains("- Traversal profile: `standard`"));
@@ -1760,6 +1911,78 @@ mod tests {
             super::TraversalStopReason::FrontierExhausted
         );
         assert!(scorecard.coverage.traversal_complete);
+    }
+
+    #[test]
+    fn partial_total_is_normalized_by_declared_weight() {
+        let mut subscores = BTreeMap::new();
+        subscores.insert(
+            Dimension::Discovery,
+            DimensionScore {
+                score: Some(100.0),
+                weight: 0.35,
+                status: DimensionStatus::Measured,
+                rationale: "measured".to_owned(),
+            },
+        );
+        subscores.insert(
+            Dimension::Grammar,
+            DimensionScore {
+                score: None,
+                weight: 0.65,
+                status: DimensionStatus::NotMeasured,
+                rationale: "not measured".to_owned(),
+            },
+        );
+
+        let score = total_score(&subscores, ScoreModelSpec::bundled());
+
+        assert_eq!(score.total, 35.0);
+        assert!(score.total <= 100.0);
+        assert_eq!(score.measured_weight, 0.35);
+        assert_eq!(score.max_weight, 1.0);
+    }
+
+    #[test]
+    fn scorecard_embeds_bundled_model_provenance() {
+        let scorecard = scorecard(target(), &[], ScoreRunContext::default());
+
+        assert_eq!(scorecard.model.name, "cliare-score-v0");
+        assert_eq!(scorecard.model.sha256.len(), 64);
+        assert_eq!(scorecard.model.normalization, "declared_weight");
+        assert_eq!(scorecard.score.model, scorecard.model.name);
+    }
+
+    #[test]
+    fn extraction_limited_help_is_reported_as_measurement_ambiguity() {
+        let odd_layout = "\
+AYUDA
+  publicar    publicar servicio
+  borrar      borrar servicio
+";
+        let scorecard = scorecard(
+            target(),
+            &[
+                observation("e_000003", ProbeIntent::Help, vec![], odd_layout, Some(0)),
+                observation(
+                    "e_000004",
+                    ProbeIntent::Help,
+                    vec!["publicar".to_owned()],
+                    odd_layout,
+                    Some(0),
+                ),
+            ],
+            ScoreRunContext::default(),
+        );
+
+        assert_eq!(scorecard.coverage.help_text_probes, 2);
+        assert_eq!(scorecard.coverage.help_text_probes_with_shape, 0);
+        assert_eq!(scorecard.coverage.help_text_probes_without_shape, 2);
+        assert_eq!(scorecard.coverage.parser_extraction_rate, 0.0);
+        assert!(scorecard.findings.iter().any(|finding| {
+            finding.id == "finding.discovery.extraction_limited"
+                && finding.title == "Help text was not converted into reliable command shape"
+        }));
     }
 
     fn dimension_score(scorecard: &super::Scorecard, dimension: Dimension) -> f64 {

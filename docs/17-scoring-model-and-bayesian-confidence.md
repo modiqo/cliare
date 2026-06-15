@@ -7,7 +7,7 @@
 
 ## Model Status
 
-`cliare-score-v0` is an evidence-derived readiness score for local measurement, CI regression checks, and release-to-release improvement tracking. It is deterministic for a fixed evidence set and decomposes the result into six measured dimensions: discovery, grammar, execution, recovery, output, and safety.
+`cliare-score-v0` is an evidence-derived readiness score for local measurement, CI regression checks, and release-to-release improvement tracking. It is deterministic for a fixed evidence set and decomposes the result into six declared model dimensions: discovery, grammar, execution, recovery, output, and safety.
 
 The model is intentionally versioned. Public leaderboard certification requires an additional calibration layer: truth-set evaluation, calibrated likelihood weights, confidence intervals, repeated-run stability, and published metrics for proper scoring rules and safety error rates.
 
@@ -45,7 +45,7 @@ Where:
 - `E` is the evidence collected from probes.
 - `U` is an agent-readiness utility function.
 
-The v0 implementation does not estimate the full posterior over `G` and `T`. It implements a deterministic approximation over directly measured dimensions, while preserving the evidence and model-version metadata needed for later rescore and calibration.
+The v0 implementation does not estimate the full posterior over `G` and `T`. It implements a deterministic approximation over declared dimensions using observed evidence, while preserving the evidence and model-version metadata needed for later rescore and calibration.
 
 For a context suite, the scalar score is interpreted per context:
 
@@ -147,7 +147,7 @@ Runtime context changes how that evidence should be read. If `clean` reports `au
 
 ## Score v0 Formula
 
-Score v0 computes six measured subscores:
+Score v0 computes six subscores from the bundled typed model spec:
 
 - discovery
 - grammar
@@ -156,13 +156,13 @@ Score v0 computes six measured subscores:
 - output
 - safety
 
-The total score is a weighted mean over measured dimensions:
+The total score is normalized by the declared model weight:
 
 ```text
-total = sum_d score_d * weight_d / sum_d weight_d
+total = sum_d score_d * weight_d / sum_d declared_weight_d
 ```
 
-Current weights:
+Current weights are defined in [`score-models/cliare-score-v0.json`](../score-models/cliare-score-v0.json) and validated by [`src/score_model.rs`](../src/score_model.rs):
 
 | Dimension | Weight | Purpose |
 |---|---:|---|
@@ -173,7 +173,7 @@ Current weights:
 | Output | `0.05` | Are machine-readable modes advertised and parseable? |
 | Safety | `0.05` | Do safe probes avoid persistent side effects? |
 
-The weights deliberately emphasize discovery, grammar, execution, and recovery in v0 because those are the first-order requirements for agent navigation. Output and safety are already measured, but their current implementations are early and should gain weight only after stronger probes, calibration, and policy semantics exist.
+The weights deliberately emphasize discovery, grammar, execution, and recovery in v0 because those are the first-order requirements for agent navigation. Output and safety are already measured, but their current implementations are early and should gain weight only after stronger probes, calibration, and policy semantics exist. v0 score rendering uses whole points to avoid implying precision that the uncalibrated model has not earned.
 
 ---
 

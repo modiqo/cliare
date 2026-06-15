@@ -163,7 +163,7 @@ async fn noisy_help_still_infers_from_stdout_layout() {
     assert!(
         artifacts
             .report
-            .contains("| safety | 100.0 | 0.05 | measured |")
+            .contains("| safety | 100 | 0.05 | measured |")
     );
     assert!(artifacts.report.contains("Budget exhausted"));
     assert!(artifacts.report.contains("Traversal stop reason"));

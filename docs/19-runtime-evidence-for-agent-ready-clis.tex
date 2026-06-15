@@ -225,7 +225,7 @@ The current reference implementation has been exercised against synthetic fixtur
 \toprule
 Target & Score & Probes & Disc. & Conf. & Contracts & Parses & Findings & Side effects \\
 \midrule
-cliare & 97.4 & 23 & 5 & 5 & 1 & 1 & 0 & 0 \\
+cliare & 97 & 23 & 5 & 5 & 1 & 1 & 0 & 0 \\
 \bottomrule
 \end{tabular}
 \caption{Standard-profile CLIARE-on-CLIARE run. Traversal completed under the standard profile.}
@@ -246,15 +246,15 @@ The run used \texttt{cliare-score-v0}, the local benchmark manifest, target conc
 \toprule
 Target & Score & Probes & Complete & Budget & Machine & Parses & Findings & FS changes \\
 \midrule
-cliare & 97.4 & 23 & yes & no & 1 & 1 & 0 & 0 \\
-rote & 63.1 & 768 & no & yes & 21 & 0 & 4 & 993 \\
-git & 92.2 & 73 & yes & no & 0 & 0 & 1 & 0 \\
-supabase & 90.1 & 403 & yes & no & 0 & 0 & 1 & 0 \\
-gh & 87.8 & 512 & no & yes & 44 & 0 & 1 & 0 \\
-cargo & 92.0 & 152 & yes & no & 0 & 0 & 2 & 1 \\
-npm & 36.0 & 7 & yes & no & 0 & 0 & 2 & 530 \\
-docker & 86.3 & 253 & yes & no & 0 & 0 & 1 & 0 \\
-deno & 71.7 & 512 & no & yes & 57 & 0 & 4 & 2876 \\
+cliare & 97 & 23 & yes & no & 1 & 1 & 0 & 0 \\
+rote & 63 & 768 & no & yes & 21 & 0 & 4 & 993 \\
+git & 92 & 73 & yes & no & 0 & 0 & 1 & 0 \\
+supabase & 90 & 403 & yes & no & 0 & 0 & 1 & 0 \\
+gh & 88 & 512 & no & yes & 44 & 0 & 1 & 0 \\
+cargo & 92 & 152 & yes & no & 0 & 0 & 2 & 1 \\
+npm & 36 & 7 & yes & no & 0 & 0 & 2 & 530 \\
+docker & 86 & 253 & yes & no & 0 & 0 & 1 & 0 \\
+deno & 72 & 512 & no & yes & 57 & 0 & 4 & 2876 \\
 \bottomrule
 \end{tabular}
 \caption{Exploratory local real-CLI corpus run. Values are uncalibrated \texttt{cliare-score-v0} measurements, not leaderboard results.}

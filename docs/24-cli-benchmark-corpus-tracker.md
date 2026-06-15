@@ -39,6 +39,33 @@ cliare measure <command> --out .cliare-bench/<cli-id> --profile deep --max-depth
 cliare describe .cliare-bench/<cli-id> --write
 ```
 
+Reference vendor calibration manifest:
+
+```sh
+cliare benchmark --manifest benchmarks/vendor-calibration-corpus.json --out .cliare-vendor-calibration --refresh
+```
+
+---
+
+## Named Vendor Calibration Set
+
+This set records vendor CLIs that are especially relevant to agent harnesses because they expose business-critical SaaS, deployment, data, communication, and AI-media workflows. Some entries already appear in the broader P0 corpus. They are repeated here so calibration work can track them as a deliberate product-facing benchmark set with train/validation/holdout labels.
+
+| Priority | CLI / Product | Command | Primary Surface | Benchmark Folder | Split | Truth Labels | Latest Score | Follow-Up |
+|---:|---|---|---|---|---|---|---:|---|
+| 1 | GitHub CLI | `gh` | GitHub repositories, pull requests, issues, Actions, releases, auth, and API workflows. | `benchmarks/corpus/gh` | holdout candidate | partial |  | Existing row remains the reference; add human-verified command, flag, JSON-field, auth, and local-repository labels before certification use. |
+| 2 | Stripe CLI | `stripe` | Payments setup, payment events, fixtures, local webhook forwarding, auth, and API-backed resource workflows. |  | train candidate |  |  | Needs fixture strategy for webhook listener commands and safe event-producing probes. |
+| 3 | Supabase CLI | `supabase` | Local Postgres stack, auth, storage, migrations, functions, secrets, projects, and local service lifecycle. |  | validation candidate |  |  | Needs clean, linked-project, and local-stack contexts to separate auth, workspace, and runtime-dependency behavior. |
+| 4 | Valyu CLI | `valyu` | Web search and real-time specialized data access from the terminal. |  | train candidate |  |  | Verify installed command name, auth model, query fixture requirements, and machine-readable output contracts. |
+| 5 | PostHog CLI | `posthog` | Analytics setup, project instrumentation, deployment/self-hosting support, auth, and event/debug workflows. |  | train candidate |  |  | Verify command availability and whether the surface is official, plugin-backed, or package-manager mediated. |
+| 6 | ElevenLabs CLI | `elevenlabs` | Text-to-speech, speech-to-text, voice cloning, model selection, files, auth, and media output workflows. |  | validation candidate |  |  | Needs safe fixture media inputs and output-file side-effect expectations. |
+| 7 | Ramp CLI | `ramp` | Expense, card, vendor, reimbursement, and finance-operation workflows. |  | holdout candidate |  |  | Verify official CLI availability, auth constraints, and sensitive-output policy before probing beyond help. |
+| 8 | Google Workspace CLI | `google-workspace` | Gmail, Drive, Calendar, Docs, Sheets, Admin, contacts, and workspace automation from terminal. |  | holdout candidate |  |  | Resolve canonical CLI/package, define scoped fixture accounts, and label auth-sensitive commands separately. |
+| 9 | AgentMail CLI | `agentmail` | Email inboxes, transactional email, local webhook testing, address management, auth, and message workflows. |  | train candidate |  |  | Needs safe mailbox fixture and webhook/listener classification. |
+| 10 | Vercel CLI | `vercel` | App deployment, projects, environment variables, domains, logs, teams, auth, and frontend platform workflows. |  | validation candidate |  |  | Needs project-context and auth-context runs; existing P0 row remains the general corpus reference. |
+
+Calibration split assignments are provisional. Final split placement should avoid leakage: a CLI family used to tune model weights should not be used to claim holdout performance for the same model version.
+
 ---
 
 ## P0 Corpus
@@ -47,7 +74,7 @@ These are the first CLIs to measure. They cover the most common operational surf
 
 | Priority | CLI | Category | Why Harnesses Use It | Benchmark Folder | Latest Score | Traversal Status | Findings / Follow-Up |
 |---:|---|---|---|---|---:|---|---|
-| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. | `benchmarks/corpus/gh` | `98.5` | Host-context verification; 185 commands indexed; 177 runtime-confirmed; 560/560 probes; depth 3/4; budget exhausted with 87 frontier candidates; no side effects. | No output parse-failure findings. 19 advertised output contracts are precondition-blocked by auth, local repository context, or fixture-required operands/flags. 7 command candidates still need runtime confirmation. |
+| 1 | `gh` | Source control / GitHub | Repositories, pull requests, issues, Actions, releases, auth, and API calls. | `benchmarks/corpus/gh` | `99` | Host-context verification; 185 commands indexed; 177 runtime-confirmed; 560/560 probes; depth 3/4; budget exhausted with 87 frontier candidates; no side effects. | No output parse-failure findings. 19 advertised output contracts are precondition-blocked by auth, local repository context, or fixture-required operands/flags. 7 command candidates still need runtime confirmation. |
 | 2 | `aws` | Cloud | AWS resource inspection, provisioning, service APIs, auth profiles, and deployment workflows. |  |  |  |  |
 | 3 | `gcloud` | Cloud | Google Cloud resource management, auth, projects, config, deployments, and logs. |  |  |  |  |
 | 4 | `az` | Cloud | Azure resource management, deployments, identity, storage, containers, and app services. |  |  |  |  |

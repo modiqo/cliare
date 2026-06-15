@@ -46,8 +46,107 @@ This reference describes the computational scoring target and the current implem
 | Guard policies and CI failure semantics | [`src/guard.rs`](../src/guard.rs), [`src/policy.rs`](../src/policy.rs) |
 | Persona packets and reviewable issue ledger | [`src/report.rs`](../src/report.rs) |
 | Benchmark corpus execution and calibration inputs | [`src/benchmark.rs`](../src/benchmark.rs) |
+| Bundled typed score-model spec and validation | [`score-models/cliare-score-v0.json`](../score-models/cliare-score-v0.json), [`src/score_model.rs`](../src/score_model.rs) |
 
 Normative language in this reference describes the target standard model. Mentions of "current v0" describe the linked Rust implementation.
+
+---
+
+## Computation Model V1 Direction
+
+The score model must be an artifact, not a set of constants hidden in implementation code. CLIARE now treats the current v0 model as a typed bundled model spec:
+
+```text
+score-models/cliare-score-v0.json
+```
+
+The spec declares:
+
+- model id, schema version, status, source, normalization rule, and display precision
+- dimension weights for discovery, grammar, execution, recovery, output, and safety
+- scoring coefficients for discovery, grammar, output, recovery, and safety
+- finding thresholds for low confirmation, grammar gaps, recovery, and extraction-limited runs
+- claim priors and evidence weights that define the current log-odds inference posture
+- calibration requirements: train, validation, holdout splits and proper scoring metrics
+
+The Rust implementation loads this spec through [`src/score_model.rs`](../src/score_model.rs), validates invariants, and embeds the model hash in `scorecard.json`. A model version is therefore auditable: changing a weight, threshold, prior, or precision changes the model file and its SHA-256.
+
+Current v0 remains `experimental_partial`; the architectural change is that v0 is now a concrete model artifact that can be calibrated, revised, frozen, and compared instead of an informal set of code literals.
+
+### Model Artifact Contract
+
+A score model must be immutable once published. Revisions create a new model id:
+
+```text
+cliare-score-v0
+cliare-score-v0.1
+cliare-score-v0.2
+cliare-score-v1
+```
+
+Each scorecard should preserve:
+
+```json
+{
+  "score": {
+    "model": "cliare-score-v0",
+    "status": "experimental_partial"
+  },
+  "model": {
+    "name": "cliare-score-v0",
+    "sha256": "...",
+    "normalization": "declared_weight"
+  }
+}
+```
+
+That model hash is as important as the binary fingerprint. Without it, a score cannot be reproduced or compared fairly.
+
+### Train, Validation, Holdout Discipline
+
+The calibration corpus must be split before tuning starts:
+
+| Split | Purpose | Rule |
+|---|---|---|
+| Train | Fit priors, evidence weights, thresholds, and scoring coefficients. | May be inspected and iterated on frequently. |
+| Validation | Select model revisions and check overfitting. | May guide model choice, but should not be used for final claims. |
+| Holdout | Report final model quality. | Must remain unseen until the candidate model is frozen. |
+
+The split is by CLI family, not by individual probe rows. For example, if `gh` is used to tune output-field probing, it should not also be used as holdout evidence for the same model version.
+
+### Calibration Objective
+
+The calibration process should optimize for useful, trustworthy measurement rather than a superficially high score:
+
+```text
+loss =
+  alpha * command_existence_log_loss
++ beta  * flag_arity_log_loss
++ gamma * output_contract_log_loss
++ delta * precondition_classification_loss
++ eta   * false_safe_penalty
++ zeta  * extraction_ambiguity_penalty
+```
+
+The model must also satisfy monotonicity constraints:
+
+- runtime-confirmed command evidence cannot reduce command existence confidence
+- parseable machine-readable output cannot reduce output utility
+- additional unapproved side effects cannot improve safety
+- clearer actionable recovery cannot reduce recovery utility
+- extraction-limited runs must be labeled as measurement-limited rather than silently blaming the target CLI
+
+### Freeze Criteria
+
+A candidate `cliare-score-v1` should not be frozen until it has:
+
+- human-reviewed truth labels for synthetic and real CLIs
+- reported Brier score, log loss, expected calibration error, false-safe rate, false-confirmed-command rate, and depth-weighted recall
+- repeated-run stability across clean environments
+- certified traversal profiles with fixed depth, probe budget, timeout, isolation, and fixture rules
+- published model hash and calibration report
+
+Until then, v0 scores are appropriate for CI improvement loops and benchmark development, not authoritative public ranking.
 
 ---
 
@@ -619,7 +718,7 @@ S_total =
 
 Where each subscore is a command-importance weighted average.
 
-Current v0 uses deterministic measured-dimension weights in [`src/score.rs`](../src/score.rs):
+Current v0 uses deterministic declared-dimension weights from [`score-models/cliare-score-v0.json`](../score-models/cliare-score-v0.json), loaded and validated through [`src/score_model.rs`](../src/score_model.rs):
 
 | Dimension | Current v0 Weight |
 |---|---:|
@@ -632,10 +731,10 @@ Current v0 uses deterministic measured-dimension weights in [`src/score.rs`](../
 
 These v0 weights intentionally emphasize whether CLIARE can discover and confirm the command surface before making stronger claims about output and safety. A calibrated v1 model can rebalance these weights once benchmark truth sets are mature.
 
-The public score should include confidence intervals:
+The current v0 display rounds readiness scores to whole points. That avoids implying decimal precision before calibration. A future certified public score should include confidence intervals:
 
 ```text
-84.2 [80.1, 87.6]
+84 [80.1, 87.6]
 ```
 
 Intervals can be estimated by posterior sampling:
@@ -830,13 +929,16 @@ Current v0 guard behavior compares scorecards and policy constraints through [`s
 
 A raw Bayesian model with hand-picked weights is not enough for a standard.
 
-CLIARE needs calibration:
+CLIARE needs calibration over the model spec:
 
 1. Build benchmark CLIs with known truth.
-2. Run probes.
-3. Compare inferred claims to truth.
-4. Adjust likelihood weights.
-5. Verify probability calibration.
+2. Assign CLI families to train, validation, and holdout splits before tuning.
+3. Run probes under fixed certified profiles.
+4. Compare inferred claims, output contracts, preconditions, safety classifications, and extraction-quality flags to truth.
+5. Fit priors, evidence weights, thresholds, and score coefficients on the train split.
+6. Select candidate model revisions using validation metrics.
+7. Report final performance once on holdout.
+8. Freeze the model file and publish its hash.
 
 Calibration plots:
 
@@ -851,7 +953,7 @@ Use expected calibration error:
 ECE = sum_bins |acc(bin) - conf(bin)| * n_bin / n
 ```
 
-Certified model versions should publish calibration metrics.
+Certified model versions should publish calibration metrics and the exact score-model artifact.
 
 Running example:
 

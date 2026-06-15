@@ -393,6 +393,8 @@ The remaining Phase 5 work is deeper calibration, not basic benchmark execution:
 - likelihood-weight tuning from benchmark results
 - published model-version calibration reports
 - score stability runs over repeated measurements
+- immutable score-model artifacts with SHA-256 provenance in scorecards
+- train/validation/holdout split enforcement for candidate model revisions
 
 ---
 

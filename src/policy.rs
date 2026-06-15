@@ -5,7 +5,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 
+use crate::artifacts::{EVIDENCE_JSONL, SCORECARD_JSON};
 use crate::error::{CliareError, Result};
+use crate::path_classification;
 
 const POLICY_SCHEMA_VERSION: &str = "cliare.policy.v1";
 
@@ -26,8 +28,8 @@ pub struct PolicyFailure {
 
 pub async fn evaluate_policy(policy_path: &Path, out_dir: &Path) -> Result<PolicyEvaluation> {
     let policy = read_policy(policy_path).await?;
-    let scorecard = read_scorecard(&out_dir.join("scorecard.json")).await?;
-    let side_effects = read_side_effects(&out_dir.join("evidence.jsonl")).await?;
+    let scorecard = read_scorecard(&out_dir.join(SCORECARD_JSON)).await?;
+    let side_effects = read_side_effects(&out_dir.join(EVIDENCE_JSONL)).await?;
     let mut failures = Vec::new();
 
     evaluate_score_thresholds(&policy, &scorecard, &mut failures)?;
@@ -210,7 +212,7 @@ fn evaluate_side_effects(
     if rule.deny_credential_like {
         let credential_like = side_effects
             .iter()
-            .filter(|change| credential_like_path(&change.path))
+            .filter(|change| path_classification::credential_like_path_text(&change.path))
             .collect::<Vec<_>>();
         if !credential_like.is_empty() {
             failures.push(PolicyFailure {
@@ -258,13 +260,6 @@ fn normalize_path(path: &str) -> String {
         .trim_start_matches("./")
         .trim_start_matches('/')
         .to_owned()
-}
-
-fn credential_like_path(path: &str) -> bool {
-    let text = path.to_ascii_lowercase();
-    ["token", "secret", "credential", "credentials", "key"]
-        .iter()
-        .any(|needle| text.contains(needle))
 }
 
 fn glob_matches(pattern: &str, path: &str) -> bool {
@@ -383,7 +378,8 @@ struct SideEffectChange {
 
 #[cfg(test)]
 mod tests {
-    use super::{credential_like_path, glob_matches};
+    use super::glob_matches;
+    use crate::path_classification;
 
     #[test]
     fn glob_matches_single_and_recursive_segments() {
@@ -404,8 +400,14 @@ mod tests {
 
     #[test]
     fn credential_like_paths_match_score_heuristic_terms() {
-        assert!(credential_like_path("home/session-token"));
-        assert!(credential_like_path("home/run-secret"));
-        assert!(!credential_like_path("xdg-cache/fixture-cli/help-cache"));
+        assert!(path_classification::credential_like_path_text(
+            "home/session-token"
+        ));
+        assert!(path_classification::credential_like_path_text(
+            "home/run-secret"
+        ));
+        assert!(!path_classification::credential_like_path_text(
+            "xdg-cache/fixture-cli/help-cache"
+        ));
     }
 }

@@ -8,10 +8,14 @@ use serde_json::Value;
 use tokio::fs;
 
 use crate::artifact_guide::{self, ArtifactGuideSummary};
+use crate::artifacts::{
+    EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, MeasurementArtifactPaths, SCORECARD_JSON, SHAPE_JSON,
+};
 use crate::cli::{ReportArgs, ReportFormat, ReportPersona};
 use crate::context;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
+use crate::path_classification;
 
 const PACKET_SCHEMA_VERSION: &str = "cliare.persona-outcome.v1";
 const ISSUE_LEDGER_SCHEMA_VERSION: &str = "cliare.issue-ledger.v1";
@@ -130,8 +134,8 @@ pub async fn write_all_persona_reports(out_dir: &Path) -> Result<PersonaArtifact
     let issues_markdown = render_issue_ledger_markdown(&issue_ledger);
     let issues_json = serde_json::to_string_pretty(&issue_ledger)
         .map_err(CliareError::SerializePersonaOutcome)?;
-    let issues_markdown_path = out_dir.join("issues.md");
-    let issues_json_path = out_dir.join("issues.json");
+    let issues_markdown_path = out_dir.join(ISSUES_MD);
+    let issues_json_path = out_dir.join(ISSUES_JSON);
     write_persona_artifact(&issues_markdown_path, issues_markdown.as_bytes()).await?;
     write_persona_artifact(&issues_json_path, issues_json.as_bytes()).await?;
 
@@ -310,13 +314,14 @@ struct SourceArtifacts {
 
 impl SourceArtifacts {
     fn new(artifact_dir: &Path) -> Self {
+        let paths = MeasurementArtifactPaths::from_dir(artifact_dir);
         Self {
             artifact_dir: artifact_dir.to_path_buf(),
-            evidence: artifact_dir.join("evidence.jsonl"),
-            shape: artifact_dir.join("shape.json"),
-            command_index: artifact_dir.join("command-index.json"),
-            command_index_markdown: artifact_dir.join("command-index.md"),
-            scorecard: artifact_dir.join("scorecard.json"),
+            evidence: paths.evidence,
+            shape: paths.shape,
+            command_index: paths.command_index_json,
+            command_index_markdown: paths.command_index_markdown,
+            scorecard: paths.scorecard,
         }
     }
 }
@@ -955,9 +960,9 @@ struct MeasuredArtifacts {
 
 impl MeasuredArtifacts {
     async fn read(out_dir: &Path) -> Result<Self> {
-        let scorecard = read_json::<ScorecardArtifact>(&out_dir.join("scorecard.json")).await?;
-        let shape = read_json::<ShapeArtifact>(&out_dir.join("shape.json")).await?;
-        let evidence = EvidenceSummary::read(&out_dir.join("evidence.jsonl")).await?;
+        let scorecard = read_json::<ScorecardArtifact>(&out_dir.join(SCORECARD_JSON)).await?;
+        let shape = read_json::<ShapeArtifact>(&out_dir.join(SHAPE_JSON)).await?;
+        let evidence = EvidenceSummary::read(&out_dir.join(EVIDENCE_JSONL)).await?;
         Ok(Self {
             scorecard,
             shape,
@@ -1952,7 +1957,7 @@ fn issue_evidence(
                         operation: record.kind.clone(),
                         region: record.region.clone(),
                         path: record.path.clone(),
-                        credential_like: credential_like_path(&record.path),
+                        credential_like: path_classification::credential_like_path_text(&record.path),
                         size_bytes: record.size_bytes,
                     })
                     .collect::<Vec<_>>();
@@ -2270,7 +2275,7 @@ fn affected_count_for_finding(
                 .evidence
                 .side_effects
                 .iter()
-                .filter(|record| credential_like_path(&record.path))
+                .filter(|record| path_classification::credential_like_path_text(&record.path))
                 .count(),
         ),
         _ => None,
@@ -2289,7 +2294,7 @@ fn evidence_for_finding(finding: &FindingArtifact, artifacts: &MeasuredArtifacts
             .evidence
             .side_effects
             .iter()
-            .filter(|record| credential_like_path(&record.path))
+            .filter(|record| path_classification::credential_like_path_text(&record.path))
             .map(|record| record.evidence.clone())
             .collect(),
         _ => Vec::new(),
@@ -2386,17 +2391,6 @@ fn plural_suffix(count: usize) -> &'static str {
 
 fn need_verb(count: usize) -> &'static str {
     if count == 1 { "needs" } else { "need" }
-}
-
-fn credential_like_path(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.contains("token")
-        || lower.contains("credential")
-        || lower.contains("secret")
-        || lower.contains("apikey")
-        || lower.contains("api_key")
-        || lower.contains("keychain")
-        || lower.contains("auth")
 }
 
 fn recommendation_for_gap(kind: &str) -> &'static str {
@@ -2675,7 +2669,7 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
         writeln!(text).expect("writing to string cannot fail");
         writeln!(text, "| Check | Result |").expect("writing to string cannot fail");
         writeln!(text, "|---|---|").expect("writing to string cannot fail");
-        writeln!(text, "| Score | `{:.1}/100` |", packet.summary.score)
+        writeln!(text, "| Score | `{:.0}/100` |", packet.summary.score)
             .expect("writing to string cannot fail");
         writeln!(
             text,
@@ -2711,7 +2705,7 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text).expect("writing to string cannot fail");
     writeln!(text, "| Field | Value |").expect("writing to string cannot fail");
     writeln!(text, "|---|---|").expect("writing to string cannot fail");
-    writeln!(text, "| Score | `{:.1}/100` |", packet.summary.score)
+    writeln!(text, "| Score | `{:.0}/100` |", packet.summary.score)
         .expect("writing to string cannot fail");
     writeln!(
         text,
@@ -2763,7 +2757,7 @@ fn render_persona_score_summary(text: &mut String, packet: &PersonaOutcomePacket
         escape_markdown(&packet.target.requested.display().to_string())
     )
     .expect("writing to string cannot fail");
-    writeln!(text, "| Score | `{:.1}/100` |", packet.summary.score)
+    writeln!(text, "| Score | `{:.0}/100` |", packet.summary.score)
         .expect("writing to string cannot fail");
     writeln!(
         text,
@@ -3746,7 +3740,7 @@ fn render_written_summary(
         packet.persona.label()
     )
     .expect("writing to string cannot fail");
-    writeln!(&mut text, "score: {:.1}/100", packet.summary.score)
+    writeln!(&mut text, "score: {:.0}/100", packet.summary.score)
         .expect("writing to string cannot fail");
     writeln!(&mut text, "action items: {}", packet.action_items.len())
         .expect("writing to string cannot fail");

@@ -153,7 +153,7 @@ Scorecard payload:
   "project": "owner/repo",
   "cli": "mycli",
   "version": "1.2.3",
-  "score": 84.2,
+  "score": 84,
   "subscores": {},
   "verification": {},
   "artifact_hashes": {},
@@ -222,7 +222,7 @@ Leaderboard entry:
 
 ```text
 mycli
-Score: 84.2
+Score: 84
 Verification: CI-attested
 Version: 1.2.3
 Trend: +7.1 over 30 days

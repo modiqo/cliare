@@ -684,4 +684,16 @@ mod tests {
         assert_eq!(analysis.precondition, None);
         assert_eq!(analysis.recovery.quality, RecoveryQuality::None);
     }
+
+    #[test]
+    fn keeps_unrecognized_diagnostics_unclassified() {
+        let analysis = analyze_process(
+            &ProcessStatus::Exited { code: Some(2) },
+            None,
+            Some("operacion rechazada por condicion externa"),
+        );
+
+        assert_eq!(analysis.precondition, None);
+        assert_eq!(analysis.confidence, 0.0);
+    }
 }

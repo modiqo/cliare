@@ -1,4 +1,5 @@
 use std::io::Write as _;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -10,6 +11,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
 
 use crate::artifact_guide::{self, ArtifactGuideSummary};
+use crate::artifacts::{
+    CONTEXT_COMPARE_MD, CONTEXT_SUITE_JSON, MeasurementArtifactPaths, REQUIRED_MEASUREMENT_FILES,
+};
 use crate::ci::{self, CiArtifactSummary};
 use crate::claims::ClaimSet;
 use crate::cli::MeasureArgs;
@@ -40,7 +44,6 @@ pub struct MeasurementSummary {
     pub target: TargetFingerprint,
     pub job_id: Option<String>,
     pub job_log_path: Option<PathBuf>,
-    pub probes_completed: usize,
     pub evidence_path: PathBuf,
     pub shape_path: PathBuf,
     pub command_index_json_path: PathBuf,
@@ -55,6 +58,18 @@ pub struct MeasurementSummary {
     pub persona_report_count: usize,
     pub readme_path: PathBuf,
     pub agent_skill_path: PathBuf,
+    pub facts: MeasurementFacts,
+    pub cache_hit: bool,
+    pub runtime_context: RuntimeContext,
+    pub suite_root_path: PathBuf,
+    pub runtime_context_path: Option<PathBuf>,
+    pub context_suite_path: Option<PathBuf>,
+    pub context_compare_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
+pub struct MeasurementFacts {
+    pub probes_completed: usize,
     pub sandbox_profile: String,
     pub sandbox_root: PathBuf,
     pub sandbox_home: PathBuf,
@@ -66,17 +81,35 @@ pub struct MeasurementSummary {
     pub score_model: String,
     pub score_status: String,
     pub findings: usize,
+    #[serde(default)]
     pub commands_precondition_blocked: usize,
+    #[serde(default)]
+    pub help_text_probes: usize,
+    #[serde(default)]
+    pub help_text_probes_with_shape: usize,
+    #[serde(default)]
+    pub help_text_probes_without_shape: usize,
+    #[serde(default)]
+    pub help_text_probes_not_recognized: usize,
+    #[serde(default)]
+    pub parser_extraction_rate: f64,
     pub output_contracts_discovered: usize,
     pub machine_readable_output_contracts: usize,
     pub output_mode_probes_completed: usize,
     pub output_mode_parse_successes: usize,
+    #[serde(default)]
     pub output_mode_precondition_blocked: usize,
+    #[serde(default)]
     pub precondition_blocked_probes: usize,
+    #[serde(default)]
     pub auth_required_probes: usize,
+    #[serde(default)]
     pub local_context_required_probes: usize,
+    #[serde(default)]
     pub fixture_required_probes: usize,
+    #[serde(default)]
     pub actionable_precondition_probes: usize,
+    #[serde(default)]
     pub precondition_recovery_rate: f64,
     pub side_effect_files_created: usize,
     pub side_effect_files_modified: usize,
@@ -89,9 +122,13 @@ pub struct MeasurementSummary {
     pub max_depth: usize,
     pub max_probes: usize,
     pub min_expected_value: u16,
+    #[serde(default)]
     pub concurrency_limit: usize,
+    #[serde(default)]
     pub traversal_rounds: usize,
+    #[serde(default)]
     pub probes_scheduled: usize,
+    #[serde(default)]
     pub probes_cancelled: usize,
     pub frontier_remaining: usize,
     pub highest_pending_expected_value: Option<u16>,
@@ -101,12 +138,20 @@ pub struct MeasurementSummary {
     pub budget_exhausted: bool,
     pub traversal_stop_reason: String,
     pub traversal_complete: bool,
-    pub cache_hit: bool,
-    pub runtime_context: RuntimeContext,
-    pub suite_root_path: PathBuf,
-    pub runtime_context_path: Option<PathBuf>,
-    pub context_suite_path: Option<PathBuf>,
-    pub context_compare_path: Option<PathBuf>,
+}
+
+impl Deref for MeasurementSummary {
+    type Target = MeasurementFacts;
+
+    fn deref(&self) -> &Self::Target {
+        &self.facts
+    }
+}
+
+impl DerefMut for MeasurementSummary {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.facts
+    }
 }
 
 impl MeasurementSummary {
@@ -134,7 +179,7 @@ impl MeasurementSummary {
             format!("target: {}", self.target.requested.display()),
             format!("resolved: {}", self.target.resolved.display()),
             format!(
-                "score: {:.1}/100 ({}, measured {:.2}/{:.2}, model {})",
+                "score: {:.0}/100 ({}, measured {:.2}/{:.2}, model {})",
                 self.score_total,
                 self.score_status,
                 self.score_measured_weight,
@@ -165,6 +210,24 @@ impl MeasurementSummary {
                 "  actionable recovery: {} ({:.1}%)",
                 self.actionable_precondition_probes,
                 self.precondition_recovery_rate * 100.0
+            ),
+            "extraction:".to_owned(),
+            format!("  help-text probes: {}", self.help_text_probes),
+            format!(
+                "  with extracted shape: {}",
+                self.help_text_probes_with_shape
+            ),
+            format!(
+                "  without extracted shape: {}",
+                self.help_text_probes_without_shape
+            ),
+            format!(
+                "  not recognized as help-like: {}",
+                self.help_text_probes_not_recognized
+            ),
+            format!(
+                "  parser extraction rate: {:.1}%",
+                self.parser_extraction_rate * 100.0
             ),
             "output contracts:".to_owned(),
             format!("  discovered: {}", self.output_contracts_discovered),
@@ -319,8 +382,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         summary.set_artifact_guides(guides);
         if runtime_context.is_context_suite_measurement() {
             let _ = context::refresh_context_suite(&args.out).await?;
-            summary.context_suite_path = Some(args.out.join("context-suite.json"));
-            summary.context_compare_path = Some(args.out.join("context-compare.md"));
+            summary.context_suite_path = Some(args.out.join(CONTEXT_SUITE_JSON));
+            summary.context_compare_path = Some(args.out.join(CONTEXT_COMPARE_MD));
         }
         return Ok(summary);
     }
@@ -489,7 +552,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .message(
             traversal.probes_completed,
             format!(
-                "score_artifacts_written score={:.1} scorecard={}",
+                "score_artifacts_written score={:.0} scorecard={}",
                 score_artifacts.total,
                 score_artifacts.scorecard_path.display()
             ),
@@ -512,15 +575,15 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .await?;
     let persona_report_count = persona_artifacts.persona_count();
 
+    let paths = MeasurementArtifactPaths::from_dir(&artifact_dir);
     let mut summary = MeasurementSummary {
         target,
         job_id: Some(progress.job_id().to_owned()),
         job_log_path: Some(progress.path().to_path_buf()),
-        probes_completed: traversal.probes_completed,
-        evidence_path: artifact_dir.join("evidence.jsonl"),
-        shape_path: artifact_dir.join("shape.json"),
-        command_index_json_path: artifact_dir.join("command-index.json"),
-        command_index_markdown_path: artifact_dir.join("command-index.md"),
+        evidence_path: paths.evidence,
+        shape_path: paths.shape,
+        command_index_json_path: paths.command_index_json,
+        command_index_markdown_path: paths.command_index_markdown,
         scorecard_path: score_artifacts.scorecard_path,
         report_path: score_artifacts.report_path,
         ci_summary_path: ci_artifacts.summary_path,
@@ -529,54 +592,62 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         issues_markdown_path: persona_artifacts.issues_markdown_path,
         issues_json_path: persona_artifacts.issues_json_path,
         persona_report_count,
-        readme_path: artifact_dir.join("README.md"),
-        agent_skill_path: artifact_dir.join("AGENT_SKILL.md"),
-        sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
-        sandbox_root: score_artifacts.sandbox_root,
-        sandbox_home: score_artifacts.sandbox_home,
-        sandbox_workdir: score_artifacts.sandbox_workdir,
-        sandbox_env_policy: score_artifacts.sandbox_env_policy.to_owned(),
-        score_total: score_artifacts.total,
-        score_measured_weight: score_artifacts.measured_weight,
-        score_max_weight: score_artifacts.max_weight,
-        score_model: score_artifacts.model.to_owned(),
-        score_status: score_artifacts.status.to_owned(),
-        findings: score_artifacts.findings,
-        commands_precondition_blocked: score_artifacts.commands_precondition_blocked,
-        output_contracts_discovered: score_artifacts.output_contracts_discovered,
-        machine_readable_output_contracts: score_artifacts.machine_readable_output_contracts,
-        output_mode_probes_completed: score_artifacts.output_mode_probes_completed,
-        output_mode_parse_successes: score_artifacts.output_mode_parse_successes,
-        output_mode_precondition_blocked: score_artifacts.output_mode_precondition_blocked,
-        precondition_blocked_probes: score_artifacts.precondition_blocked_probes,
-        auth_required_probes: score_artifacts.auth_required_probes,
-        local_context_required_probes: score_artifacts.local_context_required_probes,
-        fixture_required_probes: score_artifacts.fixture_required_probes,
-        actionable_precondition_probes: score_artifacts.actionable_precondition_probes,
-        precondition_recovery_rate: score_artifacts.precondition_recovery_rate,
-        side_effect_files_created: score_artifacts.side_effect_files_created,
-        side_effect_files_modified: score_artifacts.side_effect_files_modified,
-        side_effect_files_deleted: score_artifacts.side_effect_files_deleted,
-        side_effect_files_total: score_artifacts.side_effect_files_total,
-        side_effect_probe_count: score_artifacts.side_effect_probe_count,
-        credential_like_side_effects: score_artifacts.credential_like_side_effects,
-        observed_max_depth: score_artifacts.observed_max_depth,
-        traversal_profile: score_artifacts.traversal_profile.to_owned(),
-        max_depth: score_artifacts.max_depth,
-        max_probes: score_artifacts.max_probes,
-        min_expected_value: score_artifacts.min_expected_value,
-        concurrency_limit: score_artifacts.concurrency_limit,
-        traversal_rounds: score_artifacts.traversal_rounds,
-        probes_scheduled: score_artifacts.probes_scheduled,
-        probes_cancelled: score_artifacts.probes_cancelled,
-        frontier_remaining: score_artifacts.frontier_remaining,
-        highest_pending_expected_value: score_artifacts.highest_pending_expected_value,
-        candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
-        candidates_skipped_by_convergence: score_artifacts.candidates_skipped_by_convergence,
-        probes_skipped_by_budget: score_artifacts.probes_skipped_by_budget,
-        budget_exhausted: score_artifacts.budget_exhausted,
-        traversal_stop_reason: score_artifacts.traversal_stop_reason.to_owned(),
-        traversal_complete: score_artifacts.traversal_complete,
+        readme_path: paths.readme,
+        agent_skill_path: paths.agent_skill,
+        facts: MeasurementFacts {
+            probes_completed: traversal.probes_completed,
+            sandbox_profile: score_artifacts.sandbox_profile.to_owned(),
+            sandbox_root: score_artifacts.sandbox_root,
+            sandbox_home: score_artifacts.sandbox_home,
+            sandbox_workdir: score_artifacts.sandbox_workdir,
+            sandbox_env_policy: score_artifacts.sandbox_env_policy.to_owned(),
+            score_total: score_artifacts.total,
+            score_measured_weight: score_artifacts.measured_weight,
+            score_max_weight: score_artifacts.max_weight,
+            score_model: score_artifacts.model.to_owned(),
+            score_status: score_artifacts.status.to_owned(),
+            findings: score_artifacts.findings,
+            commands_precondition_blocked: score_artifacts.commands_precondition_blocked,
+            help_text_probes: score_artifacts.help_text_probes,
+            help_text_probes_with_shape: score_artifacts.help_text_probes_with_shape,
+            help_text_probes_without_shape: score_artifacts.help_text_probes_without_shape,
+            help_text_probes_not_recognized: score_artifacts.help_text_probes_not_recognized,
+            parser_extraction_rate: score_artifacts.parser_extraction_rate,
+            output_contracts_discovered: score_artifacts.output_contracts_discovered,
+            machine_readable_output_contracts: score_artifacts.machine_readable_output_contracts,
+            output_mode_probes_completed: score_artifacts.output_mode_probes_completed,
+            output_mode_parse_successes: score_artifacts.output_mode_parse_successes,
+            output_mode_precondition_blocked: score_artifacts.output_mode_precondition_blocked,
+            precondition_blocked_probes: score_artifacts.precondition_blocked_probes,
+            auth_required_probes: score_artifacts.auth_required_probes,
+            local_context_required_probes: score_artifacts.local_context_required_probes,
+            fixture_required_probes: score_artifacts.fixture_required_probes,
+            actionable_precondition_probes: score_artifacts.actionable_precondition_probes,
+            precondition_recovery_rate: score_artifacts.precondition_recovery_rate,
+            side_effect_files_created: score_artifacts.side_effect_files_created,
+            side_effect_files_modified: score_artifacts.side_effect_files_modified,
+            side_effect_files_deleted: score_artifacts.side_effect_files_deleted,
+            side_effect_files_total: score_artifacts.side_effect_files_total,
+            side_effect_probe_count: score_artifacts.side_effect_probe_count,
+            credential_like_side_effects: score_artifacts.credential_like_side_effects,
+            observed_max_depth: score_artifacts.observed_max_depth,
+            traversal_profile: score_artifacts.traversal_profile.to_owned(),
+            max_depth: score_artifacts.max_depth,
+            max_probes: score_artifacts.max_probes,
+            min_expected_value: score_artifacts.min_expected_value,
+            concurrency_limit: score_artifacts.concurrency_limit,
+            traversal_rounds: score_artifacts.traversal_rounds,
+            probes_scheduled: score_artifacts.probes_scheduled,
+            probes_cancelled: score_artifacts.probes_cancelled,
+            frontier_remaining: score_artifacts.frontier_remaining,
+            highest_pending_expected_value: score_artifacts.highest_pending_expected_value,
+            candidates_skipped_by_depth: score_artifacts.candidates_skipped_by_depth,
+            candidates_skipped_by_convergence: score_artifacts.candidates_skipped_by_convergence,
+            probes_skipped_by_budget: score_artifacts.probes_skipped_by_budget,
+            budget_exhausted: score_artifacts.budget_exhausted,
+            traversal_stop_reason: score_artifacts.traversal_stop_reason.to_owned(),
+            traversal_complete: score_artifacts.traversal_complete,
+        },
         cache_hit: false,
         runtime_context: runtime_context.clone(),
         suite_root_path: args.out.clone(),
@@ -595,8 +666,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         .await?;
     if runtime_context.is_context_suite_measurement() {
         let _ = context::refresh_context_suite(&args.out).await?;
-        summary.context_suite_path = Some(args.out.join("context-suite.json"));
-        summary.context_compare_path = Some(args.out.join("context-compare.md"));
+        summary.context_suite_path = Some(args.out.join(CONTEXT_SUITE_JSON));
+        summary.context_compare_path = Some(args.out.join(CONTEXT_COMPARE_MD));
         progress
             .message(traversal.probes_completed, "context_suite_written")
             .await?;
@@ -864,7 +935,7 @@ impl ProgressLog {
         self.log(
             100.0,
             format!(
-                "complete score={:.1} probes_completed={} traversal_complete={} stop_reason={} scorecard={} shape={} evidence={}",
+                "complete score={:.0} probes_completed={} traversal_complete={} stop_reason={} scorecard={} shape={} evidence={}",
                 summary.score_total,
                 summary.probes_completed,
                 summary.traversal_complete,
@@ -1072,70 +1143,7 @@ struct MeasurementCacheManifest {
     engine: String,
     target: TargetFingerprint,
     profile: ProbeProfile,
-    summary: CachedMeasurementSummary,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct CachedMeasurementSummary {
-    probes_completed: usize,
-    score_total: f64,
-    score_measured_weight: f64,
-    score_max_weight: f64,
-    score_model: String,
-    score_status: String,
-    sandbox_profile: String,
-    sandbox_root: PathBuf,
-    sandbox_home: PathBuf,
-    sandbox_workdir: PathBuf,
-    sandbox_env_policy: String,
-    findings: usize,
-    #[serde(default)]
-    commands_precondition_blocked: usize,
-    output_contracts_discovered: usize,
-    machine_readable_output_contracts: usize,
-    output_mode_probes_completed: usize,
-    output_mode_parse_successes: usize,
-    #[serde(default)]
-    output_mode_precondition_blocked: usize,
-    #[serde(default)]
-    precondition_blocked_probes: usize,
-    #[serde(default)]
-    auth_required_probes: usize,
-    #[serde(default)]
-    local_context_required_probes: usize,
-    #[serde(default)]
-    fixture_required_probes: usize,
-    #[serde(default)]
-    actionable_precondition_probes: usize,
-    #[serde(default)]
-    precondition_recovery_rate: f64,
-    side_effect_files_created: usize,
-    side_effect_files_modified: usize,
-    side_effect_files_deleted: usize,
-    side_effect_files_total: usize,
-    side_effect_probe_count: usize,
-    credential_like_side_effects: usize,
-    observed_max_depth: usize,
-    traversal_profile: String,
-    max_depth: usize,
-    max_probes: usize,
-    min_expected_value: u16,
-    #[serde(default)]
-    concurrency_limit: usize,
-    #[serde(default)]
-    traversal_rounds: usize,
-    #[serde(default)]
-    probes_scheduled: usize,
-    #[serde(default)]
-    probes_cancelled: usize,
-    frontier_remaining: usize,
-    highest_pending_expected_value: Option<u16>,
-    candidates_skipped_by_depth: usize,
-    candidates_skipped_by_convergence: usize,
-    probes_skipped_by_budget: usize,
-    budget_exhausted: bool,
-    traversal_stop_reason: String,
-    traversal_complete: bool,
+    summary: MeasurementFacts,
 }
 
 async fn cached_summary(
@@ -1174,75 +1182,30 @@ impl MeasurementCacheManifest {
     }
 
     fn into_summary(self, out_dir: &std::path::Path) -> MeasurementSummary {
+        let paths = MeasurementArtifactPaths::from_dir(out_dir);
         MeasurementSummary {
             target: self.target,
             job_id: None,
             job_log_path: None,
-            probes_completed: self.summary.probes_completed,
-            evidence_path: out_dir.join("evidence.jsonl"),
-            shape_path: out_dir.join("shape.json"),
-            command_index_json_path: out_dir.join("command-index.json"),
-            command_index_markdown_path: out_dir.join("command-index.md"),
-            scorecard_path: out_dir.join("scorecard.json"),
-            report_path: out_dir.join("report.md"),
-            ci_summary_path: out_dir.join("summary.md"),
-            sarif_path: out_dir.join("findings.sarif"),
-            junit_path: out_dir.join("junit.xml"),
-            issues_markdown_path: out_dir.join("issues.md"),
-            issues_json_path: out_dir.join("issues.json"),
+            evidence_path: paths.evidence,
+            shape_path: paths.shape,
+            command_index_json_path: paths.command_index_json,
+            command_index_markdown_path: paths.command_index_markdown,
+            scorecard_path: paths.scorecard,
+            report_path: paths.report,
+            ci_summary_path: paths.ci_summary,
+            sarif_path: paths.sarif,
+            junit_path: paths.junit,
+            issues_markdown_path: paths.issues_markdown,
+            issues_json_path: paths.issues_json,
             persona_report_count: report::Persona::all().len(),
-            readme_path: out_dir.join("README.md"),
-            agent_skill_path: out_dir.join("AGENT_SKILL.md"),
-            score_total: self.summary.score_total,
-            score_measured_weight: self.summary.score_measured_weight,
-            score_max_weight: self.summary.score_max_weight,
-            score_model: self.summary.score_model,
-            score_status: self.summary.score_status,
-            sandbox_profile: self.summary.sandbox_profile,
-            sandbox_root: self.summary.sandbox_root,
-            sandbox_home: self.summary.sandbox_home,
-            sandbox_workdir: self.summary.sandbox_workdir,
-            sandbox_env_policy: self.summary.sandbox_env_policy,
-            findings: self.summary.findings,
-            commands_precondition_blocked: self.summary.commands_precondition_blocked,
-            output_contracts_discovered: self.summary.output_contracts_discovered,
-            machine_readable_output_contracts: self.summary.machine_readable_output_contracts,
-            output_mode_probes_completed: self.summary.output_mode_probes_completed,
-            output_mode_parse_successes: self.summary.output_mode_parse_successes,
-            output_mode_precondition_blocked: self.summary.output_mode_precondition_blocked,
-            precondition_blocked_probes: self.summary.precondition_blocked_probes,
-            auth_required_probes: self.summary.auth_required_probes,
-            local_context_required_probes: self.summary.local_context_required_probes,
-            fixture_required_probes: self.summary.fixture_required_probes,
-            actionable_precondition_probes: self.summary.actionable_precondition_probes,
-            precondition_recovery_rate: self.summary.precondition_recovery_rate,
-            side_effect_files_created: self.summary.side_effect_files_created,
-            side_effect_files_modified: self.summary.side_effect_files_modified,
-            side_effect_files_deleted: self.summary.side_effect_files_deleted,
-            side_effect_files_total: self.summary.side_effect_files_total,
-            side_effect_probe_count: self.summary.side_effect_probe_count,
-            credential_like_side_effects: self.summary.credential_like_side_effects,
-            observed_max_depth: self.summary.observed_max_depth,
-            traversal_profile: self.summary.traversal_profile,
-            max_depth: self.summary.max_depth,
-            max_probes: self.summary.max_probes,
-            min_expected_value: self.summary.min_expected_value,
-            concurrency_limit: self.summary.concurrency_limit,
-            traversal_rounds: self.summary.traversal_rounds,
-            probes_scheduled: self.summary.probes_scheduled,
-            probes_cancelled: self.summary.probes_cancelled,
-            frontier_remaining: self.summary.frontier_remaining,
-            highest_pending_expected_value: self.summary.highest_pending_expected_value,
-            candidates_skipped_by_depth: self.summary.candidates_skipped_by_depth,
-            candidates_skipped_by_convergence: self.summary.candidates_skipped_by_convergence,
-            probes_skipped_by_budget: self.summary.probes_skipped_by_budget,
-            budget_exhausted: self.summary.budget_exhausted,
-            traversal_stop_reason: self.summary.traversal_stop_reason,
-            traversal_complete: self.summary.traversal_complete,
+            readme_path: paths.readme,
+            agent_skill_path: paths.agent_skill,
+            facts: self.summary,
             cache_hit: true,
             runtime_context: self.profile.runtime_context,
             suite_root_path: out_dir.to_path_buf(),
-            runtime_context_path: Some(out_dir.join("runtime-context.json")),
+            runtime_context_path: Some(paths.runtime_context),
             context_suite_path: None,
             context_compare_path: None,
         }
@@ -1250,17 +1213,7 @@ impl MeasurementCacheManifest {
 }
 
 async fn artifacts_exist(out_dir: &std::path::Path) -> Result<bool> {
-    for name in [
-        "evidence.jsonl",
-        "shape.json",
-        "command-index.json",
-        "command-index.md",
-        "scorecard.json",
-        "report.md",
-        "summary.md",
-        "findings.sarif",
-        "junit.xml",
-    ] {
+    for name in REQUIRED_MEASUREMENT_FILES {
         let path = out_dir.join(name);
         match fs::metadata(&path).await {
             Ok(metadata) if metadata.is_file() => {}
@@ -1286,55 +1239,7 @@ async fn write_cache_manifest(
         engine: MEASUREMENT_ENGINE.to_owned(),
         target: summary.target.clone(),
         profile,
-        summary: CachedMeasurementSummary {
-            probes_completed: summary.probes_completed,
-            score_total: summary.score_total,
-            score_measured_weight: summary.score_measured_weight,
-            score_max_weight: summary.score_max_weight,
-            score_model: summary.score_model.to_owned(),
-            score_status: summary.score_status.to_owned(),
-            sandbox_profile: summary.sandbox_profile.to_owned(),
-            sandbox_root: summary.sandbox_root.clone(),
-            sandbox_home: summary.sandbox_home.clone(),
-            sandbox_workdir: summary.sandbox_workdir.clone(),
-            sandbox_env_policy: summary.sandbox_env_policy.to_owned(),
-            findings: summary.findings,
-            commands_precondition_blocked: summary.commands_precondition_blocked,
-            output_contracts_discovered: summary.output_contracts_discovered,
-            machine_readable_output_contracts: summary.machine_readable_output_contracts,
-            output_mode_probes_completed: summary.output_mode_probes_completed,
-            output_mode_parse_successes: summary.output_mode_parse_successes,
-            output_mode_precondition_blocked: summary.output_mode_precondition_blocked,
-            precondition_blocked_probes: summary.precondition_blocked_probes,
-            auth_required_probes: summary.auth_required_probes,
-            local_context_required_probes: summary.local_context_required_probes,
-            fixture_required_probes: summary.fixture_required_probes,
-            actionable_precondition_probes: summary.actionable_precondition_probes,
-            precondition_recovery_rate: summary.precondition_recovery_rate,
-            side_effect_files_created: summary.side_effect_files_created,
-            side_effect_files_modified: summary.side_effect_files_modified,
-            side_effect_files_deleted: summary.side_effect_files_deleted,
-            side_effect_files_total: summary.side_effect_files_total,
-            side_effect_probe_count: summary.side_effect_probe_count,
-            credential_like_side_effects: summary.credential_like_side_effects,
-            observed_max_depth: summary.observed_max_depth,
-            traversal_profile: summary.traversal_profile.to_owned(),
-            max_depth: summary.max_depth,
-            max_probes: summary.max_probes,
-            min_expected_value: summary.min_expected_value,
-            concurrency_limit: summary.concurrency_limit,
-            traversal_rounds: summary.traversal_rounds,
-            probes_scheduled: summary.probes_scheduled,
-            probes_cancelled: summary.probes_cancelled,
-            frontier_remaining: summary.frontier_remaining,
-            highest_pending_expected_value: summary.highest_pending_expected_value,
-            candidates_skipped_by_depth: summary.candidates_skipped_by_depth,
-            candidates_skipped_by_convergence: summary.candidates_skipped_by_convergence,
-            probes_skipped_by_budget: summary.probes_skipped_by_budget,
-            budget_exhausted: summary.budget_exhausted,
-            traversal_stop_reason: summary.traversal_stop_reason.to_owned(),
-            traversal_complete: summary.traversal_complete,
-        },
+        summary: summary.facts.clone(),
     };
     let bytes =
         serde_json::to_vec_pretty(&manifest).map_err(CliareError::SerializeMeasurementCache)?;
@@ -1532,7 +1437,6 @@ mod tests {
             },
             job_id: Some("measure-test".to_owned()),
             job_log_path: Some(PathBuf::from(".cliare/jobs/measure-test.log")),
-            probes_completed: 7,
             evidence_path: PathBuf::from(".cliare/evidence.jsonl"),
             shape_path: PathBuf::from(".cliare/shape.json"),
             command_index_json_path: PathBuf::from(".cliare/command-index.json"),
@@ -1547,52 +1451,60 @@ mod tests {
             persona_report_count: 7,
             readme_path: PathBuf::from(".cliare/README.md"),
             agent_skill_path: PathBuf::from(".cliare/AGENT_SKILL.md"),
-            sandbox_profile: "isolated".to_owned(),
-            sandbox_root: PathBuf::from(".cliare/sandbox"),
-            sandbox_home: PathBuf::from(".cliare/sandbox/home"),
-            sandbox_workdir: PathBuf::from(".cliare/sandbox/cwd"),
-            sandbox_env_policy: "cleared_with_allowlist".to_owned(),
-            score_total: 82.4,
-            score_measured_weight: 0.9,
-            score_max_weight: 1.0,
-            score_model: "cliare-score-v0".to_owned(),
-            score_status: "experimental partial".to_owned(),
-            findings: 2,
-            commands_precondition_blocked: 1,
-            output_contracts_discovered: 1,
-            machine_readable_output_contracts: 1,
-            output_mode_probes_completed: 1,
-            output_mode_parse_successes: 1,
-            output_mode_precondition_blocked: 0,
-            precondition_blocked_probes: 1,
-            auth_required_probes: 1,
-            local_context_required_probes: 0,
-            fixture_required_probes: 0,
-            actionable_precondition_probes: 1,
-            precondition_recovery_rate: 1.0,
-            side_effect_files_created: 0,
-            side_effect_files_modified: 0,
-            side_effect_files_deleted: 0,
-            side_effect_files_total: 0,
-            side_effect_probe_count: 0,
-            credential_like_side_effects: 0,
-            observed_max_depth: 1,
-            traversal_profile: "standard".to_owned(),
-            max_depth: 5,
-            max_probes: 256,
-            min_expected_value: 150,
-            concurrency_limit: 4,
-            traversal_rounds: 2,
-            probes_scheduled: 7,
-            probes_cancelled: 0,
-            frontier_remaining: 0,
-            highest_pending_expected_value: None,
-            candidates_skipped_by_depth: 0,
-            candidates_skipped_by_convergence: 0,
-            probes_skipped_by_budget: 0,
-            budget_exhausted: false,
-            traversal_stop_reason: "converged".to_owned(),
-            traversal_complete: true,
+            facts: super::MeasurementFacts {
+                probes_completed: 7,
+                sandbox_profile: "isolated".to_owned(),
+                sandbox_root: PathBuf::from(".cliare/sandbox"),
+                sandbox_home: PathBuf::from(".cliare/sandbox/home"),
+                sandbox_workdir: PathBuf::from(".cliare/sandbox/cwd"),
+                sandbox_env_policy: "cleared_with_allowlist".to_owned(),
+                score_total: 82.4,
+                score_measured_weight: 0.9,
+                score_max_weight: 1.0,
+                score_model: "cliare-score-v0".to_owned(),
+                score_status: "experimental partial".to_owned(),
+                findings: 2,
+                commands_precondition_blocked: 1,
+                help_text_probes: 3,
+                help_text_probes_with_shape: 2,
+                help_text_probes_without_shape: 1,
+                help_text_probes_not_recognized: 0,
+                parser_extraction_rate: 2.0 / 3.0,
+                output_contracts_discovered: 1,
+                machine_readable_output_contracts: 1,
+                output_mode_probes_completed: 1,
+                output_mode_parse_successes: 1,
+                output_mode_precondition_blocked: 0,
+                precondition_blocked_probes: 1,
+                auth_required_probes: 1,
+                local_context_required_probes: 0,
+                fixture_required_probes: 0,
+                actionable_precondition_probes: 1,
+                precondition_recovery_rate: 1.0,
+                side_effect_files_created: 0,
+                side_effect_files_modified: 0,
+                side_effect_files_deleted: 0,
+                side_effect_files_total: 0,
+                side_effect_probe_count: 0,
+                credential_like_side_effects: 0,
+                observed_max_depth: 1,
+                traversal_profile: "standard".to_owned(),
+                max_depth: 5,
+                max_probes: 256,
+                min_expected_value: 150,
+                concurrency_limit: 4,
+                traversal_rounds: 2,
+                probes_scheduled: 7,
+                probes_cancelled: 0,
+                frontier_remaining: 0,
+                highest_pending_expected_value: None,
+                candidates_skipped_by_depth: 0,
+                candidates_skipped_by_convergence: 0,
+                probes_skipped_by_budget: 0,
+                budget_exhausted: false,
+                traversal_stop_reason: "converged".to_owned(),
+                traversal_complete: true,
+            },
             cache_hit: false,
             runtime_context: crate::context::RuntimeContext::default(),
             suite_root_path: PathBuf::from(".cliare"),
@@ -1604,7 +1516,7 @@ mod tests {
         let text = summary.terminal_summary();
 
         assert!(text.contains("CLIARE measure complete"));
-        assert!(text.contains("score: 82.4/100"));
+        assert!(text.contains("score: 82/100"));
         assert!(text.contains("cache: miss"));
         assert!(text.contains("job_id: measure-test"));
         assert!(text.contains("progress log: .cliare/jobs/measure-test.log"));
@@ -1614,6 +1526,12 @@ mod tests {
         assert!(text.contains("auth required: 1"));
         assert!(text.contains("local context required: 0"));
         assert!(text.contains("actionable recovery: 1 (100.0%)"));
+        assert!(text.contains("extraction:"));
+        assert!(text.contains("help-text probes: 3"));
+        assert!(text.contains("with extracted shape: 2"));
+        assert!(text.contains("without extracted shape: 1"));
+        assert!(text.contains("not recognized as help-like: 0"));
+        assert!(text.contains("parser extraction rate: 66.7%"));
         assert!(text.contains("output contracts:"));
         assert!(text.contains("machine-readable: 1"));
         assert!(text.contains("blocked: 0"));
@@ -1644,6 +1562,15 @@ mod tests {
         assert!(text.contains("  readme: .cliare/README.md"));
         assert!(text.contains("  agent guide: .cliare/AGENT_SKILL.md"));
         assert!(text.contains("  runtime context: .cliare/runtime-context.json"));
+
+        let bytes = serde_json::to_vec(&summary.facts).expect("serializes measurement facts");
+        let decoded: super::MeasurementFacts =
+            serde_json::from_slice(&bytes).expect("deserializes measurement facts");
+
+        assert_eq!(decoded, summary.facts);
+        assert_eq!(decoded.help_text_probes, 3);
+        assert_eq!(decoded.help_text_probes_with_shape, 2);
+        assert_eq!(decoded.help_text_probes_without_shape, 1);
     }
 
     #[cfg(unix)]

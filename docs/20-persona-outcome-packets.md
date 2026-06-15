@@ -137,7 +137,7 @@ The packet schema should be versioned independently from the score model:
     "scorecard": ".cliare/scorecard.json"
   },
   "summary": {
-    "score": 97.4,
+    "score": 97,
     "score_model": "cliare-score-v0",
     "status": "experimental_partial",
     "commands_discovered": 5,

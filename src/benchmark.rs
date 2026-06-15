@@ -357,7 +357,7 @@ fn target_report_from_summary(
         && !(band.min..=band.max).contains(&summary.score_total)
     {
         issues.push(format!(
-            "score {:.1} is outside expected band {:.1}..={:.1}",
+            "score {:.0} is outside expected band {:.0}..={:.0}",
             summary.score_total, band.min, band.max
         ));
     }
@@ -388,7 +388,7 @@ fn target_report_from_summary(
         findings: Some(summary.findings),
         traversal_complete: Some(summary.traversal_complete),
         budget_exhausted: Some(summary.budget_exhausted),
-        traversal_stop_reason: Some(summary.traversal_stop_reason),
+        traversal_stop_reason: Some(summary.traversal_stop_reason.clone()),
         observed_max_depth: Some(summary.observed_max_depth),
         max_depth: Some(summary.max_depth),
         max_probes: Some(summary.max_probes),
@@ -655,7 +655,7 @@ impl Drop for BenchmarkOutputLock {
 }
 
 fn optional_score(score: Option<f64>) -> String {
-    score.map_or_else(|| "n/a".to_owned(), |score| format!("{score:.1}"))
+    score.map_or_else(|| "n/a".to_owned(), |score| format!("{score:.0}"))
 }
 
 fn optional_percent(value: Option<f64>) -> String {
@@ -682,7 +682,7 @@ fn optional_depth(observed: Option<usize>, max: Option<usize>) -> String {
 
 fn score_range(min: Option<f64>, max: Option<f64>) -> String {
     match (min, max) {
-        (Some(min), Some(max)) => format!("{min:.1}..={max:.1}"),
+        (Some(min), Some(max)) => format!("{min:.0}..={max:.0}"),
         _ => "n/a".to_owned(),
     }
 }
@@ -730,7 +730,7 @@ fn precondition_label(target: &BenchmarkTargetReport) -> String {
 fn expected_score_label(score: Option<&ScoreBand>) -> String {
     score.map_or_else(
         || "n/a".to_owned(),
-        |score| format!("{:.1}..={:.1}", score.min, score.max),
+        |score| format!("{:.0}..={:.0}", score.min, score.max),
     )
 }
 

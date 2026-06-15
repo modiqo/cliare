@@ -95,11 +95,7 @@ impl HelpDocument {
 
     pub fn is_help_like(&self) -> bool {
         let row_count = self.rows().count();
-        let header_count = self
-            .lines
-            .iter()
-            .filter(|line| line.is_header_like())
-            .count();
+        let header_count = self.header_count();
         let option_count = self
             .lines
             .iter()
@@ -107,6 +103,42 @@ impl HelpDocument {
             .count();
 
         row_count >= 2 || (header_count >= 1 && row_count >= 1) || option_count >= 1
+    }
+
+    fn row_count(&self) -> usize {
+        self.rows().count()
+    }
+
+    fn header_count(&self) -> usize {
+        self.lines
+            .iter()
+            .filter(|line| line.is_header_like())
+            .count()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtractionProfile {
+    pub help_like: bool,
+    pub manpage_like: bool,
+    pub row_count: usize,
+    pub header_count: usize,
+    pub command_candidates: usize,
+    pub flag_candidates: usize,
+    pub output_mode_candidates: usize,
+    pub usage_arguments: usize,
+}
+
+impl ExtractionProfile {
+    pub fn shape_signal_count(&self) -> usize {
+        self.command_candidates
+            + self.flag_candidates
+            + self.output_mode_candidates
+            + self.usage_arguments
+    }
+
+    pub fn has_shape_signal(&self) -> bool {
+        self.shape_signal_count() > 0
     }
 }
 
@@ -321,6 +353,32 @@ pub fn usage_arguments(
 
 pub fn is_help_like(text: &str) -> bool {
     HelpDocument::parse(text).is_help_like()
+}
+
+pub fn extraction_profile(
+    text: &str,
+    binary_name: &str,
+    current_path: &[String],
+) -> ExtractionProfile {
+    let document = HelpDocument::parse(text);
+    let manpage_like = is_manpage_like(text);
+    let command_candidates = if current_path.is_empty() || !manpage_like {
+        command_candidates(text, binary_name).len()
+    } else {
+        0
+    };
+    let usage_scope = usage_command_path(text, binary_name, current_path).unwrap_or_default();
+
+    ExtractionProfile {
+        help_like: document.is_help_like(),
+        manpage_like,
+        row_count: document.row_count(),
+        header_count: document.header_count(),
+        command_candidates,
+        flag_candidates: flag_candidates_from_document(&document).len(),
+        output_mode_candidates: output_mode_candidates(text).len(),
+        usage_arguments: usage_arguments(text, binary_name, &usage_scope).len(),
+    }
 }
 
 pub fn help_matches_command_path(text: &str, binary_name: &str, current_path: &[String]) -> bool {

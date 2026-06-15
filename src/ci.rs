@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::fs;
 
+use crate::artifacts::{CI_SUMMARY_MD, JUNIT_XML, SARIF_JSON, SCORECARD_JSON};
 use crate::error::{CliareError, Result};
 use crate::policy::PolicyEvaluation;
 
@@ -33,9 +34,9 @@ pub async fn write_ci_artifacts(
     guard: Option<&GuardCiContext>,
 ) -> Result<CiArtifactSummary> {
     let scorecard = read_scorecard(out_dir).await?;
-    let summary_path = out_dir.join("summary.md");
-    let sarif_path = out_dir.join("findings.sarif");
-    let junit_path = out_dir.join("junit.xml");
+    let summary_path = out_dir.join(CI_SUMMARY_MD);
+    let sarif_path = out_dir.join(SARIF_JSON);
+    let junit_path = out_dir.join(JUNIT_XML);
 
     write_ci_summary(&summary_path, &scorecard, guard).await?;
     write_sarif(&sarif_path, &scorecard).await?;
@@ -49,7 +50,7 @@ pub async fn write_ci_artifacts(
 }
 
 async fn read_scorecard(out_dir: &Path) -> Result<CiScorecard> {
-    let path = out_dir.join("scorecard.json");
+    let path = out_dir.join(SCORECARD_JSON);
     let bytes = fs::read(&path)
         .await
         .map_err(|source| CliareError::ReadCiScorecard {
@@ -69,7 +70,7 @@ async fn write_ci_summary(
     writeln!(&mut text).expect("writing to string cannot fail");
     writeln!(
         &mut text,
-        "| Field | Value |\n|---|---:|\n| Target | `{}` |\n| Resolved | `{}` |\n| Score | {:.1}/100 |\n| Status | `{}` |\n| Findings | {} |\n| Commands discovered | {} |\n| Runtime-confirmed commands | {} |\n| Concurrency limit | {} |\n| Scheduler rounds | {} |\n| Probes scheduled | {} |\n| Machine-readable outputs | {} |\n| Output parse successes | {} |\n| Side-effect file changes | {} |\n| Credential-like side effects | {} |\n| Traversal complete | {} |",
+        "| Field | Value |\n|---|---:|\n| Target | `{}` |\n| Resolved | `{}` |\n| Score | {:.0}/100 |\n| Status | `{}` |\n| Findings | {} |\n| Commands discovered | {} |\n| Runtime-confirmed commands | {} |\n| Concurrency limit | {} |\n| Scheduler rounds | {} |\n| Probes scheduled | {} |\n| Machine-readable outputs | {} |\n| Output parse successes | {} |\n| Side-effect file changes | {} |\n| Credential-like side effects | {} |\n| Traversal complete | {} |",
         markdown_escape(&scorecard.target.requested),
         markdown_escape(&scorecard.target.resolved),
         scorecard.score.total,
@@ -94,7 +95,7 @@ async fn write_ci_summary(
         writeln!(&mut text).expect("writing to string cannot fail");
         writeln!(
             &mut text,
-            "| Field | Value |\n|---|---:|\n| Result | {} |\n| Baseline | `{}` |\n| Baseline score | {:.1} |\n| Current score | {:.1} |\n| Delta | {:+.1} |\n| Allowed drop | {:.1} |",
+            "| Field | Value |\n|---|---:|\n| Result | {} |\n| Baseline | `{}` |\n| Baseline score | {:.0} |\n| Current score | {:.0} |\n| Delta | {:+.1} |\n| Allowed drop | {:.1} |",
             if guard.passed { "pass" } else { "fail" },
             markdown_escape(&guard.baseline_path.display().to_string()),
             guard.baseline_total,
@@ -144,7 +145,7 @@ async fn write_ci_summary(
     for (dimension, subscore) in &scorecard.subscores {
         let score = subscore
             .score
-            .map(|value| format!("{value:.1}"))
+            .map(|value| format!("{value:.0}"))
             .unwrap_or_else(|| "n/a".to_owned());
         writeln!(
             &mut text,
@@ -318,7 +319,7 @@ async fn write_junit(
                 "score_regression",
                 "CLIARE score regression exceeded allowed drop",
                 &format!(
-                    "Baseline: {:.1}\nCurrent: {:.1}\nDelta: {:+.1}\nAllowed drop: {:.1}\nBaseline path: {}",
+                    "Baseline: {:.0}\nCurrent: {:.0}\nDelta: {:+.1}\nAllowed drop: {:.1}\nBaseline path: {}",
                     guard.baseline_total,
                     guard.current_total,
                     guard.delta,
@@ -361,7 +362,7 @@ async fn write_junit(
     .expect("writing to string cannot fail");
     writeln!(
         &mut xml,
-        "  <properties><property name=\"score\" value=\"{:.1}\" /></properties>",
+        "  <properties><property name=\"score\" value=\"{:.0}\" /></properties>",
         scorecard.score.total
     )
     .expect("writing to string cannot fail");
@@ -372,7 +373,7 @@ async fn write_junit(
         &mut xml,
         "  <system-out>{}</system-out>",
         xml_escape(&format!(
-            "score={:.1}; findings={}; traversal_complete={}",
+            "score={:.0}; findings={}; traversal_complete={}",
             scorecard.score.total,
             scorecard.findings.len(),
             scorecard.coverage.traversal_complete

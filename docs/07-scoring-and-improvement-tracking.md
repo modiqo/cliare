@@ -45,17 +45,17 @@ Example:
     "binary_sha256": "..."
   },
   "score": {
-    "total": 84.2,
+    "total": 84,
     "interval": { "p05": 80.1, "p95": 87.6 },
     "model": "cliare-score-v1"
   },
   "subscores": {
-    "discovery": 91.0,
-    "grammar": 86.5,
-    "execution": 81.2,
-    "output": 76.4,
-    "safety": 88.1,
-    "recovery": 82.0
+    "discovery": 91,
+    "grammar": 87,
+    "execution": 81,
+    "output": 76,
+    "safety": 88,
+    "recovery": 82
   },
   "coverage": {
     "commands_observed": 128,
@@ -74,7 +74,7 @@ Example:
 
 ## Subscores
 
-The current implementation emits an experimental partial scorecard. It computes a deterministic total over dimensions that currently have direct evidence and keeps the model status explicit as `experimental_partial`.
+The current implementation emits an experimental partial scorecard. It computes a deterministic total from the bundled typed score-model artifact, normalizes by declared model weight, and keeps the model status explicit as `experimental_partial`.
 
 Score v0 measures:
 
@@ -402,10 +402,10 @@ cliare trend .cliare/history
 Output:
 
 ```text
-Total:    71.2 -> 84.0 (+12.8)
-Output:   43.0 -> 76.5 (+33.5)
-Safety:   68.2 -> 86.1 (+17.9)
-Recovery: 79.0 -> 81.3 (+2.3)
+Total:    71 -> 84 (+13)
+Output:   43 -> 77 (+34)
+Safety:   68 -> 86 (+18)
+Recovery: 79 -> 81 (+2)
 ```
 
 The report should list the concrete changes behind the trend.

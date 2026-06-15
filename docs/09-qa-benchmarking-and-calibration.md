@@ -118,15 +118,15 @@ Target scores from that run:
 
 | Target | Score | Duration ms | Probes | Notes |
 |---|---:|---:|---:|---|
-| cliare | 94.4 | 843 | 20 | CLIARE on CLIARE through generic inference |
-| rote | 62.9 | 106110 | 768 | Deep local test case with side-effect observation |
-| git | 92.2 | 45266 | 73 | Manpage-heavy CLI after structural extractor hardening |
-| supabase | 93.6 | 120855 | 409 | Large command surface |
-| gh | 89.6 | 223860 | 512 | Large command surface with budget pressure |
-| cargo | 92.0 | 6447 | 152 | Structured Rust CLI |
-| npm | 36.0 | 416 | 7 | Sparse usable surface under safe probing |
-| docker | 86.3 | 41571 | 253 | Large command surface |
-| deno | 72.0 | 399806 | 512 | Large command surface with long-tail traversal |
+| cliare | 94 | 843 | 20 | CLIARE on CLIARE through generic inference |
+| rote | 63 | 106110 | 768 | Deep local test case with side-effect observation |
+| git | 92 | 45266 | 73 | Manpage-heavy CLI after structural extractor hardening |
+| supabase | 94 | 120855 | 409 | Large command surface |
+| gh | 90 | 223860 | 512 | Large command surface with budget pressure |
+| cargo | 92 | 6447 | 152 | Structured Rust CLI |
+| npm | 36 | 416 | 7 | Sparse usable surface under safe probing |
+| docker | 86 | 41571 | 253 | Large command surface |
+| deno | 72 | 399806 | 512 | Large command surface with long-tail traversal |
 
 ### Fixture CLIs
 

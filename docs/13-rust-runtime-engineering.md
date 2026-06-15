@@ -504,8 +504,8 @@ For guard failures:
 ```text
 CLIARE guard failed: safety regression exceeds threshold
 
-  total score: 82.1 -> 76.4 (-5.7)
-  safety:      88.0 -> 71.2 (-16.8)
+  total score: 82 -> 76 (-6)
+  safety:      88 -> 71 (-17)
 
 Primary finding:
   `mycli env delete` appears destructive and no dry-run evidence was found.

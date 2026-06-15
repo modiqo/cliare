@@ -964,7 +964,7 @@ fn render_summaries(map: &ArtifactMap, out: &mut String) {
             "- Score: {}\n",
             scorecard
                 .total
-                .map(|score| format!("{score:.1}/100"))
+                .map(|score| format!("{score:.0}/100"))
                 .unwrap_or_else(|| "unknown".to_owned())
         ));
         out.push_str(&format!(
@@ -1317,7 +1317,7 @@ mod tests {
             folder.join("scorecard.json"),
             r#"{
   "schema_version": "cliare.scorecard.v1",
-  "score": {"total": 81.5, "status": "experimental_partial", "model": "cliare-score-v0"},
+  "score": {"total": 82, "status": "experimental_partial", "model": "cliare-score-v0"},
   "coverage": {"probes_completed": 7, "max_probes": 64, "traversal_complete": true, "budget_exhausted": false}
 }"#,
         )

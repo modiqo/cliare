@@ -3,6 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 use tokio::fs;
 
+use crate::artifacts::{COMMAND_INDEX_JSON, COMMAND_INDEX_MD, SHAPE_JSON};
 use crate::claims::{
     ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
     PositionalClaim,
@@ -237,7 +238,7 @@ pub async fn write_shape(
     let shape = infer_shape(target, observations);
     let index = command_index(&shape);
 
-    let shape_path = out_dir.join("shape.json");
+    let shape_path = out_dir.join(SHAPE_JSON);
     let shape_bytes = serde_json::to_vec_pretty(&shape).map_err(CliareError::SerializeShape)?;
     fs::write(&shape_path, shape_bytes)
         .await
@@ -246,7 +247,7 @@ pub async fn write_shape(
             source,
         })?;
 
-    let index_path = out_dir.join("command-index.json");
+    let index_path = out_dir.join(COMMAND_INDEX_JSON);
     let index_bytes = serde_json::to_vec_pretty(&index).map_err(CliareError::SerializeShape)?;
     fs::write(&index_path, index_bytes)
         .await
@@ -255,7 +256,7 @@ pub async fn write_shape(
             source,
         })?;
 
-    let index_markdown_path = out_dir.join("command-index.md");
+    let index_markdown_path = out_dir.join(COMMAND_INDEX_MD);
     fs::write(&index_markdown_path, render_command_index_markdown(&index))
         .await
         .map_err(|source| CliareError::WriteShape {

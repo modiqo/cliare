@@ -37,7 +37,7 @@ The current implementation is useful for local measurement, CI regression checks
 1. Repository and documentation foundation.
 2. Generic `measure` pipeline with evidence, shape, scorecard, and report artifacts.
 3. Framework-agnostic inference path rather than Clap-specific parsing.
-4. Score v0 over measured dimensions.
+4. Score v0 through a typed bundled score-model artifact with declared-dimension normalization.
 5. `guard` regression check against a baseline scorecard.
 6. Coverage pressure reporting for depth and probe budgets.
 7. Fingerprint/profile-based cache reuse with `--refresh`.
@@ -56,15 +56,16 @@ The current implementation is useful for local measurement, CI regression checks
 20. Scoring model documentation that explains the current `cliare-score-v0` formulas, Bayesian log-odds claim confidence, the calibration boundary between CI-ready scoring and public leaderboard certification, and the path to `cliare-score-v1`.
 21. Calibration authority documentation that defines truth corpus layers, human-reviewed labels, proper scoring metrics, false-safe-rate reporting, repeated-run stability, confidence intervals, certified profiles, provenance, verification levels, anti-gaming fixtures, `calibrate` artifacts, and `cliare-score-v1` freeze criteria.
 22. GitHub Actions CLIARE-on-CLIARE workflow that builds the project, measures the freshly built binary with the local composite action, publishes a job-summary score, uploads CLIARE artifacts, runs `quick` on pull requests, `standard` on `main`, and `deep` on the weekly schedule.
-23. Public documentation and CLIARE-on-CLIARE score hardening with mature README/docs language, renamed CI workflow/artifacts, an explicit parseable `metadata --format json` contract, stricter output-contract inference that rejects file defaults and unrelated help text, and a standard-profile CLIARE-on-CLIARE score of 97.4/100 with zero findings, one machine-readable output contract, one successful output parse, zero side effects, and complete traversal.
+23. Public documentation and CLIARE-on-CLIARE score hardening with mature README/docs language, renamed CI workflow/artifacts, an explicit parseable `metadata --format json` contract, stricter output-contract inference that rejects file defaults and unrelated help text, and a standard-profile CLIARE-on-CLIARE score of 97/100 with zero findings, one machine-readable output contract, one successful output parse, zero side effects, and complete traversal.
 24. Detached measurement jobs with `measure --detach`, worker re-exec, Unix process-group isolation, child PID reporting, stdout/stderr job streams, preserved `jobs/current` metadata, `jobs status --out <dir>`, and live verification against CLIARE measuring CLIARE.
 25. Artifact directory description with `cliare describe <folder>`, `cliare.artifact-map.v1`, typed file roles, health/missing-required checks, current job status, score/issue/command summaries, Markdown and JSON output, `--write` support, agent skill updates, and documentation/paper coverage.
+26. Score-model v1 foundation with `score-models/cliare-score-v0.json`, typed Rust validation in `src/score_model.rs`, model SHA-256 provenance in scorecards, whole-point v0 score precision, extraction-limited measurement findings, partial-score invariants, cache summary round-trip tests, and a vendor calibration corpus manifest for train/validation/holdout planning.
 
 ---
 
 ## Next Checkpoint
 
-### Checkpoint 26: Baseline Accept, Rescore, Certify, and Replay
+### Checkpoint 27: Baseline Accept, Rescore, Certify, and Replay
 
 Goal: turn the current measurement and benchmark core into a complete user-facing release flow for maintainers and CI.
 
@@ -94,7 +95,7 @@ Result:
 
 | Score | Probes | Output contracts | Parse successes | Findings | Side effects | Traversal complete |
 |---:|---:|---:|---:|---:|---:|---|
-| 97.4 | 23 | 1 | 1 | 0 | 0 | true |
+| 97 | 23 | 1 | 1 | 0 | 0 | true |
 
 Local deep corpus run:
 
@@ -108,15 +109,15 @@ Result:
 
 | Target | Score | Duration ms | Probes | Traversal complete |
 |---|---:|---:|---:|---|
-| cliare | 94.4 | 843 | 20 | true |
-| rote | 62.9 | 106110 | 768 | n/a |
-| git | 92.2 | 45266 | 73 | true |
-| supabase | 93.6 | 120855 | 409 | true |
-| gh | 89.6 | 223860 | 512 | n/a |
-| cargo | 92.0 | 6447 | 152 | true |
-| npm | 36.0 | 416 | 7 | true |
-| docker | 86.3 | 41571 | 253 | true |
-| deno | 72.0 | 399806 | 512 | n/a |
+| cliare | 94 | 843 | 20 | true |
+| rote | 63 | 106110 | 768 | n/a |
+| git | 92 | 45266 | 73 | true |
+| supabase | 94 | 120855 | 409 | true |
+| gh | 90 | 223860 | 512 | n/a |
+| cargo | 92 | 6447 | 152 | true |
+| npm | 36 | 416 | 7 | true |
+| docker | 86 | 41571 | 253 | true |
+| deno | 72 | 399806 | 512 | n/a |
 
 Corpus totals: 9 measured, 0 skipped, 0 failed, 2706 probes, 100% expected-band pass rate, 66.7% traversal completion rate, and 33.3% budget exhaustion rate.
 

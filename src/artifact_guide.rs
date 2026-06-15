@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::fs;
 
+use crate::artifacts::{AGENT_SKILL_MD, README_MD};
 use crate::error::{CliareError, Result};
 
 #[derive(Debug, Clone)]
@@ -23,8 +24,8 @@ async fn write_guides(
     readme: &'static str,
     agent_skill: &'static str,
 ) -> Result<ArtifactGuideSummary> {
-    let readme_path = out_dir.join("README.md");
-    let agent_skill_path = out_dir.join("AGENT_SKILL.md");
+    let readme_path = out_dir.join(README_MD);
+    let agent_skill_path = out_dir.join(AGENT_SKILL_MD);
     write_atomic(&readme_path, readme.as_bytes()).await?;
     write_atomic(&agent_skill_path, agent_skill.as_bytes()).await?;
     Ok(ArtifactGuideSummary {
