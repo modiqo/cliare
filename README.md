@@ -360,8 +360,6 @@ The design and implementation notes live under [`docs/`](docs/00-index.md). Star
 - [CLI benchmark corpus tracker](docs/24-cli-benchmark-corpus-tracker.md)
 - [Maintainer playbook](docs/27-maintainer-playbook.md)
 
-The previous long-form README is preserved at [README.backup.md](README.backup.md).
-
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).

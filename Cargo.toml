@@ -18,7 +18,6 @@ exclude = [
     "target/**",
     ".DS_Store",
     "AGENTS.md",
-    "README.backup.md",
     "action.yml",
     "docs/*.pdf",
 ]

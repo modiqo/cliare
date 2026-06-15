@@ -77,6 +77,14 @@ cliare metadata --format text
 
 The formula template lives at `packaging/homebrew/cliare.rb`.
 
+The tag workflow `.github/workflows/release-homebrew.yml` can update `modiqo/homebrew-tap` automatically when a `vX.Y.Z` tag is pushed. It checks that the tag matches `Cargo.toml`, computes the GitHub source archive SHA-256, replaces `REPLACE_WITH_SHA256`, commits `Formula/cliare.rb` to the tap, and pushes the change.
+
+Before tagging, create a GitHub token with write access to `modiqo/homebrew-tap` and store it in this repository as:
+
+```text
+HOMEBREW_TAP_TOKEN
+```
+
 After pushing the tag, compute the source archive checksum:
 
 ```sh
