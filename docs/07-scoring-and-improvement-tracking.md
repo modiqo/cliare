@@ -493,18 +493,19 @@ Example recommendations:
 
 ## Public Badge Semantics
 
-Badge should show:
+Before calibration, badges should lead with the evidence posture rather than an absolute readiness claim:
 
 ```text
-CLIARE 84
+CLIARE catalog
 ```
 
 Optional qualifiers:
 
 ```text
-CLIARE 84 | CI-attested
-CLIARE 84 | certified profile
-CLIARE 84 | score model v1
+CLIARE catalog | CI-attested
+CLIARE catalog | evidence-backed
+CLIARE score 84 | experimental | local CI
+CLIARE score 91 | certified profile | score model v1
 ```
 
 Avoid overclaiming:
@@ -518,13 +519,13 @@ Agent-safe
 Better:
 
 ```text
-Agent-ready CLI
+Evidence-backed command index
 ```
 
 Even better with verification:
 
 ```text
-Agent-ready CLI, CI-attested
+Evidence-backed command index, CI-attested
 ```
 
 ---

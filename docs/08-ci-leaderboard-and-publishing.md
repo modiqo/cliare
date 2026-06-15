@@ -1,6 +1,6 @@
-# 08 - CI, Leaderboard, and Publishing
+# 08 - CI, Publishing, and Calibrated Leaderboards
 
-> **Scope:** How CLIARE runs in CI, how scorecards are published, and how verified leaderboard entries are produced.
+> **Scope:** How CLIARE runs in CI, how evidence-backed artifacts are published, and how verified leaderboard entries are produced only after calibration.
 > **Status:** Reference Design
 
 ---
@@ -16,12 +16,15 @@ Default workflow:
 ```text
 Project CI builds CLI
 Project CI runs cliare
-Project CI stores artifacts
-Project CI optionally publishes scorecard
-modiqo leaderboard displays verified scorecard
+Project CI stores evidence, command index, issues, and scorecard artifacts
+Project CI optionally publishes an evidence-backed scorecard bundle
+modiqo displays verified artifacts and drift history
+calibrated leaderboard ranking follows after score-model certification
 ```
 
 This model is more secure, cheaper, more reproducible, and easier to adopt.
+
+The publishing surface should lead with evidence-backed catalogs and drift history. The absolute score is a useful summary for local improvement and CI regression control, but public ranking should be gated on calibrated models, certified profiles, and reproducible verification.
 
 ---
 
@@ -167,6 +170,17 @@ Scorecard payload:
 ```
 
 The publishing endpoint should accept scorecards, verify schema, validate signatures/attestation if present, and store immutable records.
+
+Published records should make the evidence posture visible before the ranking posture:
+
+- command index availability
+- evidence hash or redacted evidence availability
+- runtime context and traversal profile
+- model id and model hash
+- calibration state
+- verification level
+- score and subscores
+- drift since previous release
 
 ---
 
@@ -325,35 +339,37 @@ Message:
 Measure how ready your CLI is for agents.
 ```
 
-### Phase 2: Public Badges
+### Phase 2: Public Evidence Pages
 
 Add:
 
 - scorecard publishing
-- badges
+- evidence-backed catalog pages
+- CI-attested artifact pages
 - public pages
-- leaderboard
 
 Message:
 
 ```text
-Show your CLI is agent-ready.
+Publish how your CLI behaves under runtime evidence.
 ```
 
-### Phase 3: Improvement Campaign
+### Phase 3: Calibration and Improvement Campaign
 
 Publish:
 
-- top 50 CLI scores
-- "most improved" leaderboard
+- calibration status by corpus
+- most improved evidence posture
 - agent-ready CLI guide
 - ecosystem reports
 
 Message:
 
 ```text
-The standard for agent-ready CLIs.
+The evidence standard for agent-ready CLIs.
 ```
+
+Leaderboard ranking belongs after the calibrated score model and certified profiles are available.
 
 ### Phase 4: Enterprise
 

@@ -7,13 +7,13 @@
 
 ## Summary
 
-CLIARE is a standard and reference implementation for measuring CLI readiness for agents, harnesses, CI systems, and automation.
+CLIARE is a standard and reference implementation for building evidence-backed runtime catalogs of CLIs used by agents, harnesses, CI systems, and automation.
 
 The project stands on technical merit. It remains useful to teams that never become modiqo customers; that independence is what makes the standard durable.
 
 Public positioning:
 
-> CLIARE measures how ready a CLI is for agents, CI, and automation, then produces the evidence needed to improve it.
+> CLIARE turns a released CLI into an evidence-backed runtime catalog, drift signal, and improvement report for agents, CI, and automation.
 
 Stewardship value:
 
@@ -59,7 +59,7 @@ Agents need more structure:
 - consistent syntax
 - durable documentation
 
-Today there is no widely accepted score for that.
+Today there is no widely accepted runtime evidence standard for that.
 
 ---
 
@@ -83,33 +83,36 @@ Why it works:
 
 - It contains CLI without reducing the project to a shell or terminal pun.
 - It points at clarity, which is the central quality being measured.
-- It works as the name of a tool, a scorecard format, a CI action, and a hosted leaderboard.
+- It works as the name of a tool, a catalog format, a scorecard format, a CI action, and a calibrated publishing surface.
 - It can stand for both the tool and the standard.
 
 Suggested surfaces:
 
 ```
 cliare
-cliare score
-cliare certify
 cliare report
+cliare guard
+cliare describe
+cliare calibrate
+cliare certify
 cliare publish
+CLIARE Command Shape
+CLIARE Command Index
+CLIARE Evidence Log
 CLIARE Score
 CLIARE Badge
-CLIARE Command Shape
-CLIARE Evidence Log
 ```
 
 Potential tagline:
 
 ```
-Measure how ready your CLI is for agents.
+Map how your CLI behaves for agents.
 ```
 
 More technical tagline:
 
 ```
-Black-box command-shape inference and readiness scoring for agent-operated CLIs.
+Black-box runtime catalogs, drift detection, and calibrated readiness signals for agent-operated CLIs.
 ```
 
 ---
@@ -121,7 +124,9 @@ CLIARE should be three things at once:
 1. **A standard**
    - JSON schemas
    - evidence model
-   - scoring model
+   - command shape and command index model
+   - score model governance
+   - calibration model
    - CI semantics
    - benchmark rules
 
@@ -134,9 +139,10 @@ CLIARE should be three things at once:
    - GitHub Action
 
 3. **An ecosystem**
-   - badges
-   - public leaderboard
+   - evidence bundles
    - verified scorecards
+   - calibrated badges
+   - public leaderboard after calibration
    - benchmark corpus
    - CLI improvement guide
 
@@ -145,7 +151,8 @@ The reference implementation should be useful without any hosted service.
 The hosted layer should be optional:
 
 - scorecard publishing
-- leaderboard
+- evidence and drift trend charts
+- calibrated leaderboard after score-model certification
 - historical trend charts
 - team dashboards
 - enterprise policy gates
@@ -174,7 +181,7 @@ The hosted layer validates provenance and displays results. It does not need to 
 
 ## Verification Levels
 
-A leaderboard needs to prevent obvious gaming while staying accessible.
+Public score publishing needs to prevent obvious gaming while staying accessible. Leaderboards should remain downstream of calibration, not the first adoption surface.
 
 Use verification tiers:
 
@@ -186,7 +193,7 @@ Use verification tiers:
 | 3 | Reproducible | A third party can rerun the same release and get equivalent results |
 | 4 | Certified | modiqo or a trusted auditor reran the benchmark under a controlled profile |
 
-The public leaderboard should display the score and the verification level together.
+Any public leaderboard should display the score, score model, profile, calibration state, and verification level together.
 
 This avoids the false binary of "trusted" vs "untrusted."
 
@@ -196,28 +203,31 @@ This avoids the false binary of "trusted" vs "untrusted."
 
 CLIARE should be adopted because it gives maintainers immediate engineering value. A run should answer:
 
-- "How agent-ready is our CLI?"
+- "What command surface did CLIARE observe?"
+- "What changed since the last release?"
+- "Which commands, flags, outputs, and preconditions can agents rely on?"
 - "Why did the score drop?"
-- "What do we fix to improve?"
-- "Can we put a badge in our README?"
+- "What do we fix to improve the catalog, diagnostics, outputs, and score?"
+- "Are we ready to publish an evidence bundle or calibrated badge?"
 - "How do we compare to other CLIs?"
 
 The open-source project should let any maintainer run:
 
 ```sh
-cliare certify ./dist/mycli
+cliare measure ./dist/mycli --out .cliare/mycli --profile standard --refresh
 ```
 
 and get a useful report.
 
-The ecosystem benefits when projects can publish a concise, evidence-backed signal:
+The ecosystem benefits first when projects can publish a concise, evidence-backed catalog:
 
 ```text
-CLIARE Score: 84
-Agent-ready CLI
+CLIARE runtime catalog
+Evidence-backed command index
+Drift and remediation report
 ```
 
-The hosted leaderboard is the discovery surface. The improvement report is the engineering artifact that makes the score actionable.
+The hosted surface should begin as a place to publish and compare evidence-backed scorecards, command catalogs, and drift history. Public ranking should wait for calibrated models, certified profiles, and reproducible verification.
 
 ---
 
@@ -252,9 +262,9 @@ Good:
 }
 ```
 
-### 3. Scores Must Be Explainable
+### 3. Scores Are Derived From Evidence
 
-The score is not useful unless it decomposes into action.
+The score is not the product's root of trust. It is a derived summary over evidence and inferred claims. The primary artifacts are the evidence log, command index, issue ledger, persona reports, and scorecard.
 
 Every report should answer:
 
@@ -293,7 +303,7 @@ modiqo cloud should receive scorecards, not binaries, by default.
 
 ### 6. Improvement Must Be Measurable
 
-The primary objective is improvement, not ranking alone.
+The primary objective is improvement, not ranking.
 
 A maintainer should be able to make a change such as:
 
@@ -313,17 +323,17 @@ and see the relevant subscore improve.
 Suggested README opening:
 
 ```text
-CLIARE measures how ready your CLI is for agents and automation.
+CLIARE builds an evidence-backed runtime catalog for your CLI.
 
-It runs your command-line tool in a sandbox, infers its command shape from
-runtime evidence, scores discovery, grammar, execution, output, safety, and
-recovery, then emits a CI-friendly scorecard and improvement report.
+It runs your command-line tool under bounded probes, infers its command shape
+from runtime evidence, detects drift, and emits a command index, issue ledger,
+scorecard, and CI-friendly improvement report.
 ```
 
 Suggested badge:
 
 ```text
-[CLIARE 84 | agent-ready CLI]
+[CLIARE catalog | evidence-backed]
 ```
 
 Suggested comparison:
@@ -340,10 +350,10 @@ discover, execute, parse, and recover from.
 
 The project succeeds if it does three things well:
 
-1. It gives maintainers a score they want to improve.
+1. It gives maintainers a runtime catalog and drift report they trust.
 2. It gives agents a catalog grounded in runtime evidence.
-3. It gives the ecosystem a shared language for CLI readiness.
+3. It gives the ecosystem a shared language for CLI readiness and calibration.
 
-A useful score creates its own adoption pressure: maintainers can improve it, agent builders can consume the resulting catalogs, platform teams can gate on it, and security teams can review the evidence behind it.
+A useful catalog creates its own adoption pressure: maintainers can improve it, agent builders can consume it, platform teams can gate on drift and evidence quality, and security teams can review the observations behind every claim. Scores remain useful, but their authority depends on calibration.
 
 CLIARE can serve each of those audiences only if the measurement remains rigorous, reproducible, and transparent.

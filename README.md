@@ -1,8 +1,10 @@
 # CLIARE
 
-CLIARE evaluates command-line interfaces for use by agents, harnesses, CI systems, and automation.
+CLIARE builds evidence-backed runtime catalogs for command-line interfaces used by agents, harnesses, CI systems, and automation.
 
-It treats a CLI as a black-box runtime system: the installed executable is fingerprinted, exercised under bounded probes, and reduced to evidence logs, command-shape artifacts, scorecards, and CI reports. The result is a reproducible measurement of discovery quality, invocation grammar, execution behavior, machine-readable output, safety signals, recovery behavior, and drift across releases.
+It treats a CLI as a black-box runtime system: the installed executable is fingerprinted, exercised under bounded probes, and reduced to evidence logs, command-shape artifacts, command indexes, issue ledgers, scorecards, and CI reports. The result is a reproducible map of the released command surface: what exists, how it is invoked, which preconditions apply, which outputs are machine-readable, which probes were safe, and what changed across releases.
+
+CLIARE also derives an experimental readiness score for local CI and release-to-release improvement tracking. Public ranking and certification are deliberately gated on calibration against labeled corpuses.
 
 CLIARE stands for **CLI Agent Readiness Evaluation**.
 
@@ -10,16 +12,16 @@ CLIARE stands for **CLI Agent Readiness Evaluation**.
 
 The future of agent harnesses is increasingly CLI-native. Agents already lean on tools like `git`, `gh`, `docker`, `kubectl`, `supabase`, cloud CLIs, internal platform CLIs, and product-specific command surfaces because CLIs are easy to install, script, version, permission, and run in CI. At the same time, CLIs are evolving faster as new models learn to operate tools, vendors add agent-oriented workflows, and teams ship more automation-first surfaces.
 
-CLIARE exists to make those command surfaces measurable, navigable, and reliable. The intended deployment point is the same CI pipeline that builds and releases the CLI.
+CLIARE exists to make those command surfaces measurable, navigable, and reliable. Its primary artifact is the evidence-backed runtime catalog that maintainers, CI systems, and agents can inspect. Scores are derived from that evidence; they are not the root of trust. The intended deployment point is the same CI pipeline that builds and releases the CLI.
 
 The project is built on a few commitments:
 
 - No source-code requirement: measure the executable users actually install.
 - No framework assumption: work across clap, cobra, argparse, hand-rolled parsers, shell wrappers, and poorly documented CLIs.
 - No hosted dependency: run locally in the maintainer's CI environment by default.
-- Evidence first: every score traces to runtime observations.
-- Improvement oriented: scores move when maintainers improve discoverability, grammar, outputs, safety, recovery, and stability.
-- Agent-operable artifacts: emitted shape catalogs and scorecards help agents navigate CLIs without rediscovering the same surface through blind trial and error.
+- Evidence first: every catalog entry, finding, recommendation, and score traces to runtime observations.
+- Improvement oriented: artifacts show exactly what changed when maintainers improve discoverability, grammar, outputs, safety, recovery, and stability.
+- Agent-operable artifacts: emitted command indexes and shape catalogs help agents navigate CLIs without rediscovering the same surface through blind trial and error.
 
 ## What CLIARE Unlocks
 
@@ -28,8 +30,8 @@ CLIARE turns a CLI from an opaque executable into a measured, versioned, evidenc
 For maintainers, it provides a regression gate and improvement loop:
 
 - Detect command, flag, help, output, exit-code, auth, and safety drift between releases.
-- Track score improvements as the CLI adds clearer help, safer probes, better JSON output, dry-run support, noninteractive modes, and predictable errors.
-- Publish scorecards, CI summaries, badges, and release artifacts that show whether a CLI is becoming more usable by agents and automation.
+- Track measurable improvements as the CLI adds clearer help, safer probes, better JSON output, dry-run support, noninteractive modes, and predictable errors.
+- Publish evidence bundles, command indexes, scorecards, CI summaries, and release artifacts that show whether a CLI is becoming more usable by agents and automation.
 - Catch issues before release without uploading binaries or private command output to a cloud service.
 
 For agent harnesses, it provides a navigation index:
@@ -47,7 +49,7 @@ For model training and evaluation, it can create a structured corpus of real CLI
 - Release-to-release drift records that teach agents how tool surfaces change over time.
 - Long-tail CLI coverage beyond the handful of popular CLIs already overrepresented in pretraining.
 
-The goal is not only to score CLIs. It is to raise the quality bar for CLI design, give maintainers a concrete improvement loop, and give agents a reliable map for operating unfamiliar command surfaces.
+The goal is not to lead with an absolute score. It is to raise the quality bar for CLI design, give maintainers a concrete improvement loop, and give agents a reliable map for operating unfamiliar command surfaces. The score is a useful summary of the evidence; calibration determines when that summary is authoritative enough for public comparison.
 
 ## Status
 
@@ -58,10 +60,12 @@ CLIARE measures itself in GitHub Actions. Pull requests measure the freshly buil
 ## Goals
 
 - Infer command trees, flags, arguments, output contracts, and safety properties from runtime evidence.
-- Score CLI readiness across discovery, grammar, execution, output, safety, and recovery.
+- Emit portable artifacts: evidence logs, command-shape catalogs, command indexes, issue ledgers, scorecards, reports, SARIF, JUnit XML, and CI summaries.
+- Detect command-surface drift and explain what changed across releases and runtime contexts.
+- Derive experimental readiness scores across discovery, grammar, execution, output, safety, and recovery for local CI improvement loops.
 - Run locally in CI without uploading binaries to a hosted service.
-- Emit portable artifacts: evidence logs, command-shape catalogs, command indexes, scorecards, reports, SARIF, JUnit XML, and CI summaries.
-- Provide a public standard that CLI maintainers can use to improve agent operability.
+- Provide a public evidence standard that CLI maintainers can use to improve agent operability.
+- Gate public ranking and certification on labeled calibration corpuses, reproducibility, and frozen model versions.
 
 ## Getting Started
 

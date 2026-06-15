@@ -241,7 +241,7 @@ Every artifact should have a hash.
 Hashing supports:
 
 - cache reuse
-- leaderboard submission
+- calibrated publishing
 - provenance
 - integrity checks
 - reproducibility

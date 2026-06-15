@@ -250,9 +250,9 @@ An OSS maintainer wants their CLI to be considered agent-friendly. They want a b
 ### Jobs
 
 - Add a GitHub Action.
-- Publish a scorecard.
+- Publish an evidence-backed scorecard bundle.
 - Improve public credibility.
-- Compare with similar tools.
+- Compare with similar tools once calibrated profiles are available.
 
 ### CLIARE Workflow
 
@@ -281,7 +281,7 @@ jobs:
 The project README shows:
 
 ```text
-CLIARE 86 | Agent-ready CLI | CI-attested
+CLIARE catalog | evidence-backed | CI-attested
 ```
 
 ---
@@ -290,13 +290,13 @@ CLIARE 86 | Agent-ready CLI | CI-attested
 
 ### Situation
 
-A company ships a developer platform and wants its CLI to be visible as agent-ready. It wants a public scorecard, a leaderboard entry, and a benchmark narrative that is supported by evidence.
+A company ships a developer platform and wants its CLI to be visible as agent-ready. It wants a public evidence bundle, a calibrated scorecard when available, and a benchmark narrative that is supported by evidence.
 
 ### Jobs
 
-- Publish a strong score.
+- Publish a strong evidence-backed catalog.
 - Show historical improvement.
-- Demonstrate readiness against competitors.
+- Demonstrate readiness against competitors after calibration.
 - Use CLIARE findings to prioritize DevEx work.
 
 ### What Success Looks Like
@@ -304,7 +304,7 @@ A company ships a developer platform and wants its CLI to be visible as agent-re
 CLIARE becomes part of release communication:
 
 ```text
-Our CLI is CLIARE-certified with a 91 agent-readiness score.
+Our CLI publishes a CLIARE evidence bundle with a CI-attested command index and drift report.
 ```
 
 The standard creates a vocabulary companies can use publicly without inventing their own readiness claims.

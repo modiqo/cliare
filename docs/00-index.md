@@ -2,7 +2,7 @@
 
 > **Status:** Technical Reference
 > **Owner:** modiqo
-> **Scope:** Independent OSS standard, reference implementation, CI runner, scorecard, and leaderboard for agent-ready CLIs
+> **Scope:** Independent OSS standard, reference implementation, CI runner, runtime catalog, scorecard, and calibrated publishing path for agent-ready CLIs
 > **Name:** CLIARE, pronounced "clear"
 > **Expansion:** CLI Agent Readiness Evaluation
 
@@ -21,7 +21,7 @@ Agents increasingly rely on command-line tools. They use CLIs to build software,
 
 That approach works until the CLI drifts. Help text changes. Flags move. Output formats change. Completion scripts expose commands not documented in help. Hidden plugin commands appear. A new version introduces a destructive default. A command that used to print JSON starts printing progress text before JSON. The agent's learned use becomes stale.
 
-The industry needs a standard way to measure whether a CLI is ready for agents and automation. CLIARE provides a runtime evidence standard for that work.
+The industry needs a standard way to observe, catalog, and improve CLIs for agents and automation. CLIARE provides a runtime evidence standard for that work.
 
 It is not a documentation linter. It is not a wrapper generator. It is not just a parser for `--help`. CLIARE is a runtime measurement system:
 
@@ -29,8 +29,8 @@ It is not a documentation linter. It is not a wrapper generator. It is not just 
 2. It probes the binary inside an isolated sandbox.
 3. It captures evidence from help, completions, errors, exit codes, stdout, stderr, file effects, and repeated executions.
 4. It infers a probabilistic command-shape model.
-5. It computes an agent-readiness score with confidence metadata.
-6. It produces a portable scorecard and improvement report.
+5. It emits command indexes, issue ledgers, scorecards, and improvement reports.
+6. It derives an experimental agent-readiness score with confidence metadata.
 7. It can run in the project's own CI without uploading binaries to modiqo.
 
 ---
@@ -41,9 +41,9 @@ The main thesis is:
 
 > A CLI's agent readiness is the posterior expected utility of a competent agent using that CLI across realistic tasks, given observed runtime evidence.
 
-That definition is intentionally formal. CLIARE is evaluated as a measurement standard: a score improves when the CLI improves, degrades when behavior becomes less safe or less discoverable, and remains explainable at every level.
+That definition is intentionally formal. CLIARE is evaluated as a measurement standard: its runtime catalog should become more accurate as evidence improves, and its score should improve when the CLI becomes more discoverable, safer, more parseable, and easier to recover from.
 
-The score is not a black-box opinion. Every point traces to evidence:
+The score is not the root of trust. Every point traces back to evidence and inferred claims:
 
 - which probes ran
 - what they observed
@@ -65,7 +65,7 @@ The score is not a black-box opinion. Every point traces to evidence:
 | **05** | [Evidence and Command Shape Spec](05-evidence-and-command-shape-spec.md) | Evidence log schema and normalized command-shape IR | Every inferred fact carries provenance and confidence |
 | **06** | [Computational Scoring Model](06-computational-scoring-model.md) | Probabilistic scoring model, Bayesian updates, and calibration theory | Posterior expected utility, proper scoring rules, calibration |
 | **07** | [Scoring and Improvement Tracking](07-scoring-and-improvement-tracking.md) | Subscores, regressions, monotonic improvements, baselines | Separate known-surface, capability-adjusted, and whole-surface scores |
-| **08** | [CI, Leaderboard, and Publishing](08-ci-leaderboard-and-publishing.md) | Local CI execution, scorecard publishing, badge strategy | modiqo hosts scorecards, not untrusted binary execution |
+| **08** | [CI, Publishing, and Calibrated Leaderboards](08-ci-leaderboard-and-publishing.md) | Local CI execution, evidence-backed scorecard publishing, badge strategy | modiqo hosts artifacts and scorecards, not untrusted binary execution; ranking waits for calibration |
 | **09** | [QA, Benchmarking, and Calibration](09-qa-benchmarking-and-calibration.md) | Test strategy, benchmark corpus, fixtures, ground truth | Synthetic CLIs plus real CLIs with human-verified truth sets |
 | **10** | [Checkpointing and Resume](10-checkpointing-and-resume.md) | Long-running probes, resumability, cache keys, artifact lifecycle | Evidence is append-only; inference and scoring are replayable |
 | **11** | [Implementation Plan](11-implementation-plan.md) | Phased roadmap, acceptance criteria, repo layout | Reference implementation through certified release |
