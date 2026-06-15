@@ -106,6 +106,33 @@ pub struct PersonaOutcomePacket {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct ReportDrilldownPacket {
+    pub(crate) schema_version: &'static str,
+    pub(crate) persona: Persona,
+    pub(crate) persona_title: &'static str,
+    pub(crate) primary_question: &'static str,
+    pub(crate) target: TargetFingerprint,
+    pub(crate) source_artifacts: SourceArtifacts,
+    pub(crate) summary: OutcomeSummary,
+    pub(crate) filter: ReportDrilldownFilter,
+    pub(crate) evidence_included: bool,
+    pub(crate) issues: Vec<Issue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ReportDrilldownFilter {
+    pub(crate) kind: ReportDrilldownFilterKind,
+    pub(crate) value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReportDrilldownFilterKind {
+    Area,
+    Issue,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct SourceArtifacts {
     pub(crate) artifact_dir: PathBuf,
     pub(crate) evidence: PathBuf,
@@ -377,6 +404,23 @@ impl AgentReadinessArea {
             Self::Policy => "Policy",
             Self::Publishing => "Publishing",
             Self::Calibration => "Calibration",
+        }
+    }
+
+    pub(crate) fn slug(self) -> &'static str {
+        match self {
+            Self::OutputContracts => "output-contracts",
+            Self::Preconditions => "preconditions",
+            Self::CommandDiscovery => "command-discovery",
+            Self::HelpCoverage => "help-coverage",
+            Self::Compatibility => "compatibility",
+            Self::Diagnostics => "diagnostics",
+            Self::Execution => "execution",
+            Self::Safety => "safety",
+            Self::Coverage => "coverage",
+            Self::Policy => "policy",
+            Self::Publishing => "publishing",
+            Self::Calibration => "calibration",
         }
     }
 

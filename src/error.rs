@@ -405,6 +405,9 @@ pub enum CliareError {
     #[error("failed to serialize persona outcome packet")]
     SerializePersonaOutcome(#[source] serde_json::Error),
 
+    #[error("{message}")]
+    ReportFilterNoMatch { message: String },
+
     #[error("failed to write persona outcome packet {path}")]
     WritePersonaOutcome {
         path: PathBuf,

@@ -74,13 +74,7 @@ async fn main() -> miette::Result<()> {
 fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
     match args.format {
         MetadataFormat::Json => {
-            let value = serde_json::json!({
-                "schema_version": "cliare.metadata.v1",
-                "name": "cliare",
-                "version": env!("CARGO_PKG_VERSION"),
-                "formats": ["text", "json"],
-                "commands": ["measure", "jobs", "guard", "benchmark", "report", "describe", "skills", "context", "metadata"],
-            });
+            let value = cliare::command_spec::metadata();
             println!(
                 "{}",
                 serde_json::to_string_pretty(&value).into_diagnostic()?
@@ -88,15 +82,11 @@ fn print_metadata(args: MetadataArgs) -> miette::Result<()> {
         }
         MetadataFormat::Text => {
             if args.help {
-                print!("{}", metadata_help());
+                print!("{}", cliare::command_spec::metadata_help());
             } else {
                 println!("cliare {}", env!("CARGO_PKG_VERSION"));
             }
         }
     }
     Ok(())
-}
-
-fn metadata_help() -> &'static str {
-    "Print CLIARE implementation metadata\n\nUsage: cliare metadata [OPTIONS]\n\nCommands: measure, jobs, guard, benchmark, report, describe, skills, context, metadata\n\nOptions:\n      --format <FORMAT>  Output format [default: text] [possible values: text, json]\n      --help             Print help. With --format json, emit a parseable metadata contract\n"
 }

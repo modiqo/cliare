@@ -8,7 +8,7 @@ use crate::artifact_guide;
 use crate::artifacts::{
     COMMAND_INDEX_JSON, EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, SCORECARD_JSON, SHAPE_JSON,
 };
-use crate::cli::{ReportArgs, ReportFormat};
+use crate::cli::{ReportArea, ReportArgs, ReportFormat};
 use crate::context;
 use crate::error::{CliareError, Result};
 use crate::fingerprint::TargetFingerprint;
@@ -25,6 +25,7 @@ use crate::report_model::*;
 pub use crate::report_model::Persona;
 
 const PACKET_SCHEMA_VERSION: &str = "cliare.persona-outcome.v1";
+const DRILLDOWN_SCHEMA_VERSION: &str = "cliare.report-drilldown.v1";
 const ISSUE_LEDGER_SCHEMA_VERSION: &str = "cliare.issue-ledger.v1";
 const ACTION_EVIDENCE_LIMIT: usize = 32;
 const COMMAND_SAMPLE_LIMIT: usize = 5;
@@ -75,6 +76,18 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
     let artifacts = MeasuredArtifacts::read(&artifact_dir).await?;
     let issue_ledger = IssueLedger::build(&artifact_dir, &artifacts);
     let packet = PersonaOutcomePacket::build(persona, &artifact_dir, &artifacts, &issue_ledger);
+    let drilldown = ReportSelection::from_args(&args)
+        .map(|selection| {
+            ReportDrilldownPacket::build(
+                selection,
+                args.with_evidence,
+                persona,
+                &artifact_dir,
+                &artifacts,
+                &issue_ledger,
+            )
+        })
+        .transpose()?;
     let markdown = render_markdown(&packet);
     let json =
         serde_json::to_string_pretty(&packet).map_err(CliareError::SerializePersonaOutcome)?;
@@ -106,8 +119,34 @@ pub async fn report(args: ReportArgs) -> Result<ReportSummary> {
         )
     } else {
         match args.format {
-            ReportFormat::Markdown => markdown,
-            ReportFormat::Json => format!("{json}\n"),
+            ReportFormat::Markdown => {
+                if let Some(drilldown) = &drilldown {
+                    crate::report_markdown::render_drilldown_markdown(drilldown)
+                } else {
+                    markdown
+                }
+            }
+            ReportFormat::Json => {
+                if let Some(drilldown) = &drilldown {
+                    format!(
+                        "{}\n",
+                        serde_json::to_string_pretty(drilldown)
+                            .map_err(CliareError::SerializePersonaOutcome)?
+                    )
+                } else {
+                    format!("{json}\n")
+                }
+            }
+            ReportFormat::Bundle => {
+                if let Some(drilldown) = &drilldown {
+                    render_bundle(
+                        &crate::report_markdown::render_drilldown_markdown(drilldown),
+                        drilldown,
+                    )?
+                } else {
+                    render_bundle(&markdown, &packet)?
+                }
+            }
         }
     };
 
@@ -173,6 +212,14 @@ async fn write_persona_artifact(path: &Path, bytes: &[u8]) -> Result<()> {
         })
 }
 
+fn render_bundle<T>(markdown: &str, value: &T) -> Result<String>
+where
+    T: serde::Serialize,
+{
+    let json = serde_json::to_string_pretty(value).map_err(CliareError::SerializePersonaOutcome)?;
+    Ok(format!("{markdown}\n## JSON\n\n```json\n{json}\n```\n"))
+}
+
 impl PersonaOutcomePacket {
     fn build(
         persona: Persona,
@@ -203,6 +250,118 @@ impl PersonaOutcomePacket {
             coverage: CoverageSection::from(&artifacts.scorecard.coverage),
             evidence_summary: EvidenceSummaryPacket::from(&artifacts.evidence),
             notes,
+        }
+    }
+}
+
+impl ReportDrilldownPacket {
+    fn build(
+        selection: ReportSelection,
+        with_evidence: bool,
+        persona: Persona,
+        artifact_dir: &Path,
+        artifacts: &MeasuredArtifacts,
+        issue_ledger: &IssueLedger,
+    ) -> Result<Self> {
+        let command_health = command_health(&artifacts.command_index);
+        let summary = OutcomeSummary::from_artifacts(artifacts, command_health.len());
+        let filter = selection.filter();
+        let mut issues = selection.select(persona, &issue_ledger.issues);
+        if issues.is_empty() {
+            return Err(CliareError::ReportFilterNoMatch {
+                message: format!(
+                    "no {} report issues matched {} `{}`",
+                    persona.label(),
+                    filter.kind.label(),
+                    filter.value
+                ),
+            });
+        }
+        if !with_evidence {
+            for issue in &mut issues {
+                issue.evidence.clear();
+            }
+        }
+
+        Ok(Self {
+            schema_version: DRILLDOWN_SCHEMA_VERSION,
+            persona,
+            persona_title: persona.title(),
+            primary_question: persona.primary_question(),
+            target: artifacts.scorecard.target.clone(),
+            source_artifacts: SourceArtifacts::new(artifact_dir),
+            summary,
+            filter,
+            evidence_included: with_evidence,
+            issues,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ReportSelection {
+    Area(AgentReadinessArea),
+    Issue(String),
+}
+
+impl ReportSelection {
+    fn from_args(args: &ReportArgs) -> Option<Self> {
+        args.area
+            .map(|area| Self::Area(AgentReadinessArea::from(area)))
+            .or_else(|| args.issue.clone().map(Self::Issue))
+    }
+
+    fn filter(&self) -> ReportDrilldownFilter {
+        match self {
+            Self::Area(area) => ReportDrilldownFilter {
+                kind: ReportDrilldownFilterKind::Area,
+                value: area.slug().to_owned(),
+            },
+            Self::Issue(issue) => ReportDrilldownFilter {
+                kind: ReportDrilldownFilterKind::Issue,
+                value: issue.clone(),
+            },
+        }
+    }
+
+    fn select(&self, persona: Persona, issues: &[Issue]) -> Vec<Issue> {
+        issues
+            .iter()
+            .filter(|issue| match self {
+                Self::Area(area) => {
+                    issue.personas.contains(&persona) && issue.agent_readiness_area == *area
+                }
+                Self::Issue(id) => issue.id == *id,
+            })
+            .cloned()
+            .collect()
+    }
+}
+
+impl From<ReportArea> for AgentReadinessArea {
+    fn from(value: ReportArea) -> Self {
+        match value {
+            ReportArea::OutputContracts => Self::OutputContracts,
+            ReportArea::Preconditions => Self::Preconditions,
+            ReportArea::CommandDiscovery => Self::CommandDiscovery,
+            ReportArea::HelpCoverage => Self::HelpCoverage,
+            ReportArea::Compatibility => Self::Compatibility,
+            ReportArea::Diagnostics => Self::Diagnostics,
+            ReportArea::Execution => Self::Execution,
+            ReportArea::Safety => Self::Safety,
+            ReportArea::Coverage => Self::Coverage,
+            ReportArea::Policy => Self::Policy,
+            ReportArea::Publishing => Self::Publishing,
+            ReportArea::Calibration => Self::Calibration,
+        }
+    }
+}
+
+impl ReportDrilldownFilterKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Area => "area",
+            Self::Issue => "issue",
         }
     }
 }
@@ -2000,8 +2159,9 @@ fn notes(persona: Persona, scorecard: &ScorecardArtifact) -> Vec<OutcomeNote> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionCategory, CommandIndexArtifact, CommandIndexCommand, CommandIndexGap,
-        CommandIndexParameters, CommandIndexSummaryArtifact, CommandReadinessState, Persona,
+        ActionCategory, ActionSeverity, AgentReadinessArea, CommandIndexArtifact,
+        CommandIndexCommand, CommandIndexGap, CommandIndexParameters, CommandIndexSummaryArtifact,
+        CommandReadinessState, Issue, IssueConfidence, IssueVerification, Persona, ReportSelection,
         command_health, persona_priority,
     };
 
@@ -2060,5 +2220,72 @@ mod tests {
             health[0].suitability_reasons,
             ["runtime-confirmed with parseable machine-readable output"]
         );
+    }
+
+    #[test]
+    fn report_selection_area_is_persona_scoped() {
+        let issues = vec![
+            issue(
+                "issue.output_mode_unprobed",
+                AgentReadinessArea::OutputContracts,
+                &[Persona::Maintainer],
+            ),
+            issue(
+                "issue.security_side_effect",
+                AgentReadinessArea::Safety,
+                &[Persona::Security],
+            ),
+        ];
+
+        let selected = ReportSelection::Area(AgentReadinessArea::OutputContracts)
+            .select(Persona::Maintainer, &issues);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, "issue.output_mode_unprobed");
+    }
+
+    #[test]
+    fn report_selection_issue_id_is_exact() {
+        let issues = vec![
+            issue(
+                "issue.output_mode_unprobed",
+                AgentReadinessArea::OutputContracts,
+                &[Persona::Maintainer],
+            ),
+            issue(
+                "issue.output_mode_parse_failed",
+                AgentReadinessArea::OutputContracts,
+                &[Persona::Maintainer],
+            ),
+        ];
+
+        let selected = ReportSelection::Issue("issue.output_mode_parse_failed".to_owned())
+            .select(Persona::Maintainer, &issues);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].id, "issue.output_mode_parse_failed");
+    }
+
+    fn issue(id: &str, area: AgentReadinessArea, personas: &[Persona]) -> Issue {
+        Issue {
+            id: id.to_owned(),
+            status: "open",
+            severity: ActionSeverity::Medium,
+            category: ActionCategory::Output,
+            agent_readiness_area: area,
+            confidence: IssueConfidence::Observed,
+            title: "Issue title".to_owned(),
+            impact: "impact".to_owned(),
+            why_it_matters: "why".to_owned(),
+            recommendation: "recommendation".to_owned(),
+            verification: IssueVerification {
+                command: "cliare measure target".to_owned(),
+                expected_change: "expected".to_owned(),
+            },
+            affected_commands: Vec::new(),
+            evidence: Vec::new(),
+            personas: personas.to_vec(),
+            score_dimensions: Vec::new(),
+        }
     }
 }

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand, ValueEnum, ValueHint};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum, ValueHint};
 use serde::{Deserialize, Serialize};
 
 use crate::context::{ContextArgs, RuntimeContextProfile, RuntimeContextState};
@@ -208,6 +208,11 @@ pub struct BenchmarkArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("report_filter")
+        .args(["area", "issue"])
+        .multiple(false)
+))]
 pub struct ReportArgs {
     /// Persona packet to generate.
     #[arg(value_enum)]
@@ -224,6 +229,18 @@ pub struct ReportArgs {
     /// Representation to print to stdout.
     #[arg(long, value_enum, default_value_t = ReportFormat::Markdown)]
     pub format: ReportFormat,
+
+    /// Limit output to one agent-readiness area.
+    #[arg(long, value_enum)]
+    pub area: Option<ReportArea>,
+
+    /// Limit output to one issue id, such as issue.output_mode_unprobed.
+    #[arg(long, value_name = "ID")]
+    pub issue: Option<String>,
+
+    /// Include attached evidence entries in focused report output.
+    #[arg(long)]
+    pub with_evidence: bool,
 
     /// Write persona-<persona>.json and persona-<persona>.md into the artifact directory.
     #[arg(long)]
@@ -267,6 +284,7 @@ impl std::fmt::Display for ReportPersona {
 pub enum ReportFormat {
     Markdown,
     Json,
+    Bundle,
 }
 
 impl ReportFormat {
@@ -274,7 +292,50 @@ impl ReportFormat {
         match self {
             Self::Markdown => "markdown",
             Self::Json => "json",
+            Self::Bundle => "bundle",
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReportArea {
+    OutputContracts,
+    Preconditions,
+    CommandDiscovery,
+    HelpCoverage,
+    Compatibility,
+    Diagnostics,
+    Execution,
+    Safety,
+    Coverage,
+    Policy,
+    Publishing,
+    Calibration,
+}
+
+impl ReportArea {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OutputContracts => "output-contracts",
+            Self::Preconditions => "preconditions",
+            Self::CommandDiscovery => "command-discovery",
+            Self::HelpCoverage => "help-coverage",
+            Self::Compatibility => "compatibility",
+            Self::Diagnostics => "diagnostics",
+            Self::Execution => "execution",
+            Self::Safety => "safety",
+            Self::Coverage => "coverage",
+            Self::Policy => "policy",
+            Self::Publishing => "publishing",
+            Self::Calibration => "calibration",
+        }
+    }
+}
+
+impl std::fmt::Display for ReportArea {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
     }
 }
 
@@ -786,6 +847,57 @@ mod tests {
                 panic!("expected report command")
             }
         }
+    }
+
+    #[test]
+    fn report_accepts_typed_drilldown_options() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "report",
+            "maintainer",
+            "--area",
+            "output-contracts",
+            "--with-evidence",
+            "--format",
+            "bundle",
+        ])
+        .expect("valid focused report command");
+
+        match cli.command {
+            Command::Report(args) => {
+                assert_eq!(args.persona, super::ReportPersona::Maintainer);
+                assert_eq!(args.area, Some(super::ReportArea::OutputContracts));
+                assert_eq!(args.issue, None);
+                assert!(args.with_evidence);
+                assert_eq!(args.format, super::ReportFormat::Bundle);
+            }
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Metadata(_) => {
+                panic!("expected report command")
+            }
+        }
+    }
+
+    #[test]
+    fn report_rejects_area_and_issue_together() {
+        let error = Cli::try_parse_from([
+            "cliare",
+            "report",
+            "maintainer",
+            "--area",
+            "output-contracts",
+            "--issue",
+            "issue.output_mode_unprobed",
+        ])
+        .expect_err("area and issue filters are mutually exclusive");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

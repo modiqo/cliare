@@ -5,6 +5,7 @@ pub mod benchmark;
 pub mod ci;
 pub mod claims;
 pub mod cli;
+pub mod command_spec;
 pub mod context;
 pub mod describe;
 pub mod diagnostic;

@@ -32,6 +32,79 @@ pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
     text
 }
 
+pub(crate) fn render_drilldown_markdown(packet: &ReportDrilldownPacket) -> String {
+    let mut text = String::new();
+    writeln!(&mut text, "# CLIARE {} Drilldown", packet.persona_title)
+        .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+    writeln!(&mut text, "{}", escape_markdown(packet.primary_question))
+        .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+    writeln!(
+        &mut text,
+        "| Field | Value |\n|---|---|\n| Score | `{:.0}/100` |\n| Filter | `{}` `{}` |\n| Issues | `{}` |\n| Evidence attached | `{}` |\n| Command drill-down | `{}` |",
+        packet.summary.score,
+        drilldown_filter_kind_label(packet.filter.kind),
+        escape_markdown(&packet.filter.value),
+        packet.issues.len(),
+        packet.evidence_included,
+        packet.source_artifacts.command_index.display()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+
+    if packet.issues.is_empty() {
+        writeln!(
+            &mut text,
+            "No issues matched this filter for the selected persona."
+        )
+        .expect("writing to string cannot fail");
+        return text;
+    }
+
+    writeln!(
+        &mut text,
+        "| Area | Severity | Confidence | Affected | Issue | Agent Impact | Action |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(&mut text, "|---|---|---|---:|---|---|---|").expect("writing to string cannot fail");
+    for issue in &packet.issues {
+        writeln!(
+            &mut text,
+            "| {} | `{}` | `{}` | {} | `{}` {} | {} | {} |",
+            escape_markdown(issue.agent_readiness_area.label()),
+            issue.severity.label(),
+            issue.confidence.label(),
+            issue.affected_commands.len(),
+            escape_markdown(&issue.id),
+            escape_markdown(&issue.title),
+            escape_markdown(issue.agent_readiness_area.agent_impact()),
+            escape_markdown(persona_issue_action(packet.persona, issue))
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(&mut text).expect("writing to string cannot fail");
+
+    writeln!(&mut text, "## Drill-Down").expect("writing to string cannot fail");
+    writeln!(&mut text).expect("writing to string cannot fail");
+    for issue in &packet.issues {
+        if packet.persona == Persona::Maintainer {
+            render_maintainer_finding(&mut text, issue);
+        } else {
+            render_named_finding(&mut text, packet.persona, issue);
+        }
+    }
+
+    text
+}
+
+fn drilldown_filter_kind_label(kind: ReportDrilldownFilterKind) -> &'static str {
+    match kind {
+        ReportDrilldownFilterKind::Area => "area",
+        ReportDrilldownFilterKind::Issue => "issue",
+    }
+}
+
 fn render_persona_decision(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text, "## Decision").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
@@ -449,6 +522,23 @@ fn render_maintainer_finding(text: &mut String, issue: &Issue) {
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     render_finding_body(text, Persona::Maintainer, issue);
+    writeln!(text, "</details>").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_named_finding(text: &mut String, persona: Persona, issue: &Issue) {
+    writeln!(text, "<details>").expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "<summary>{} (`{}`)</summary>",
+        escape_markdown(&issue.title),
+        escape_markdown(&issue.id)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "### {}", escape_markdown(&issue.title)).expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    render_finding_body(text, persona, issue);
     writeln!(text, "</details>").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 }
