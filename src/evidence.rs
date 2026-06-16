@@ -29,6 +29,8 @@ impl EventId {
 #[derive(Debug)]
 pub struct EvidenceWriter {
     next_event_id: EventId,
+    path: PathBuf,
+    final_path: PathBuf,
     file: File,
 }
 
@@ -41,17 +43,26 @@ impl EvidenceWriter {
                 source,
             })?;
 
-        let path = out_dir.join(EVIDENCE_JSONL);
+        let final_path = out_dir.join(EVIDENCE_JSONL);
+        let path = out_dir.join(format!(
+            ".{EVIDENCE_JSONL}.in-progress.{}",
+            std::process::id()
+        ));
         let file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
             .open(&path)
             .await
-            .map_err(|source| CliareError::OpenEvidenceLog { path, source })?;
+            .map_err(|source| CliareError::OpenEvidenceLog {
+                path: path.clone(),
+                source,
+            })?;
 
         Ok(Self {
             next_event_id: EventId(1),
+            path,
+            final_path,
             file,
         })
     }
@@ -77,6 +88,21 @@ impl EvidenceWriter {
             .map_err(CliareError::WriteEvidence)?;
 
         Ok(event_id)
+    }
+
+    pub async fn commit(mut self) -> Result<PathBuf> {
+        self.file
+            .flush()
+            .await
+            .map_err(CliareError::WriteEvidence)?;
+        drop(self.file);
+        fs::rename(&self.path, &self.final_path)
+            .await
+            .map_err(|source| CliareError::CommitEvidence {
+                path: self.final_path.clone(),
+                source,
+            })?;
+        Ok(self.final_path)
     }
 }
 

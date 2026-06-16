@@ -11,6 +11,16 @@ use tokio::io::AsyncReadExt;
 
 use crate::error::{CliareError, Result};
 
+#[cfg(not(test))]
+const MAX_SNAPSHOT_FILES: usize = 10_000;
+#[cfg(test)]
+const MAX_SNAPSHOT_FILES: usize = 32;
+#[cfg(not(test))]
+const MAX_SNAPSHOT_DIRS: usize = 2_000;
+#[cfg(test)]
+const MAX_SNAPSHOT_DIRS: usize = 32;
+const MAX_SNAPSHOT_HASH_BYTES: u64 = 64 * 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxProfile {
@@ -475,12 +485,16 @@ pub struct SideEffectSummary {
     pub modified: usize,
     pub deleted: usize,
     pub total: usize,
+    pub truncated: bool,
+    pub truncation_reason: Option<String>,
     pub changes: Vec<FileChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideEffectSnapshot {
     files: BTreeMap<PathBuf, FileSnapshot>,
+    truncated: bool,
+    truncation_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -494,12 +508,20 @@ struct FileSnapshot {
 impl ProcessSandbox {
     pub async fn snapshot(&self) -> Result<SideEffectSnapshot> {
         let mut files = BTreeMap::new();
+        let mut budget = SnapshotBudget::new();
 
         for region_root in &self.regions {
-            scan_region(&self.root, region_root, &mut files).await?;
+            scan_region(&self.root, region_root, &mut files, &mut budget).await?;
+            if budget.truncated() {
+                break;
+            }
         }
 
-        Ok(SideEffectSnapshot { files })
+        Ok(SideEffectSnapshot {
+            files,
+            truncated: budget.truncated(),
+            truncation_reason: budget.truncation_reason().map(str::to_owned),
+        })
     }
 }
 
@@ -558,8 +580,74 @@ impl SideEffectSnapshot {
             modified,
             deleted,
             total: changes.len(),
+            truncated: self.truncated || after.truncated,
+            truncation_reason: self
+                .truncation_reason
+                .clone()
+                .or_else(|| after.truncation_reason.clone()),
             changes,
         }
+    }
+}
+
+#[derive(Debug)]
+struct SnapshotBudget {
+    files: usize,
+    directories: usize,
+    hash_bytes: u64,
+    truncation_reason: Option<&'static str>,
+}
+
+impl SnapshotBudget {
+    fn new() -> Self {
+        Self {
+            files: 0,
+            directories: 0,
+            hash_bytes: 0,
+            truncation_reason: None,
+        }
+    }
+
+    fn record_directory(&mut self) -> bool {
+        self.directories = self.directories.saturating_add(1);
+        if self.directories > MAX_SNAPSHOT_DIRS {
+            self.truncate("directory_budget_exhausted");
+            false
+        } else {
+            true
+        }
+    }
+
+    fn record_file(&mut self) -> bool {
+        self.files = self.files.saturating_add(1);
+        if self.files > MAX_SNAPSHOT_FILES {
+            self.truncate("file_budget_exhausted");
+            false
+        } else {
+            true
+        }
+    }
+
+    fn remaining_hash_bytes(&self) -> u64 {
+        MAX_SNAPSHOT_HASH_BYTES.saturating_sub(self.hash_bytes)
+    }
+
+    fn consume_hash_bytes(&mut self, bytes: u64) {
+        self.hash_bytes = self.hash_bytes.saturating_add(bytes);
+    }
+
+    fn truncate(&mut self, reason: &'static str) {
+        if self.truncation_reason.is_none() {
+            self.truncation_reason = Some(reason);
+        }
+    }
+
+    fn truncated(&self) -> bool {
+        self.truncation_reason.is_some()
+    }
+
+    fn truncation_reason(&self) -> Option<&'static str> {
+        self.truncation_reason
     }
 }
 
@@ -567,10 +655,14 @@ async fn scan_region(
     sandbox_root: &Path,
     region_root: &SandboxRegionRoot,
     files: &mut BTreeMap<PathBuf, FileSnapshot>,
+    budget: &mut SnapshotBudget,
 ) -> Result<()> {
     let mut pending = vec![region_root.path.clone()];
 
     while let Some(dir) = pending.pop() {
+        if !budget.record_directory() {
+            return Ok(());
+        }
         let mut entries = match fs::read_dir(&dir).await {
             Ok(entries) => entries,
             Err(source) if source.kind() == ErrorKind::NotFound => continue,
@@ -595,6 +687,9 @@ async fn scan_region(
                 }
             };
             let path = entry.path();
+            if budget.truncated() {
+                return Ok(());
+            }
             let metadata = match entry.metadata().await {
                 Ok(metadata) => metadata,
                 Err(source) if source.kind() == ErrorKind::NotFound => continue,
@@ -609,8 +704,22 @@ async fn scan_region(
             if metadata.is_dir() {
                 pending.push(path);
             } else if metadata.is_file() {
+                if !budget.record_file() {
+                    return Ok(());
+                }
                 let sha256 = match region_root.hash_mode {
-                    SnapshotHashMode::Content => sha256_file(&path).await?,
+                    SnapshotHashMode::Content => {
+                        match sha256_file(&path, budget.remaining_hash_bytes()).await? {
+                            FileHash::Complete { sha256, bytes_read } => {
+                                budget.consume_hash_bytes(bytes_read);
+                                sha256
+                            }
+                            FileHash::Truncated => {
+                                budget.truncate("hash_byte_budget_exhausted");
+                                None
+                            }
+                        }
+                    }
                     SnapshotHashMode::Metadata => None,
                 };
                 let relative_path = path
@@ -626,6 +735,9 @@ async fn scan_region(
                         sha256,
                     },
                 );
+                if budget.truncated() {
+                    return Ok(());
+                }
             }
         }
     }
@@ -642,10 +754,26 @@ fn modified_unix_nanos(metadata: &std::fs::Metadata) -> Option<u128> {
         .map(|duration| duration.as_nanos())
 }
 
-async fn sha256_file(path: &Path) -> Result<Option<String>> {
+enum FileHash {
+    Complete {
+        sha256: Option<String>,
+        bytes_read: u64,
+    },
+    Truncated,
+}
+
+async fn sha256_file(path: &Path, max_bytes: u64) -> Result<FileHash> {
+    if max_bytes == 0 {
+        return Ok(FileHash::Truncated);
+    }
     let mut file = match File::open(path).await {
         Ok(file) => file,
-        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) if source.kind() == ErrorKind::NotFound => {
+            return Ok(FileHash::Complete {
+                sha256: None,
+                bytes_read: 0,
+            });
+        }
         Err(source) => {
             return Err(CliareError::ReadSandboxFile {
                 path: path.to_path_buf(),
@@ -655,6 +783,7 @@ async fn sha256_file(path: &Path) -> Result<Option<String>> {
     };
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut bytes_read_total = 0_u64;
 
     loop {
         let bytes_read =
@@ -667,10 +796,18 @@ async fn sha256_file(path: &Path) -> Result<Option<String>> {
         if bytes_read == 0 {
             break;
         }
-        hasher.update(&buffer[..bytes_read]);
+        let bytes_read = bytes_read as u64;
+        if bytes_read_total.saturating_add(bytes_read) > max_bytes {
+            return Ok(FileHash::Truncated);
+        }
+        bytes_read_total = bytes_read_total.saturating_add(bytes_read);
+        hasher.update(&buffer[..bytes_read as usize]);
     }
 
-    Ok(Some(format!("{:x}", hasher.finalize())))
+    Ok(FileHash::Complete {
+        sha256: Some(format!("{:x}", hasher.finalize())),
+        bytes_read: bytes_read_total,
+    })
 }
 
 #[cfg(test)]
@@ -765,6 +902,36 @@ mod tests {
             .expect("workdir change is reported");
         assert_eq!(change.kind, FileChangeKind::Modified);
         assert_eq!(change.sha256, None);
+
+        let _ = tokio::fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn snapshot_reports_truncation_when_file_budget_is_exhausted() {
+        let root = unique_test_dir("sandbox-snapshot-budget");
+        let sandbox = Sandbox::create(&root).await.expect("sandbox is created");
+        let execution = sandbox.execution();
+
+        let before = execution
+            .snapshot()
+            .await
+            .expect("before snapshot succeeds");
+        for index in 0..40 {
+            tokio::fs::write(
+                sandbox.metadata().tmp.join(format!("created-{index}")),
+                "new",
+            )
+            .await
+            .expect("created fixture is written");
+        }
+        let after = execution.snapshot().await.expect("after snapshot succeeds");
+        let diff = before.diff(&after);
+
+        assert!(diff.truncated);
+        assert_eq!(
+            diff.truncation_reason.as_deref(),
+            Some("file_budget_exhausted")
+        );
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }

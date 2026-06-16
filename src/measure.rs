@@ -117,6 +117,8 @@ pub struct MeasurementFacts {
     pub side_effect_files_total: usize,
     pub side_effect_probe_count: usize,
     pub credential_like_side_effects: usize,
+    #[serde(default)]
+    pub side_effect_scan_truncated: bool,
     pub observed_max_depth: usize,
     pub traversal_profile: String,
     pub max_depth: usize,
@@ -248,6 +250,7 @@ impl MeasurementSummary {
                 "  credential-like paths: {}",
                 self.credential_like_side_effects
             ),
+            format!("  scanner truncated: {}", self.side_effect_scan_truncated),
             "runtime isolation:".to_owned(),
             format!("  sandbox profile: {}", self.sandbox_profile),
             format!("  env policy: {}", self.sandbox_env_policy),
@@ -388,6 +391,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         return Ok(summary);
     }
 
+    remove_stale_cache_manifest(&artifact_dir).await?;
+
     let mut progress = ProgressLog::create(
         &artifact_dir,
         &target,
@@ -516,6 +521,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             probes_completed: traversal.probes_completed,
         }))
         .await?;
+    evidence.commit().await?;
     progress
         .message(traversal.probes_completed, "run_finished_evidence_written")
         .await?;
@@ -630,6 +636,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             side_effect_files_total: score_artifacts.side_effect_files_total,
             side_effect_probe_count: score_artifacts.side_effect_probe_count,
             credential_like_side_effects: score_artifacts.credential_like_side_effects,
+            side_effect_scan_truncated: score_artifacts.side_effect_scan_truncated,
             observed_max_depth: score_artifacts.observed_max_depth,
             traversal_profile: score_artifacts.traversal_profile.to_owned(),
             max_depth: score_artifacts.max_depth,
@@ -1174,6 +1181,15 @@ async fn cached_summary(
     Ok(Some(manifest.into_summary(out_dir)))
 }
 
+async fn remove_stale_cache_manifest(out_dir: &std::path::Path) -> Result<()> {
+    let path = out_dir.join("measure-cache.json");
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(CliareError::RemoveMeasurementCache { path, source }),
+    }
+}
+
 impl MeasurementCacheManifest {
     fn matches(&self, target: &TargetFingerprint, profile: &ProbeProfile) -> bool {
         self.schema_version == MEASUREMENT_CACHE_SCHEMA_VERSION
@@ -1245,7 +1261,7 @@ async fn write_cache_manifest(
     };
     let bytes =
         serde_json::to_vec_pretty(&manifest).map_err(CliareError::SerializeMeasurementCache)?;
-    fs::write(&path, bytes)
+    crate::artifacts::write_atomic(&path, &bytes)
         .await
         .map_err(|source| CliareError::WriteMeasurementCache { path, source })
 }
@@ -1428,6 +1444,21 @@ mod tests {
         assert!(second.starts_with("measure-"));
     }
 
+    #[tokio::test]
+    async fn fresh_measurement_removes_stale_cache_manifest() {
+        let root = unique_test_dir("measure-stale-cache");
+        fs::create_dir_all(&root).expect("creates cache test directory");
+        let cache_path = root.join("measure-cache.json");
+        fs::write(&cache_path, "{}").expect("writes stale cache");
+
+        super::remove_stale_cache_manifest(&root)
+            .await
+            .expect("stale cache is removed");
+
+        assert!(!cache_path.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn terminal_summary_lists_score_and_artifacts() {
         let summary = super::MeasurementSummary {
@@ -1489,6 +1520,7 @@ mod tests {
                 side_effect_files_total: 0,
                 side_effect_probe_count: 0,
                 credential_like_side_effects: 0,
+                side_effect_scan_truncated: false,
                 observed_max_depth: 1,
                 traversal_profile: "standard".to_owned(),
                 max_depth: 5,

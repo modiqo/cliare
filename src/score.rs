@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tokio::fs;
 
-use crate::artifacts::{REPORT_MD, SCORECARD_JSON};
+use crate::artifacts::{REPORT_MD, SCORECARD_JSON, write_atomic};
 use crate::claims::{
     ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
 };
@@ -96,6 +95,7 @@ pub struct Coverage {
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
+    side_effect_scan_truncated: bool,
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
     observed_max_depth: usize,
@@ -195,6 +195,7 @@ pub struct ScoreArtifactSummary {
     pub side_effect_files_total: usize,
     pub side_effect_probe_count: usize,
     pub credential_like_side_effects: usize,
+    pub side_effect_scan_truncated: bool,
     pub observed_max_depth: usize,
     pub traversal_profile: &'static str,
     pub max_depth: usize,
@@ -301,6 +302,7 @@ pub async fn write_score_artifacts(
         side_effect_files_total: scorecard.coverage.side_effect_files_total,
         side_effect_probe_count: scorecard.coverage.side_effect_probe_count,
         credential_like_side_effects: scorecard.coverage.credential_like_side_effects,
+        side_effect_scan_truncated: scorecard.coverage.side_effect_scan_truncated,
         observed_max_depth: scorecard.coverage.observed_max_depth,
         traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
@@ -332,7 +334,7 @@ pub async fn write_score_artifacts(
 async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join(SCORECARD_JSON);
     let bytes = serde_json::to_vec_pretty(&scorecard).map_err(CliareError::SerializeScorecard)?;
-    fs::write(&path, bytes)
+    write_atomic(&path, &bytes)
         .await
         .map_err(|source| CliareError::WriteScorecard {
             path: path.clone(),
@@ -343,7 +345,8 @@ async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBu
 
 async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join(REPORT_MD);
-    fs::write(&path, report::render(scorecard))
+    let report = report::render(scorecard);
+    write_atomic(&path, report.as_bytes())
         .await
         .map_err(|source| CliareError::WriteReport {
             path: path.clone(),
@@ -441,17 +444,36 @@ fn subscores(metrics: &Metrics, model: &ScoreModelSpec) -> BTreeMap<Dimension, D
             rationale: "advertised machine-readable output modes and safe parse probes".to_owned(),
         },
     );
-    subscores.insert(
-        Dimension::Safety,
-        DimensionScore {
-            score: Some(round_score(safety_score(metrics, model))),
-            weight: model.weight(Dimension::Safety),
-            status: DimensionStatus::Measured,
-            rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
-        },
-    );
+    subscores.insert(Dimension::Safety, safety_dimension_score(metrics, model));
 
     subscores
+}
+
+fn safety_dimension_score(metrics: &Metrics, model: &ScoreModelSpec) -> DimensionScore {
+    let weight = model.weight(Dimension::Safety);
+    if !metrics.side_effect_observation_supported() {
+        return DimensionScore {
+            score: None,
+            weight,
+            status: DimensionStatus::NotMeasured,
+            rationale: "host execution does not register filesystem snapshot regions".to_owned(),
+        };
+    }
+    if metrics.coverage.side_effect_scan_truncated {
+        return DimensionScore {
+            score: None,
+            weight,
+            status: DimensionStatus::NotMeasured,
+            rationale: "filesystem side-effect snapshot exceeded scanner budget".to_owned(),
+        };
+    }
+
+    DimensionScore {
+        score: Some(round_score(safety_score(metrics, model))),
+        weight,
+        status: DimensionStatus::Measured,
+        rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
+    }
 }
 
 fn total_score(
@@ -660,6 +682,28 @@ fn findings(metrics: &Metrics, model: &ScoreModelSpec) -> Vec<Finding> {
                 metrics.coverage.commands_precondition_blocked
             ),
             recommendation: "Document required runtime preconditions separately from command existence, and keep help paths available where practical.",
+        });
+    }
+
+    if !metrics.side_effect_observation_supported() {
+        findings.push(Finding {
+            id: "finding.safety.side_effects_unobserved_in_host_mode",
+            dimension: Dimension::Safety,
+            severity: Severity::Medium,
+            title: "Host-mode filesystem side effects were not observed",
+            detail: "This run used host execution mode, which intentionally does not register filesystem snapshot regions. Side-effect totals are unmeasured, not proof of clean behavior.".to_owned(),
+            recommendation: "Use isolated execution for filesystem side-effect scoring, or treat host-mode safety as a context-specific manual review input.",
+        });
+    }
+
+    if metrics.coverage.side_effect_scan_truncated {
+        findings.push(Finding {
+            id: "finding.safety.side_effect_scan_truncated",
+            dimension: Dimension::Safety,
+            severity: Severity::High,
+            title: "Filesystem side-effect scanning was truncated",
+            detail: "The sandbox snapshot exceeded a scanner budget. Side-effect totals are partial, so filesystem safety is not fully measured.".to_owned(),
+            recommendation: "Reduce discovery-time filesystem writes or raise scanner limits only in a controlled profile with explicit review.",
         });
     }
 
@@ -886,6 +930,7 @@ impl Metrics {
                 side_effect_files_total: process_metrics.side_effect_files_total,
                 side_effect_probe_count: process_metrics.side_effect_probe_count,
                 credential_like_side_effects: process_metrics.credential_like_side_effects,
+                side_effect_scan_truncated: process_metrics.side_effect_scan_truncated,
                 avg_command_confidence,
                 avg_flag_confidence,
                 observed_max_depth: observed_max_depth(&commands),
@@ -964,6 +1009,10 @@ impl Metrics {
             .saturating_sub(self.output_mode_precondition_blocked)
             .saturating_sub(self.output_mode_help_text_probes)
             .saturating_sub(self.output_mode_global_scope_failures)
+    }
+
+    fn side_effect_observation_supported(&self) -> bool {
+        self.coverage.sandbox_profile != "host"
     }
 }
 
@@ -1046,6 +1095,7 @@ struct ProcessMetrics {
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
+    side_effect_scan_truncated: bool,
     precondition_blocked: usize,
     auth_required: usize,
     local_context_required: usize,
@@ -1121,6 +1171,7 @@ impl ProcessMetrics {
             if side_effects.total > 0 {
                 metrics.side_effect_probe_count += 1;
             }
+            metrics.side_effect_scan_truncated |= side_effects.truncated;
             metrics.credential_like_side_effects += side_effects
                 .changes
                 .iter()
@@ -1618,6 +1669,37 @@ mod tests {
         assert!(score.total <= 100.0);
         assert_eq!(score.measured_weight, 0.35);
         assert_eq!(score.max_weight, 1.0);
+    }
+
+    #[test]
+    fn host_mode_marks_safety_unmeasured() {
+        let scorecard = scorecard(
+            target(),
+            &[observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  inspect  Inspect state\n",
+                Some(0),
+            )],
+            ScoreRunContext {
+                sandbox: SandboxScoreContext {
+                    profile: "host",
+                    root: "/tmp/project".into(),
+                    home: "/Users/example".into(),
+                    workdir: "/tmp/project".into(),
+                    env_policy: "inherited",
+                },
+                ..ScoreRunContext::default()
+            },
+        );
+
+        let safety = &scorecard.subscores[&Dimension::Safety];
+        assert_eq!(safety.score, None);
+        assert!(matches!(safety.status, DimensionStatus::NotMeasured));
+        assert!(scorecard.findings.iter().any(|finding| {
+            finding.id == "finding.safety.side_effects_unobserved_in_host_mode"
+        }));
     }
 
     #[test]

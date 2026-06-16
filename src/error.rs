@@ -84,6 +84,13 @@ pub enum CliareError {
     #[error("failed to write evidence event")]
     WriteEvidence(#[source] std::io::Error),
 
+    #[error("failed to commit evidence log {path}")]
+    CommitEvidence {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to serialize evidence event")]
     SerializeEvidence(#[source] serde_json::Error),
 
@@ -212,6 +219,13 @@ pub enum CliareError {
 
     #[error("failed to write measurement cache manifest {path}")]
     WriteMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove stale measurement cache manifest {path}")]
+    RemoveMeasurementCache {
         path: PathBuf,
         #[source]
         source: std::io::Error,

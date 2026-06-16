@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::fs;
 
-use crate::artifacts::{CI_SUMMARY_MD, JUNIT_XML, SARIF_JSON, SCORECARD_JSON};
+use crate::artifacts::{CI_SUMMARY_MD, JUNIT_XML, SARIF_JSON, SCORECARD_JSON, write_atomic};
 use crate::error::{CliareError, Result};
 use crate::markdown::MarkdownBuffer;
 use crate::policy::PolicyEvaluation;
@@ -174,7 +174,8 @@ async fn write_ci_summary(
         "- `scorecard.json`\n- `shape.json`\n- `command-index.json`\n- `command-index.md`\n- `evidence.jsonl`\n- `report.md`\n- `issues.json`\n- `persona-*.md`\n- `findings.sarif`\n- `junit.xml`"
     ));
 
-    fs::write(path, text.into_string())
+    let text = text.into_string();
+    write_atomic(path, text.as_bytes())
         .await
         .map_err(|source| CliareError::WriteCiSummary {
             path: path.to_path_buf(),
@@ -256,7 +257,7 @@ async fn write_sarif(path: &Path, scorecard: &CiScorecard) -> Result<()> {
         ]
     });
     let bytes = serde_json::to_vec_pretty(&sarif).map_err(CliareError::SerializeSarif)?;
-    fs::write(path, bytes)
+    write_atomic(path, &bytes)
         .await
         .map_err(|source| CliareError::WriteSarif {
             path: path.to_path_buf(),
@@ -364,7 +365,7 @@ async fn write_junit(
     .expect("writing to string cannot fail");
     writeln!(&mut xml, "</testsuite>").expect("writing to string cannot fail");
 
-    fs::write(path, xml)
+    write_atomic(path, xml.as_bytes())
         .await
         .map_err(|source| CliareError::WriteJunit {
             path: path.to_path_buf(),

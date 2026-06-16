@@ -1,4 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use tokio::fs;
+
+static ATOMIC_WRITE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub const AGENT_SKILL_MD: &str = "AGENT_SKILL.md";
 pub const CI_SUMMARY_MD: &str = "summary.md";
@@ -67,4 +72,32 @@ impl MeasurementArtifactPaths {
             runtime_context: dir.join(RUNTIME_CONTEXT_JSON),
         }
     }
+}
+
+pub async fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let temp_path = atomic_temp_path(path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    fs::write(&temp_path, bytes).await?;
+    match fs::rename(&temp_path, path).await {
+        Ok(()) => Ok(()),
+        Err(source) => {
+            let _ = fs::remove_file(&temp_path).await;
+            Err(source)
+        }
+    }
+}
+
+fn atomic_temp_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("artifact");
+    let counter = ATOMIC_WRITE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    path.with_file_name(format!(
+        ".{file_name}.tmp.{}.{}",
+        std::process::id(),
+        counter
+    ))
 }

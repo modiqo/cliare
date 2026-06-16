@@ -270,6 +270,7 @@ mod tests {
                 side_effect_files_total: 0,
                 side_effect_probe_count: 0,
                 credential_like_side_effects: 0,
+                side_effect_scan_truncated: false,
                 observed_max_depth: 1,
                 traversal_profile: "standard".to_owned(),
                 max_depth: 5,
