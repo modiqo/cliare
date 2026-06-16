@@ -157,13 +157,33 @@ The key artifact is `command-index.json`. It records command paths, argv forms, 
 
 ## Install
 
-CLIARE is prepared for crates.io:
+Install the latest prebuilt binary from GitHub Releases:
+
+```sh
+curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
+```
+
+The installer detects macOS/Linux and x86_64/aarch64, downloads the matching archive, verifies `SHA256SUMS`, and installs `cliare` into `$HOME/.local/bin` by default.
+
+To install somewhere else:
+
+```sh
+curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | CLIARE_INSTALL_DIR=/usr/local/bin sh
+```
+
+To install a specific release:
+
+```sh
+curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.1/install.sh | CLIARE_VERSION=v0.1.1 sh
+```
+
+You can also install with Cargo after the crates.io release:
 
 ```sh
 cargo install cliare
 ```
 
-That command becomes the stable install path after the first crates.io publish. Until then, install from source:
+Or install from source:
 
 ```sh
 git clone https://github.com/modiqo/cliare.git

@@ -1,11 +1,40 @@
 # Release Process
 
-This repository is prepared for an initial crates.io release. The current crate version is `0.1.1`.
+This repository is prepared for an initial binary and crates.io release. The current crate version is `0.1.1`.
 
 ## Channels
 
 - crates.io: publish the Rust crate so users can run `cargo install cliare`.
-- GitHub Releases: attach source archives, checksums, and optional prebuilt binaries after the tag is pushed.
+- GitHub Releases: publish prebuilt binaries, `install.sh`, and `SHA256SUMS` so users can install with `curl`.
+
+## Binary Release Automation
+
+The tag workflow `.github/workflows/release-binaries.yml` builds release archives for:
+
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+
+It creates or updates the GitHub release for the tag and uploads:
+
+- `cliare-<target>.tar.gz`
+- `install.sh`
+- `SHA256SUMS`
+
+User install command:
+
+```sh
+curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
+```
+
+The installer supports:
+
+```sh
+CLIARE_INSTALL_DIR=/usr/local/bin
+CLIARE_VERSION=v0.1.1
+CLIARE_REPO=modiqo/cliare
+```
 
 ## crates.io Automation
 
@@ -78,11 +107,12 @@ Homebrew distribution is deferred until a tap repository exists. The formula tem
 
 ## GitHub Release
 
-Create a release for `v0.1.1` that includes:
+The binary release workflow creates or updates the GitHub release for `v0.1.1`. Confirm it includes:
 
 - Release notes copied from `CHANGELOG.md`.
-- The crates.io install command.
-- Checksums for any attached archives or binaries.
+- The curl install command.
+- The crates.io install command, when published.
+- Checksums for attached archives and installer.
 - A short example of `cliare measure <target> --out .cliare/<target> --profile standard --refresh`.
 
 ## Do Not Publish Yet If
