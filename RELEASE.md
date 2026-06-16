@@ -1,6 +1,6 @@
 # Release Process
 
-This repository is prepared for an initial binary and crates.io release. The current crate version is `0.1.2`.
+This repository is prepared for binary and crates.io releases. The current crate version is `0.1.3`.
 
 ## Channels
 
@@ -32,7 +32,7 @@ The installer supports:
 
 ```sh
 CLIARE_INSTALL_DIR=/usr/local/bin
-CLIARE_VERSION=v0.1.2
+CLIARE_VERSION=v0.1.3
 CLIARE_REPO=modiqo/cliare
 ```
 
@@ -81,9 +81,9 @@ cargo run -- issues list --out .cliare/cliare --format human
 4. Tag the release:
 
 ```sh
-git tag -a v0.1.2 -m "v0.1.2"
+git tag -a v0.1.3 -m "v0.1.3"
 git push origin main
-git push origin v0.1.2
+git push origin v0.1.3
 ```
 
 ## crates.io
@@ -107,7 +107,7 @@ Homebrew distribution is deferred until a tap repository exists. The formula tem
 
 ## GitHub Release
 
-The binary release workflow creates or updates the GitHub release for `v0.1.2`. Confirm it includes:
+The binary release workflow creates or updates the GitHub release for the pushed version tag. Confirm it includes:
 
 - Release notes copied from `CHANGELOG.md`.
 - The curl install command.

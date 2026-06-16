@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.3] - 2026-06-15
+
+Progress logging clarity.
+
+- Adds the probe-budget percentage formula and a concrete `529 / 5000` example to measurement progress logs.
+
 ## [0.1.2] - 2026-06-15
 
 Release packaging fix.

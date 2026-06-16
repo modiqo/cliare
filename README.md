@@ -174,7 +174,7 @@ curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh 
 To install a specific release:
 
 ```sh
-curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.2/install.sh | CLIARE_VERSION=v0.1.2 sh
+curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.3/install.sh | CLIARE_VERSION=v0.1.3 sh
 ```
 
 You can also install with Cargo after the crates.io release:
