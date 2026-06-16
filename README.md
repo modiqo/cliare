@@ -121,17 +121,38 @@ CLIARE turns vague "is this CLI agent-friendly?" feedback into a concrete implem
 
 It shows where agents will struggle with command discovery, help coverage, diagnostics, output contracts, preconditions, and unsafe discovery behavior. Instead of guessing what to improve, maintainers get evidence-backed issues, affected commands, recommendations, and verification commands.
 
+Benefits:
+
+- Catch command-shape drift before it ships.
+- Prioritize fixes by agent impact instead of anecdotal feedback.
+- Add release gates for help coverage, diagnostics, parseable output, and unsafe discovery behavior.
+- Give downstream agent harnesses a measured contract for each release.
+
 ### For Security Reviewers
 
 CLIARE catches undocumented runtime behavior in binaries.
 
 It snapshots filesystem state around each probe and reports persistent side effects from safe-looking commands such as help, version, invalid flag, and output-mode probes. This helps security teams find cache/config writes, credential-like paths, and host/auth behavior before a CLI is exposed to autonomous agents.
 
+Benefits:
+
+- Surface side effects from commands that appear read-only or safe.
+- Separate expected auth, host, network, daemon, and fixture behavior from surprises.
+- Preserve evidence references for review, exception handling, and audit trails.
+- Decide which commands are safe for autonomous use and which require policy, sandboxing, or human approval.
+
 ### For Agent Harness Builders
 
 CLIARE creates a command index that agents can read before exploring.
 
 Harnesses can load `command-index.json` to route through known commands, prefer parseable output contracts, honor preconditions, and avoid rediscovering syntax by trial and error. The result is lower token cost, fewer bad invocations, and more deliberate CLI use.
+
+Benefits:
+
+- Reduce token burn from repeated `--help`, flag-guessing, and error-recovery loops.
+- Route through commands with known preconditions, confidence, and agent suitability.
+- Prefer JSON/YAML output when the agent needs machine-readable state.
+- Keep skills focused on workflow while the command index remains the runtime source of truth.
 
 ## What You Get
 
@@ -520,6 +541,52 @@ The design and implementation notes live under [`docs/`](docs/index.md). Start w
 - [Agent skills installation](docs/guides/agent-skills-installation.md)
 - [CLI benchmark corpus tracker](docs/operations/cli-benchmark-corpus-tracker.md)
 - [Maintainer playbook](docs/guides/maintainer-playbook.md)
+
+## FAQ
+
+### Is CLIARE a binary fuzzer?
+
+No, CLIARE is not a binary fuzzer.
+
+It is a black-box runtime auditor for CLI agent readiness. It measures a released CLI binary the way an agent would encounter it: commands, flags, help behavior, output formats, preconditions, side effects, auth assumptions, and failure modes.
+
+A fuzzer tries to discover crashes or vulnerabilities by generating many unexpected inputs.
+
+CLIARE tries to answer a different question: "Can an autonomous agent use this CLI reliably, safely, and cheaply without rediscovering the whole command surface by trial and error?"
+
+It is closer to an evidence-backed OpenAPI/Swagger generator and readiness scorecard for CLIs than a fuzzer.
+
+### How does a command index save tokens?
+
+A command index lets an agent read the measured command surface before it starts experimenting.
+
+Without an index, the agent has to spend tokens rediscovering the same things over and over: run `--help`, guess subcommands, try flags, hit missing operands, inspect errors, and back up. That loop is expensive because each failed probe consumes tokens, latency, and tool calls.
+
+With `command-index.json`, the harness can route directly through known commands, prefer parseable output modes, honor preconditions, and avoid unsafe discovery paths. The agent still decides what to do, but it starts from evidence instead of guessing.
+
+### Why is a command index different from a skill file?
+
+A skill file teaches intent, workflow, and policy. It can tell an agent how to approach a task.
+
+A command index maps what the CLI actually supports at runtime. It records command paths, flags, positionals, output contracts, preconditions, confidence, side effects, and evidence references.
+
+Agents need both. Skills help with judgment. Command indexes help with navigation.
+
+### What happens when docs, `--help`, and runtime behavior drift?
+
+CLIARE treats the released CLI binary as the operational source of truth.
+
+Docs can be stale. `--help` can be incomplete. The binary can accept flags that are not documented, reject examples that appear in docs, require hidden preconditions, or write files during commands that look safe.
+
+CLIARE does not assume those surfaces agree. It probes the binary, records evidence, and reports where the runtime contract differs from what an agent or maintainer would reasonably expect.
+
+### Who should use CLIARE?
+
+CLI maintainers use CLIARE to turn agent-readiness gaps into a release-time fix queue.
+
+Agent harness builders use CLIARE to load an evidence-backed command map before invoking a CLI.
+
+Security reviewers use CLIARE to find undocumented side effects, host assumptions, auth behavior, and unsafe discovery paths before a CLI is exposed to autonomous agents.
 
 ## License
 
