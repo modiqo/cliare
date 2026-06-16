@@ -805,6 +805,8 @@ impl ProgressLog {
              min_expected_value: {}\n\
              concurrency_limit: {}\n\
              progress: probe-budget percentage while traversal is running; final completion is 100.0%.\n\
+             progress_formula: shown_percent = min(completed / max_probes * 100, 99.0) until complete.\n\
+             progress_example: if completed=529 and max_probes=5000, shown_percent = 529 / 5000 * 100 = 10.58%, logged as 10.6%.\n\
              tail: tail -f {}\n\n",
             self.job_id,
             target.requested.display(),
@@ -1656,6 +1658,12 @@ EOF
             .expect("fresh measurement exposes progress log");
         assert!(job_log_path.is_file());
         let progress = fs::read_to_string(job_log_path).expect("reads progress log");
+        assert!(progress.contains(
+            "progress_formula: shown_percent = min(completed / max_probes * 100, 99.0) until complete."
+        ));
+        assert!(progress.contains(
+            "progress_example: if completed=529 and max_probes=5000, shown_percent = 529 / 5000 * 100 = 10.58%, logged as 10.6%."
+        ));
         assert!(progress.contains("job_created"));
         assert!(progress.contains("scheduled probe=p_000001"));
         assert!(progress.contains("completed probe=p_000001"));
