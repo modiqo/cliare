@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.2] - 2026-06-15
+
+Release packaging fix.
+
+- Excludes generated storybook image assets from crates.io packages to keep uploads below registry limits.
+- Moves the Intel macOS binary release build off the stalled `macos-13` runner label.
+
 ## [0.1.1] - 2026-06-15
 
 Release-readiness update.

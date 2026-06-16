@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_HTTP_MULTIPLEXING: "false"
+
 concurrency:
   group: crates-${{ github.ref }}
   cancel-in-progress: false
