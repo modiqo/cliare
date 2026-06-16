@@ -10,7 +10,7 @@ reliably by agents, maintainers, and security reviewers.
 
 ### 1. CLIs are becoming agent hands
 
-![CLIs are agent hands](assets/storybook/01-agent-hands.png)
+![CLIs are agent hands](../assets/storybook/01-agent-hands.png)
 
 Agents increasingly use CLIs as their hands: the practical surface for reaching
 code hosts, cloud systems, payment services, internal platforms, and local
@@ -23,7 +23,7 @@ cliare metadata --format json
 
 ### 2. CLI surfaces drift as they grow
 
-![Docs, help, and runtime drift](assets/storybook/02-cli-drift.png)
+![Docs, help, and runtime drift](../assets/storybook/02-cli-drift.png)
 
 When a CLI evolves quickly, the docs, `--help`, and the released binary can
 start telling different stories. Humans can work around that drift. Agents tend
@@ -35,7 +35,7 @@ cliare measure mycli --out .cliare/mycli --profile standard --refresh
 
 ### 3. Drift becomes token burn
 
-![Agents burn tokens rediscovering CLI shape](assets/storybook/03-token-burn.png)
+![Agents burn tokens rediscovering CLI shape](../assets/storybook/03-token-burn.png)
 
 Without an evidence-backed command index, an agent harness has to rediscover the
 surface repeatedly: run help, try a flag, hit a missing operand, back up, and
@@ -47,7 +47,7 @@ cliare issues list --out .cliare/mycli --format human
 
 ### 4. CLIARE probes the CLI like an agent would
 
-![CLIARE probes a released CLI in a chosen context](assets/storybook/04-cliare-probes.png)
+![CLIARE probes a released CLI in a chosen context](../assets/storybook/04-cliare-probes.png)
 
 CLIARE exercises the released binary as a black box. You choose the context:
 clean, repository, authenticated, host, fixture-backed, or CI. CLIARE records
@@ -65,7 +65,7 @@ cliare measure mycli \
 
 ### 5. Maintainers get a release-time fix queue
 
-![Maintainers use CLIARE in CI to keep CLI releases aligned](assets/storybook/05-maintainer-ci.png)
+![Maintainers use CLIARE in CI to keep CLI releases aligned](../assets/storybook/05-maintainer-ci.png)
 
 For maintainers, CLIARE turns agent-readiness gaps into a concrete queue:
 missing help, confusing diagnostics, parseable-output gaps, unsafe discovery
@@ -79,7 +79,7 @@ cliare playbook maintainer --target mycli
 
 ### 6. Harnesses get a command index
 
-![Agent harnesses use a command index instead of guessing](assets/storybook/06-agent-index.png)
+![Agent harnesses use a command index instead of guessing](../assets/storybook/06-agent-index.png)
 
 For agent harnesses, CLIARE builds the map: an evidence-backed command index
 that describes command paths, flags, operands, preconditions, output contracts,
@@ -101,7 +101,7 @@ The harness can then load:
 
 ### 7. Skills teach; indexes map
 
-![Skills teach intent, command indexes map the real surface](assets/storybook/07-skills-and-indexes.png)
+![Skills teach intent, command indexes map the real surface](../assets/storybook/07-skills-and-indexes.png)
 
 Skills are useful, but they are not command indexes. A skill can teach intent,
 workflow, and policy. A command index tells the harness what the CLI actually

@@ -157,10 +157,18 @@ The key artifact is `command-index.json`. It records command paths, argv forms, 
 
 ## Install
 
-Install the latest prebuilt binary from GitHub Releases:
+Install from crates.io:
+
+```sh
+cargo install cliare
+cliare metadata --format text
+```
+
+Or install the latest prebuilt binary from GitHub Releases:
 
 ```sh
 curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
+cliare metadata --format text
 ```
 
 The installer detects macOS/Linux and x86_64/aarch64, downloads the matching archive, verifies `SHA256SUMS`, and installs `cliare` into `$HOME/.local/bin` by default.
@@ -174,13 +182,7 @@ curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh 
 To install a specific release:
 
 ```sh
-curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.3/install.sh | CLIARE_VERSION=v0.1.3 sh
-```
-
-You can also install with Cargo after the crates.io release:
-
-```sh
-cargo install cliare
+curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.4/install.sh | CLIARE_VERSION=v0.1.4 sh
 ```
 
 Or install from source:
@@ -465,15 +467,15 @@ The low-pretraining launch corpus focuses on newer and faster-moving CLIs where 
 
 ## Design Packet
 
-The design and implementation notes live under [`docs/`](docs/00-index.md). Start with:
+The design and implementation notes live under [`docs/`](docs/index.md). Start with:
 
-- [Design index](docs/00-index.md)
-- [Runtime evidence for agent-ready CLIs](docs/19-runtime-evidence-for-agent-ready-clis.md)
-- [Persona outcome packets](docs/20-persona-outcome-packets.md)
-- [Agent-ready CLI standard template](docs/22-agent-ready-cli-standard-template.md)
-- [Agent skills installation](docs/23-agent-skills-installation.md)
-- [CLI benchmark corpus tracker](docs/24-cli-benchmark-corpus-tracker.md)
-- [Maintainer playbook](docs/27-maintainer-playbook.md)
+- [Design index](docs/index.md)
+- [Runtime evidence for agent-ready CLIs](docs/papers/runtime-evidence-for-agent-ready-clis.md)
+- [Persona outcome packets](docs/guides/persona-outcome-packets.md)
+- [Agent-ready CLI standard template](docs/guides/agent-ready-cli-standard-template.md)
+- [Agent skills installation](docs/guides/agent-skills-installation.md)
+- [CLI benchmark corpus tracker](docs/operations/cli-benchmark-corpus-tracker.md)
+- [Maintainer playbook](docs/guides/maintainer-playbook.md)
 
 ## License
 

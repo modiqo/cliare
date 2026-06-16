@@ -2,7 +2,7 @@
 
 > **Author:** research@modiqo.ai
 > **Status:** Technical paper
-> **Date:** 2026-06-13
+> **Date:** 2026-06-16
 
 ---
 
@@ -10,7 +10,7 @@
 
 Command-line interfaces are becoming a primary substrate for software agents, build harnesses, and automation systems. They are already installed in developer environments, carry existing authentication state, expose operational authority, and provide a stable bridge between local workflows and remote systems. Yet most CLIs are not measured as machine-operable interfaces. Their discoverability, grammar, output contracts, precondition behavior, and safety properties are usually inferred informally from help text, documentation, examples, and repeated failure.
 
-CLIARE treats a CLI as a black-box runtime system and measures it through the executable as shipped. The system records runtime evidence, infers a probabilistic command-shape catalog, classifies precondition-blocked paths, observes filesystem side effects under bounded probes, and emits scorecards and artifact maps suitable for CI, drift detection, agent navigation, and improvement tracking. This paper presents the motivation, evidence model, inference architecture, score semantics, calibration boundary, and early evaluation strategy for CLIARE. The central claim is simple: CLI-agent-readiness should be a measured property of the released executable, not an assertion in documentation.
+CLIARE treats a CLI as a black-box runtime system and measures it through the executable as shipped. The system records runtime evidence, infers a confidence-scored command-shape catalog, classifies precondition-blocked paths, observes filesystem side effects under bounded probes, and emits scorecards and artifact maps suitable for CI, drift detection, agent navigation, and improvement tracking. This paper presents the motivation, evidence model, inference architecture, score semantics, calibration boundary, and evaluation strategy for CLIARE. The central claim is simple: CLI-agent-readiness should be a measured property of the released executable, not an assertion in documentation.
 
 ## 1. Introduction
 
@@ -32,7 +32,7 @@ $$
 
 Here \(\mathbf{a}\) is the argument vector, \(\eta\) is the environment, \(d\) is the working directory, \(F\) is the filesystem state, \(\tau\) is the terminal state, \(N\) is the network state, \(A\) is the authentication and precondition state, and \(o\) is the resulting observation.
 
-An observation can include exit status, stdout, stderr, duration, created files, modified files, deleted files, spawned process behavior, and classified diagnostics. The true command surface is latent. CLIARE cannot assume that help text is complete, that completion scripts are current, that documented flags are accepted, or that source-code-level command declarations match the installed executable.
+An observation can include exit status, stdout, stderr, duration, spawn failures, created files, modified files, deleted files, and classified diagnostics. The true command surface is latent. CLIARE cannot assume that help text is complete, that completion scripts are current, that documented flags are accepted, or that source-code-level command declarations match the installed executable.
 
 The target measurement problem is to estimate how well an agent can operate `B` under realistic constraints. The measurement must account for:
 
@@ -63,7 +63,7 @@ First, measurement must be black-box. Maintainers should be able to measure the 
 
 Second, inference must be framework-agnostic. CLIs may use clap, cobra, click, argparse, oclif, shell scripts, hand-written parsers, plugin dispatchers, or legacy conventions. A standard cannot privilege one help layout.
 
-Third, every artifact must carry evidence. A command catalog without provenance is another documentation file. CLIARE shape fields must retain confidence, evidence references, runtime state, and model version.
+Third, inferred artifacts must carry evidence. A command catalog without provenance is another documentation file. CLIARE's command and flag claims retain confidence, evidence references, runtime state, and model version.
 
 Fourth, the score must be decomposable. A single total score is useful only if it explains why it moved. Discovery, grammar, execution, output, safety, and recovery should be visible independently.
 
@@ -80,22 +80,27 @@ target binary
   -> fingerprint
   -> bounded probe scheduler
   -> sandboxed process execution
-  -> append-only evidence log
+  -> evidence log
   -> layout and diagnostic observations
-  -> probabilistic claim store
+  -> confidence-scored claims
   -> command-shape catalog
   -> scorecard, reports, and artifact map
 ```
 
 The current reference implementation emits:
 
-- `evidence.jsonl`: append-only runtime observations
+- `evidence.jsonl`: runtime observations for the completed measurement
 - `shape.json`: inferred command-shape catalog
 - `command-index.json`: command-centric navigation table
+- `command-index.md`: human-readable command index
 - `issues.json`: reviewable issue ledger
+- `issues.md`: human-readable issue ledger
+- `issue-dispositions.json`: maintainer decisions recorded with `cliare issues mark`, when present
 - `persona-*.json` and `persona-*.md`: persona outcome packets
 - `scorecard.json`: score, subscores, coverage, findings, and runtime metadata
 - `report.md`: human-readable measurement report
+- `README.md`: local artifact guide
+- `AGENT_SKILL.md`: artifact-local review workflow for agents
 - `summary.md`: compact CI summary
 - `findings.sarif`: code-scanning compatible findings
 - `junit.xml`: CI test-report compatible findings
@@ -104,6 +109,14 @@ The current reference implementation emits:
 - `artifact-map.json`: optional directory manifest generated by `cliare describe <folder> --write`
 
 The artifact map is not a scoring input. It records artifact kind, file roles, schema versions, missing required artifacts, current job state, and recommended navigation order for agents and humans.
+
+Maintainers can use the current role playbooks and disposition workflow as the feedback loop over these artifacts:
+
+```sh
+cliare playbook maintainer --target mycli
+cliare issues list --out .cliare/mycli --format human
+cliare issues mark <issue-id> --out .cliare/mycli --status intentional --reason "Documented behavior."
+```
 
 CI use is intentionally direct:
 
@@ -136,7 +149,7 @@ confidence: 0.91
 evidence: [e_000025, e_000038, e_000046]
 ```
 
-This distinction is the core of the architecture. It allows CLIARE to rescore old evidence under a new model, inspect contradictions, explain claims, and avoid treating one parser pass as ground truth.
+This distinction is the core of the architecture. It lets CLIARE inspect contradictions, explain claims, and avoid treating one parser pass as ground truth. Future replay and rescore commands should build on the same separation, but current measurement runs still produce their derived artifacts during the run rather than through a standalone replay workflow.
 
 Evidence is gathered from safe probes first:
 
@@ -160,7 +173,7 @@ target <candidate> --<invalid-flag>
 target <candidate> <safe-output-mode> --help
 ```
 
-The scheduler ranks probes by expected information value subject to risk, cost, depth, and probe-budget constraints.
+The scheduler ranks probes by expected information value subject to depth, convergence, deduplication, and probe-budget constraints. Output-mode probes are skipped when required operands need declared fixtures.
 
 ## 6. Inference Model
 
@@ -189,7 +202,7 @@ $$
   \prod_i \exp(w_i)
 $$
 
-The model is deliberately compact. It is explainable, deterministic for a fixed evidence set, and easy to calibrate later against truth sets. Candidate command rows provide weak positive evidence. Runtime help confirmation provides strong positive evidence. A clean unknown-command diagnostic provides negative evidence. A runtime precondition diagnostic is not command absence; it is evidence that the command was recognized but blocked by a condition such as authentication, local workspace context, required operands, fixture data, or runtime dependencies.
+The model is deliberately compact. It is explainable, deterministic for a fixed evidence set and model artifact, and can be calibrated later against truth sets. Candidate command rows provide weak positive evidence. Runtime help confirmation provides strong positive evidence. A runtime precondition diagnostic is not command absence; it is evidence that the command was recognized but blocked by a condition such as authentication, local workspace context, required operands, fixture data, or runtime dependencies.
 
 This treatment is important for real CLIs. A command whose help is gated by login, profile, current directory, or plugin installation should not be counted as nonexistent. It should be represented as:
 
@@ -271,42 +284,47 @@ A public scorecard should include:
 - output-contract coverage
 - side-effect evidence
 - precondition-blocked command counts
-- artifact hashes
+- artifact paths and hashes when available
 - verification level
 
-Publishing should be scorecard-first, not binary-first. The hosted layer can display trends, badges, leaderboards, and historical drift without requiring arbitrary CLI execution in modiqo infrastructure. Certified public ranking is a later layer that requires calibrated profiles and verification controls.
+Publishing should be scorecard-first, not binary-first. An optional hosted layer can display trends, badges, leaderboards, and historical drift without requiring arbitrary CLI execution in modiqo infrastructure. Certified public ranking is a later layer that requires calibrated profiles and verification controls.
 
-## 10. Preliminary Evaluation
+## 10. Evaluation Strategy
 
-The current reference implementation has been exercised against synthetic fixtures and a local real-CLI corpus. The synthetic suite covers command inference, runtime false-positive rejection, precondition-blocked help, cache reuse, guard policies, sandbox isolation, parseable output, malformed output, clean probes, cache writes, credential-like writes, SARIF, JUnit, CI summaries, and serial-versus-concurrent traversal equivalence.
+The current reference implementation is evaluated through synthetic fixtures, CLIARE-on-CLIARE dogfooding, and local real-CLI benchmark corpora.
 
-A standard-profile CLIARE-on-CLIARE run produced:
+The synthetic suite covers:
 
-| Target | Score | Probes | Commands discovered | Commands runtime-confirmed | Output contracts | Parse successes | Findings | Side effects | Traversal complete |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| cliare | 97 | 23 | 5 | 5 | 1 | 1 | 0 | 0 | true |
+- command inference
+- runtime false-positive rejection
+- precondition-blocked help
+- cache reuse
+- guard policies
+- sandbox isolation
+- parseable output
+- malformed output
+- clean probes
+- cache writes
+- credential-like writes
+- SARIF and JUnit output
+- CI summaries
+- serial-versus-concurrent traversal equivalence
 
-This result is not presented as a benchmark claim about the ecosystem. It is a sanity check for the reference implementation: the tool can measure itself through the generic path, identify a parseable metadata contract, avoid false output-contract discoveries, and complete traversal under the standard profile.
+CLIARE-on-CLIARE is a dogfood check, not a benchmark claim about the ecosystem. It verifies that the tool can measure itself through the generic path, identify its own parseable metadata contract, avoid obvious false output-contract discoveries, and complete traversal under bounded profiles.
 
 ### Exploratory Real-CLI Corpus
 
-A local corpus run was also performed against CLIARE, rote, git, supabase, gh, cargo, npm, docker, and deno. These measurements are not presented as a public ranking. They are included to show that the measurement pipeline exercises heterogeneous real CLI surfaces and exposes pressure signals before certification calibration.
+Local benchmark manifests exercise heterogeneous real CLI surfaces such as CLIARE, source-control tools, package managers, cloud CLIs, deployment CLIs, and large agent-facing CLIs. These measurements are not public rankings. They are useful because they expose pressure signals before certification calibration:
 
-The run used `cliare-score-v0`, the local benchmark manifest, target concurrency 3, and the maintainer's local environment on 2026-06-13. It measured 9 targets, skipped 0, failed 0, completed 2703 probes, observed a 66.7% traversal completion rate, and exhausted the probe budget on 33.3% of targets. It also observed 19 precondition-blocked probes.
+- probe-budget exhaustion on large or branching surfaces
+- traversal depth limits
+- precondition-blocked commands
+- output contracts that need safe fixtures
+- machine-readable modes that advertise but do not parse under safe probes
+- discovery-time filesystem side effects
+- score movement across model and implementation changes
 
-| Target | Score | Probes | Traversal complete | Budget exhausted | Machine contracts | Parse successes | Findings | Side-effect files |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| cliare | 97 | 23 | true | false | 1 | 1 | 0 | 0 |
-| rote | 63 | 768 | false | true | 21 | 0 | 4 | 993 |
-| git | 92 | 73 | true | false | 0 | 0 | 1 | 0 |
-| supabase | 90 | 403 | true | false | 0 | 0 | 1 | 0 |
-| gh | 88 | 512 | false | true | 44 | 0 | 1 | 0 |
-| cargo | 92 | 152 | true | false | 0 | 0 | 2 | 1 |
-| npm | 36 | 7 | true | false | 0 | 0 | 2 | 530 |
-| docker | 86 | 253 | true | false | 0 | 0 | 1 | 0 |
-| deno | 72 | 512 | false | true | 57 | 0 | 4 | 2876 |
-
-The table is most useful when read by column, not as a leaderboard. Probe-budget exhaustion on `rote`, `gh`, and `deno` indicates large or branching surfaces that need deeper profiles or improved convergence. Side-effect files on `rote`, `npm`, and `deno` show why discovery-time filesystem evidence matters. The gap between discovered machine-readable contracts and parse successes shows where safe output-mode probing and command-specific fixtures need to mature. These are engineering signals, not certified quality judgments.
+Real-corpus numbers should be read from current benchmark artifacts rather than copied into this paper. The benchmark artifacts preserve target versions, runtime context, profile, probe budgets, traversal state, score model, and per-target evidence. Hard-coded local snapshots age too quickly to serve as a stable research claim.
 
 ## 11. Calibration Boundary
 
@@ -361,7 +379,7 @@ CLIARE artifacts can support agent systems in four ways.
 
 First, the shape catalog and command index form a navigation index. They reduce blind exploration and give the agent confidence-weighted command, flag, output, and precondition information.
 
-Second, the evidence log is a training corpus. It records how real CLIs expose commands, reject invalid invocations, advertise output formats, require preconditions, and drift across releases.
+Second, the evidence log can serve as an evaluation and learning corpus when projects choose to share it. It records how real CLIs expose commands, reject invalid invocations, advertise output formats, require preconditions, and drift across releases.
 
 Third, the scorecard is a quality signal. It helps harness builders choose which CLIs are safer to expose to agents and helps maintainers improve the command surfaces agents already use.
 
@@ -387,7 +405,7 @@ First, truth sets. CLIARE needs a maintained corpus of synthetic and real CLIs w
 
 Second, calibration. Evidence weights should be tuned against truth sets and evaluated with proper scoring rules. Confidence intervals should be reported for certified profiles.
 
-Third, replay and rescore. Evidence logs should support new scoring models without rerunning probes, allowing model evolution to be audited and reproduced.
+Third, replay and rescore. Evidence logs should support new scoring models without rerunning probes, allowing model evolution to be audited and reproduced. This is future work; the current implementation writes evidence and derived artifacts during measurement.
 
 Fourth, deeper safety analysis. The current filesystem side-effect model should expand toward dry-run detection, destructive verb classification, network behavior, auth scopes, and policy-controlled fixture execution.
 
@@ -395,7 +413,7 @@ Fifth, harness integration. Shape catalogs should be easy for agent planners, to
 
 ## 15. Conclusion
 
-CLIs are becoming an operational interface for agents, but the ecosystem lacks a standard way to measure whether a CLI is ready for that role. CLIARE frames CLI-agent-readiness as a runtime measurement problem. It records evidence, infers command shape with probabilistic confidence, scores decomposed readiness dimensions, and integrates with CI so maintainers can improve over time.
+CLIs are becoming an operational interface for agents, but the ecosystem lacks a standard way to measure whether a CLI is ready for that role. CLIARE frames CLI-agent-readiness as a runtime measurement problem. It records evidence, infers command shape with model confidence, scores decomposed readiness dimensions, and integrates with CI so maintainers can improve over time.
 
 The practical value is immediate: detect drift, catch regressions, find parseability gaps, expose unsafe discovery behavior, and give agents a better map. The long-term value is a shared measurement standard for command surfaces that are increasingly central to software automation.
 

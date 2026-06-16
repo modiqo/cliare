@@ -1,7 +1,7 @@
 # 22 - Agent-Ready CLI Standard Template
 
 > **Scope:** Reference behavior template for CLIs that want strong CLIARE scores and reliable agent integration.
-> **Status:** Standard Draft
+> **Status:** Maintainer guidance. This is not a certified conformance standard.
 
 ---
 
@@ -36,29 +36,29 @@ CLIARE extends those conventions for agent readiness:
 
 ---
 
-## Required Runtime Surface
+## Baseline Runtime Surface
 
-Every CLI should support these root-level commands or flags:
+Every CLI should support root help and version probes without setup:
 
 ```text
 mycli --help
 mycli -h
-mycli help
 mycli --version
-mycli version
 ```
 
-Recommended behavior:
+`mycli help` and `mycli version` are useful compatibility forms, but they are not the canonical contract.
+
+Recommended root behavior:
 
 | Invocation | Exit | stdout | stderr | Side effects |
 |---|---:|---|---|---|
 | `mycli --help` | `0` | root help | empty unless warning is needed | none |
 | `mycli -h` | `0` | root help | empty unless warning is needed | none |
-| `mycli help` | `0` | root help | empty unless warning is needed | none |
 | `mycli --version` | `0` | version string or object | empty | none |
-| `mycli version` | `0` | version string or object | empty | none |
 
 `--help` and `--version` should never require authentication, profile setup, network access, a writable config directory, or a project checkout.
+
+CLIARE currently seeds root `help` and `version` probes because many CLIs support them. For command paths, direct `<command> --help` is the canonical confirmation probe. `help <command path>` is an optional compatibility form; if it fails while direct command help succeeds, CLIARE treats that as lower-severity compatibility feedback rather than unavailable help.
 
 ---
 
@@ -118,6 +118,7 @@ Rules:
 - Do not put environment variable tables or enum values under `COMMANDS`.
 - If a command has aliases, document the canonical command and aliases.
 - If help for an alias prints the canonical usage, keep the alias listed in the parent command table.
+- Prefer direct command help such as `mycli project list --help`. Add `mycli help project list` compatibility when it is easy, but do not make it the only help form.
 
 ---
 
@@ -140,10 +141,10 @@ COMMANDS
   project        Manage projects
   auth           Manage authentication
 
-Run `mycli help <command>` for details.
+Run `mycli <command> --help` for details.
 ```
 
-If the root lists only first-level commands, each parent command must list its children.
+If the root lists only first-level commands, each parent command should list its children.
 
 Anti-patterns:
 
@@ -246,11 +247,13 @@ Option A: help takes precedence and prints prose help.
 
 Option B: output mode applies and prints machine-readable help metadata.
 
-The behavior must be consistent and documented. CLIARE treats Option B as stronger for agent harnesses because it enables schema discovery, but Option A is not a runtime output failure. The direct runtime contract is measured with:
+The behavior must be consistent and documented. CLIARE treats Option B as stronger for agent harnesses because it enables schema discovery, but Option A is not a runtime output failure. The direct runtime contract is measured with a safe data-producing invocation such as:
 
 ```sh
 mycli project list --json
 ```
+
+If a command requires operands, CLIARE will not invent values. It may report `needs_fixture` until the project provides safe sample operands, a dry-run path, or another fixture.
 
 ---
 
@@ -301,7 +304,7 @@ help
 version
 invalid child probe
 invalid flag probe
-machine-readable metadata probe
+safe output-mode probes when no required operands are missing
 ```
 
 Rules:
@@ -375,7 +378,9 @@ Minimum shape:
 }
 ```
 
-This command is optional. CLIARE must work without it. When present, it gives agents and CLIARE stronger evidence than prose help alone.
+This command is optional. CLIARE must work without it. When present, it gives agents a stronger contract than prose help alone and gives future tooling a natural machine-readable surface.
+
+Current CLIARE does not require this exact schema and does not depend on metadata ingestion for command discovery. Treat this as a recommended agent-facing contract that can complement the runtime evidence CLIARE already collects from help, diagnostics, output probes, and side-effect observation.
 
 ---
 
@@ -432,16 +437,21 @@ For public projects, publish:
 
 - `scorecard.json`
 - `issues.md`
+- `command-index.json`
+- `command-index.md`
 - `persona-oss.md`
 - badge data when stable
 
+Avoid certified-ranking language until calibrated models, certified profiles, and public verification rules exist.
+
 ---
 
-## Minimum Conformance Checklist
+## Minimum Baseline Checklist
 
-A CLI is CLIARE-ready when:
+A CLI has a strong baseline when:
 
-- root `--help`, `-h`, `help`, `--version`, and `version` work without auth
+- root `--help`, `-h`, and `--version` work without auth
+- root `help` and `version` work when the CLI convention supports them
 - every command has command-specific help
 - every command help includes full usage
 - required and optional operands are visible

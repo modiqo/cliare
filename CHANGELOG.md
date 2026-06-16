@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.4] - 2026-06-16
+
+Documentation and release install clarity.
+
+- Reorganizes the design packet into themed documentation folders with numberless file names.
+- Moves the technical paper source and generated PDF under `docs/papers/`.
+- Updates README install instructions for crates.io and GitHub Releases curl installation.
+- Updates documentation links after the docs reorganization.
+
 ## [0.1.3] - 2026-06-15
 
 Progress logging clarity.

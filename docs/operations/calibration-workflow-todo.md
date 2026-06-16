@@ -1,13 +1,13 @@
 # 25 - Calibration Workflow TODO
 
 > **Scope:** Near-term implementation plan for turning CLIARE measurement artifacts into calibrated model evaluation.
-> **Status:** TODO
+> **Status:** Future implementation tracker. No `cliare calibrate` command exists today.
 
 ---
 
 ## Purpose
 
-This document records the calibration workflow that should be added before CLIARE claims a certified public score model.
+This document is relevant and should stay because it records the missing workflow between today's evidence-backed score and a future certified score model.
 
 CLIARE already produces runtime evidence, command shape, command indexes, issue ledgers, persona reports, scorecards, and benchmark reports. Those artifacts are sufficient to start calibration work, but they are not a substitute for ground truth. Calibration must compare CLIARE predictions against human-reviewed labels rather than training the system to agree with its own current scores.
 
@@ -18,6 +18,8 @@ measure -> scaffold truth set -> label -> validate corpus -> evaluate model -> r
 ```
 
 The workflow should make `cliare-score-v0` measurable against truth sets and create the path toward a future `cliare-score-v1`. It should not prematurely publish `cliare-score-v1`.
+
+This document is not a user guide for current CLI commands. Treat all `cliare calibrate ...` commands below as proposed future commands until they are implemented and visible in `cliare --help`.
 
 ---
 
@@ -46,6 +48,8 @@ src/score_model.rs
 
 This is the right foundation. We can audit model identity, model hash, dimension weights, scoring coefficients, priors, evidence weights, thresholds, and calibration requirements. The next step is not to rename the model to v1. The next step is to measure whether the model is right.
 
+The current `cliare benchmark` command writes `benchmark.json` and `benchmark.md` with aggregate fields under a `calibration` object. In the current implementation those fields are corpus QA telemetry: score ranges, expected-band pass rates, traversal completion, budget exhaustion, precondition counts, output-contract counts, and side-effect counts. They are useful for regression and corpus review, but they are not truth-set calibration.
+
 ---
 
 ## Calibration Levels
@@ -62,7 +66,7 @@ Only L2 should support a certified score model.
 
 ---
 
-## Command Surface TODO
+## Proposed Command Surface TODO
 
 Add a `calibrate` command group with focused subcommands.
 
@@ -70,7 +74,7 @@ Add a `calibrate` command group with focused subcommands.
 
 Scaffold a truth-set directory from an existing measurement artifact.
 
-Example:
+Proposed example:
 
 ```sh
 cliare calibrate init \
@@ -91,7 +95,7 @@ Responsibilities:
 
 Validate corpus structure and labeling readiness.
 
-Example:
+Proposed example:
 
 ```sh
 cliare calibrate check benchmarks/corpus
@@ -111,7 +115,7 @@ Responsibilities:
 
 Compare CLIARE predictions against truth labels and emit calibration metrics.
 
-Example:
+Proposed example:
 
 ```sh
 cliare calibrate evaluate \
@@ -172,7 +176,7 @@ benchmarks/corpus/<cli-id>/
 The tracker remains:
 
 ```text
-docs/24-cli-benchmark-corpus-tracker.md
+docs/operations/cli-benchmark-corpus-tracker.md
 ```
 
 ---

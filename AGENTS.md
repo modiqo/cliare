@@ -6,10 +6,10 @@ CLIARE should be written as a world-class Rust project: clear, boring where poss
 
 Implementation should follow the design packet in `docs/`, especially:
 
-- `docs/06-mathematical-model.md`
-- `docs/10-checkpointing-and-resume.md`
-- `docs/13-rust-runtime-engineering.md`
-- `docs/14-operational-contracts.md`
+- `docs/model/computational-scoring-model.md`
+- `docs/architecture/checkpointing-and-resume.md`
+- `docs/architecture/rust-runtime-engineering.md`
+- `docs/architecture/operational-contracts.md`
 
 ## Rust Standards
 
