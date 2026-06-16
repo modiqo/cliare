@@ -2,7 +2,7 @@
 
 **CLIARE audits command-line interfaces for agent readiness.**
 
-It is like OpenAPI/Swagger for CLIs, but generated from runtime evidence rather than hand-written docs.
+> It is like OpenAPI/Swagger for CLIs, but generated from runtime evidence rather than hand-written docs.
 
 Agents increasingly use terminals as their operating surface, but most CLIs were designed for humans reading help text. An agent harness needs a different contract before it spends tokens trying commands:
 
