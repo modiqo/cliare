@@ -7,6 +7,7 @@ use tokio::fs;
 use crate::artifact_guide;
 use crate::artifacts::{
     COMMAND_INDEX_JSON, EVIDENCE_JSONL, ISSUES_JSON, ISSUES_MD, SCORECARD_JSON, SHAPE_JSON,
+    write_atomic,
 };
 use crate::cli::{ReportArea, ReportArgs, ReportFormat};
 use crate::context;
@@ -209,7 +210,7 @@ pub async fn write_all_persona_reports(out_dir: &Path) -> Result<PersonaArtifact
 }
 
 async fn write_persona_artifact(path: &Path, bytes: &[u8]) -> Result<()> {
-    fs::write(path, bytes)
+    write_atomic(path, bytes)
         .await
         .map_err(|source| CliareError::WritePersonaOutcome {
             path: path.to_path_buf(),

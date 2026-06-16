@@ -70,7 +70,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 |---|---|---|
 | [System Architecture](architecture/system-architecture.md) | Components, data flow, storage, CLI commands, plugin boundary | Probe -> Evidence -> Inference -> Shape -> Score -> Report |
 | [Probe Sandbox Runtime](architecture/probe-sandbox-runtime.md) | How CLIARE safely exercises arbitrary binaries | Temp HOME, network policy, filesystem diffing, timeouts, profiles |
-| [Checkpointing and Resume](architecture/checkpointing-and-resume.md) | Cache reuse, detached jobs, progress logs, artifact lifecycle, and future resume direction | Artifact cache and detached jobs are current; probe-level resume is future work |
+| [Checkpointing and Resume](architecture/checkpointing-and-resume.md) | Cache reuse, detached jobs, progress logs, artifact lifecycle, and checkpoint behavior | Artifact cache, detached jobs, and internal probe-level resume are current; public replay/rescore is future work |
 | [Rust Runtime Engineering](architecture/rust-runtime-engineering.md) | Current Rust crate layout, bounded Tokio probing, sandbox/process execution, cache/jobs, and runtime invariants | Single-crate implementation with deterministic planner, typed errors, and bounded subprocess execution |
 | [Operational Contracts](architecture/operational-contracts.md) | Current cache, runtime context, guard, policy, sandbox, dependency, score-model, and reproducibility contracts | Artifact cache, guard, policy, and contexts are current; certification and replay are future work |
 
@@ -90,6 +90,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | [CI, Publishing, and Calibrated Leaderboards](operations/ci-leaderboard-and-publishing.md) | Local CI execution, evidence-backed scorecard publishing, badge strategy | modiqo hosts artifacts and scorecards, not untrusted binary execution; ranking waits for calibration |
 | [QA, Benchmarking, and Calibration](operations/qa-benchmarking-and-calibration.md) | Test strategy, benchmark corpus, fixtures, ground truth | Synthetic CLIs plus real CLIs with human-verified truth sets |
 | [Calibration and Leaderboard Authority](operations/calibration-and-leaderboard-authority.md) | Truth corpus, calibration metrics, certified profiles, provenance, anti-gaming, and leaderboard authority requirements | Public ranking requires calibrated models, stability reports, verification levels, and reproducible certified profiles |
+| [Hostile-Binary Containment Command Playbook](operations/hostile-binary-containment-command-playbook.md) | Concrete commands for validating future containment backends and classifying observed actions | Contain before classifying; current isolated mode is not hostile-binary containment |
 | [CLI Benchmark Corpus Tracker](operations/cli-benchmark-corpus-tracker.md) | Current benchmark manifests, low-pretraining launch corpus, vendor candidates, and backlog coverage | Manifests are source of truth; expected bands are QA signals, not calibrated truth labels |
 | [Calibration Workflow TODO](operations/calibration-workflow-todo.md) | Future implementation tracker for proposed `calibrate init`, `calibrate check`, and `calibrate evaluate` commands | Truth sets and metrics come before fitting or `cliare-score-v1` certification |
 
@@ -208,7 +209,7 @@ CLIARE should produce durable artifacts that separate evidence, inference, comma
 
 The artifact map is the directory-level navigation contract. It describes the folder kind, file roles, schemas, required and missing artifacts, current job state, and recommended inspection order.
 
-The evidence log is the raw observation record for the completed measurement. Current runs rewrite it on fresh measurement; replay and resume are future work.
+The evidence log is the raw observation record for the completed measurement. Active runs write in-progress evidence and compatible interrupted measurements can resume internally; public replay and rescore commands are future work.
 
 The shape catalog is the raw inferred command surface.
 

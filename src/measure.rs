@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::fs::{self, File, OpenOptions};
@@ -20,8 +21,8 @@ use crate::cli::MeasureArgs;
 use crate::context::{self, RuntimeContext, RuntimeContextInput};
 use crate::error::{CliareError, Result};
 use crate::evidence::{
-    EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled, ProcessCompleted, ProcessStatus,
-    RunFinished, RunStarted,
+    EVIDENCE_IN_PROGRESS_PREFIX, EvidenceKind, EvidenceWriter, ProbeIntent, ProbeScheduled,
+    ProcessCompleted, ProcessStatus, RunFinished, RunStarted,
 };
 use crate::fingerprint::{TargetFingerprint, fingerprint_target};
 use crate::observation::ShapeObservation;
@@ -31,12 +32,14 @@ use crate::planner::{
 };
 use crate::process::{ProbeSpec, TargetProcess};
 use crate::report::{self, PersonaArtifactSummary};
-use crate::sandbox::Sandbox;
+use crate::sandbox::{Sandbox, SnapshotLimits};
 use crate::score::{self, ScoreRunContext};
 use crate::shape;
 
 const MEASUREMENT_CACHE_SCHEMA_VERSION: &str = "cliare.measure-cache.v1";
+const MEASUREMENT_CHECKPOINT_SCHEMA_VERSION: &str = "cliare.measure-checkpoint.v1";
 const MEASUREMENT_ENGINE: &str = "cliare-measure-v0";
+const MEASUREMENT_CHECKPOINT_JSON: &str = "measure-checkpoint.json";
 static MEASURE_JOB_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
@@ -75,6 +78,14 @@ pub struct MeasurementFacts {
     pub sandbox_home: PathBuf,
     pub sandbox_workdir: PathBuf,
     pub sandbox_env_policy: String,
+    #[serde(default)]
+    pub snapshot_max_files: usize,
+    #[serde(default)]
+    pub snapshot_max_directories: usize,
+    #[serde(default)]
+    pub snapshot_max_hash_bytes: u64,
+    #[serde(default)]
+    pub hostile_binary_containment: bool,
     pub score_total: f64,
     pub score_measured_weight: f64,
     pub score_max_weight: f64,
@@ -117,6 +128,8 @@ pub struct MeasurementFacts {
     pub side_effect_files_total: usize,
     pub side_effect_probe_count: usize,
     pub credential_like_side_effects: usize,
+    #[serde(default)]
+    pub side_effect_scan_truncated: bool,
     pub observed_max_depth: usize,
     pub traversal_profile: String,
     pub max_depth: usize,
@@ -248,9 +261,20 @@ impl MeasurementSummary {
                 "  credential-like paths: {}",
                 self.credential_like_side_effects
             ),
+            format!("  scanner truncated: {}", self.side_effect_scan_truncated),
+            format!("  scanner max files: {}", self.snapshot_max_files),
+            format!(
+                "  scanner max directories: {}",
+                self.snapshot_max_directories
+            ),
+            format!("  scanner max hash bytes: {}", self.snapshot_max_hash_bytes),
             "runtime isolation:".to_owned(),
             format!("  sandbox profile: {}", self.sandbox_profile),
             format!("  env policy: {}", self.sandbox_env_policy),
+            format!(
+                "  hostile binary containment: {}",
+                self.hostile_binary_containment
+            ),
             format!("  sandbox root: {}", self.sandbox_root.display()),
             format!("  sandbox home: {}", self.sandbox_home.display()),
             format!("  sandbox workdir: {}", self.sandbox_workdir.display()),
@@ -359,12 +383,17 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     let max_probes = args.resolved_max_probes();
     let min_expected_value = args.resolved_min_expected_value();
     let concurrency_limit = args.resolved_concurrency();
-    let profile = ProbeProfile::from_args(
-        &args,
+    let snapshot_limits = args.snapshot_limits();
+    let resolved_profile = ResolvedProbeProfile {
         max_depth,
         max_probes,
         min_expected_value,
         concurrency_limit,
+        snapshot_limits,
+    };
+    let profile = ProbeProfile::from_args(
+        &args,
+        resolved_profile,
         args.execution_mode.label(),
         runtime_context.clone(),
     );
@@ -386,6 +415,18 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             summary.context_compare_path = Some(args.out.join(CONTEXT_COMPARE_MD));
         }
         return Ok(summary);
+    }
+
+    remove_stale_cache_manifest(&artifact_dir).await?;
+    let resume_checkpoint = if args.refresh {
+        remove_measurement_checkpoint(&artifact_dir).await?;
+        None
+    } else {
+        read_resume_checkpoint(&artifact_dir, &target, &profile).await?
+    };
+    if resume_checkpoint.is_none() {
+        remove_measurement_checkpoint(&artifact_dir).await?;
+        cleanup_abandoned_in_progress_files(&artifact_dir).await?;
     }
 
     let mut progress = ProgressLog::create(
@@ -439,10 +480,11 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         )
         .await?;
 
-    let sandbox = Sandbox::create_with_profile(
+    let sandbox = Sandbox::create_with_profile_and_limits(
         &artifact_dir,
         runtime_context.workdir.as_deref(),
         args.execution_mode,
+        snapshot_limits,
     )
     .await?;
     progress
@@ -455,18 +497,38 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             ),
         )
         .await?;
-    let mut evidence = EvidenceWriter::create(&artifact_dir).await?;
-    progress.message(0, "evidence_log_created").await?;
+    let mut evidence = if let Some(checkpoint) = &resume_checkpoint {
+        progress
+            .message(
+                checkpoint.probes_completed,
+                format!(
+                    "resume_checkpoint_loaded probes_completed={} evidence={}",
+                    checkpoint.probes_completed,
+                    checkpoint.evidence_path.display()
+                ),
+            )
+            .await?;
+        EvidenceWriter::resume(
+            &artifact_dir,
+            checkpoint.evidence_path.clone(),
+            checkpoint.next_event_id,
+        )
+        .await?
+    } else {
+        let mut evidence = EvidenceWriter::create(&artifact_dir).await?;
+        progress.message(0, "evidence_log_created").await?;
 
-    evidence
-        .append(EvidenceKind::RunStarted(RunStarted {
-            target: target.clone(),
-            artifact_dir: artifact_dir.clone(),
-            runtime_context: runtime_context.clone(),
-            sandbox: sandbox.metadata().clone(),
-        }))
-        .await?;
-    progress.message(0, "run_started_evidence_written").await?;
+        evidence
+            .append(EvidenceKind::RunStarted(RunStarted {
+                target: target.clone(),
+                artifact_dir: artifact_dir.clone(),
+                runtime_context: runtime_context.clone(),
+                sandbox: sandbox.metadata().clone(),
+            }))
+            .await?;
+        progress.message(0, "run_started_evidence_written").await?;
+        evidence
+    };
 
     let binary_name = target_binary_name(&target);
     let mut planner = DeterministicPlanner::with_policy(
@@ -474,12 +536,22 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         ConvergencePolicy::new(min_expected_value),
         invalid_token_seed(&binary_name),
     );
+    let resume_state = resume_checkpoint.map(TraversalResume::from);
+    if let Some(resume) = &resume_state {
+        planner.mark_seen(resume.completed_probes());
+    }
     planner.seed(bootstrap_probes(&target));
+    if let Some(resume) = &resume_state {
+        let observations = resume.observations();
+        let claims = ClaimSet::from_observations(&binary_name, &observations);
+        planner.extend_from_claims(&claims);
+    }
     let process = TargetProcess::new(
         target.resolved.clone(),
         args.timeout(),
         args.output_limit_bytes,
     );
+    let evidence_path = evidence.path().to_path_buf();
     let traversal = match run_traversal(TraversalContext {
         target: &target,
         sandbox: &sandbox,
@@ -488,6 +560,13 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         progress: &mut progress,
         planner: &mut planner,
         binary_name: &binary_name,
+        checkpoint: CheckpointWriter {
+            path: artifact_dir.join(MEASUREMENT_CHECKPOINT_JSON),
+            target: target.clone(),
+            profile: profile.clone(),
+            evidence_path,
+        },
+        resume: resume_state,
         limits: TraversalLimits {
             max_probes,
             concurrency_limit,
@@ -516,6 +595,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             probes_completed: traversal.probes_completed,
         }))
         .await?;
+    evidence.commit().await?;
     progress
         .message(traversal.probes_completed, "run_finished_evidence_written")
         .await?;
@@ -601,6 +681,10 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             sandbox_home: score_artifacts.sandbox_home,
             sandbox_workdir: score_artifacts.sandbox_workdir,
             sandbox_env_policy: score_artifacts.sandbox_env_policy.to_owned(),
+            snapshot_max_files: score_artifacts.snapshot_max_files,
+            snapshot_max_directories: score_artifacts.snapshot_max_directories,
+            snapshot_max_hash_bytes: score_artifacts.snapshot_max_hash_bytes,
+            hostile_binary_containment: score_artifacts.hostile_binary_containment,
             score_total: score_artifacts.total,
             score_measured_weight: score_artifacts.measured_weight,
             score_max_weight: score_artifacts.max_weight,
@@ -630,6 +714,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             side_effect_files_total: score_artifacts.side_effect_files_total,
             side_effect_probe_count: score_artifacts.side_effect_probe_count,
             credential_like_side_effects: score_artifacts.credential_like_side_effects,
+            side_effect_scan_truncated: score_artifacts.side_effect_scan_truncated,
             observed_max_depth: score_artifacts.observed_max_depth,
             traversal_profile: score_artifacts.traversal_profile.to_owned(),
             max_depth: score_artifacts.max_depth,
@@ -660,10 +745,11 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
     progress
         .message(traversal.probes_completed, "artifact_guides_written")
         .await?;
-    write_cache_manifest(&artifact_dir, &summary, profile).await?;
+    write_cache_manifest(&artifact_dir, &summary, profile, progress.job_id()).await?;
     progress
         .message(traversal.probes_completed, "measure_cache_written")
         .await?;
+    remove_measurement_checkpoint(&artifact_dir).await?;
     if runtime_context.is_context_suite_measurement() {
         let _ = context::refresh_context_suite(&args.out).await?;
         summary.context_suite_path = Some(args.out.join(CONTEXT_SUITE_JSON));
@@ -701,6 +787,8 @@ struct TraversalContext<'a> {
     progress: &'a mut ProgressLog,
     planner: &'a mut DeterministicPlanner,
     binary_name: &'a str,
+    checkpoint: CheckpointWriter,
+    resume: Option<TraversalResume>,
     limits: TraversalLimits,
 }
 
@@ -708,6 +796,100 @@ struct TraversalContext<'a> {
 struct TraversalLimits {
     max_probes: usize,
     concurrency_limit: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TraversalResume {
+    completed: Vec<CheckpointObservation>,
+    probes_scheduled: usize,
+    probes_completed: usize,
+    rounds: usize,
+}
+
+impl TraversalResume {
+    fn observations(&self) -> Vec<ShapeObservation> {
+        self.completed
+            .iter()
+            .map(|entry| entry.observation.clone())
+            .collect()
+    }
+
+    fn completed_probes(&self) -> impl Iterator<Item = ProbeSpec> + '_ {
+        self.completed.iter().map(|entry| entry.probe.clone())
+    }
+}
+
+impl From<MeasurementCheckpoint> for TraversalResume {
+    fn from(checkpoint: MeasurementCheckpoint) -> Self {
+        Self {
+            completed: checkpoint.completed,
+            probes_scheduled: checkpoint.probes_scheduled,
+            probes_completed: checkpoint.probes_completed,
+            rounds: checkpoint.rounds,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CheckpointWriter {
+    path: PathBuf,
+    target: TargetFingerprint,
+    profile: ProbeProfile,
+    evidence_path: PathBuf,
+}
+
+impl CheckpointWriter {
+    async fn write(
+        &self,
+        next_event_id: u64,
+        completed: &[CheckpointObservation],
+        probes_scheduled: usize,
+        probes_completed: usize,
+        rounds: usize,
+    ) -> Result<()> {
+        let checkpoint = MeasurementCheckpoint {
+            schema_version: MEASUREMENT_CHECKPOINT_SCHEMA_VERSION.to_owned(),
+            cliare_version: env!("CARGO_PKG_VERSION").to_owned(),
+            engine: MEASUREMENT_ENGINE.to_owned(),
+            target: self.target.clone(),
+            profile: self.profile.clone(),
+            evidence_path: self.evidence_path.clone(),
+            next_event_id,
+            probes_scheduled,
+            probes_completed,
+            rounds,
+            completed: completed.to_vec(),
+        };
+        let bytes = serde_json::to_vec_pretty(&checkpoint)
+            .map_err(CliareError::SerializeMeasurementCheckpoint)?;
+        crate::artifacts::write_atomic(&self.path, &bytes)
+            .await
+            .map_err(|source| CliareError::WriteMeasurementCheckpoint {
+                path: self.path.clone(),
+                source,
+            })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct MeasurementCheckpoint {
+    schema_version: String,
+    cliare_version: String,
+    engine: String,
+    target: TargetFingerprint,
+    profile: ProbeProfile,
+    evidence_path: PathBuf,
+    next_event_id: u64,
+    probes_scheduled: usize,
+    probes_completed: usize,
+    rounds: usize,
+    completed: Vec<CheckpointObservation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct CheckpointObservation {
+    probe: ProbeSpec,
+    observation: ShapeObservation,
 }
 
 #[derive(Debug)]
@@ -986,10 +1168,15 @@ struct ProgressCounters {
 }
 
 async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
-    let mut observations = Vec::new();
-    let mut probes_scheduled = 0_usize;
-    let mut probes_completed = 0_usize;
-    let mut rounds = 0_usize;
+    let resume = context.resume.unwrap_or_default();
+    let mut checkpoint_completed = resume.completed;
+    let mut observations: Vec<ShapeObservation> = checkpoint_completed
+        .iter()
+        .map(|entry| entry.observation.clone())
+        .collect();
+    let mut probes_scheduled = resume.probes_scheduled;
+    let mut probes_completed = resume.probes_completed;
+    let mut rounds = resume.rounds;
 
     loop {
         let mut round = Vec::new();
@@ -1059,12 +1246,27 @@ async fn run_traversal(context: TraversalContext<'_>) -> Result<TraversalRun> {
                 .append(EvidenceKind::ProcessCompleted(completed.clone()))
                 .await?;
 
-            observations.push(ShapeObservation {
+            let observation = ShapeObservation {
                 evidence_id: event_id,
                 intent: probe.intent,
                 path: probe.path.clone(),
                 process: completed.clone(),
+            };
+            observations.push(observation.clone());
+            checkpoint_completed.push(CheckpointObservation {
+                probe: probe.clone(),
+                observation,
             });
+            context
+                .checkpoint
+                .write(
+                    context.evidence.next_event_id(),
+                    &checkpoint_completed,
+                    probes_scheduled,
+                    probes_completed,
+                    rounds,
+                )
+                .await?;
 
             let claims = ClaimSet::from_observations(context.binary_name, &observations);
             context.planner.extend_from_claims(&claims);
@@ -1112,15 +1314,23 @@ struct ProbeProfile {
     min_expected_value: u16,
     #[serde(default)]
     concurrency_limit: usize,
+    #[serde(default)]
+    snapshot_limits: SnapshotLimits,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedProbeProfile {
+    max_depth: usize,
+    max_probes: usize,
+    min_expected_value: u16,
+    concurrency_limit: usize,
+    snapshot_limits: SnapshotLimits,
 }
 
 impl ProbeProfile {
     fn from_args(
         args: &MeasureArgs,
-        max_depth: usize,
-        max_probes: usize,
-        min_expected_value: u16,
-        concurrency_limit: usize,
+        resolved: ResolvedProbeProfile,
         sandbox_profile: &str,
         runtime_context: RuntimeContext,
     ) -> Self {
@@ -1130,10 +1340,11 @@ impl ProbeProfile {
             runtime_context,
             timeout_ms: args.timeout_ms,
             output_limit_bytes: args.output_limit_bytes,
-            max_depth,
-            max_probes,
-            min_expected_value,
-            concurrency_limit,
+            max_depth: resolved.max_depth,
+            max_probes: resolved.max_probes,
+            min_expected_value: resolved.min_expected_value,
+            concurrency_limit: resolved.concurrency_limit,
+            snapshot_limits: resolved.snapshot_limits,
         }
     }
 }
@@ -1143,9 +1354,20 @@ struct MeasurementCacheManifest {
     schema_version: String,
     cliare_version: String,
     engine: String,
+    #[serde(default)]
+    run_id: String,
     target: TargetFingerprint,
     profile: ProbeProfile,
+    #[serde(default)]
+    artifact_digests: Vec<ArtifactDigest>,
     summary: MeasurementFacts,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
+struct ArtifactDigest {
+    path: String,
+    sha256: String,
+    size_bytes: u64,
 }
 
 async fn cached_summary(
@@ -1167,11 +1389,114 @@ async fn cached_summary(
             source,
         })?;
 
-    if !manifest.matches(target, profile) || !artifacts_exist(out_dir).await? {
+    if !manifest.matches(target, profile)
+        || !artifacts_exist(out_dir).await?
+        || !manifest.artifact_digests_match(out_dir).await?
+    {
         return Ok(None);
     }
 
     Ok(Some(manifest.into_summary(out_dir)))
+}
+
+async fn remove_stale_cache_manifest(out_dir: &std::path::Path) -> Result<()> {
+    let path = out_dir.join("measure-cache.json");
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(CliareError::RemoveMeasurementCache { path, source }),
+    }
+}
+
+async fn read_resume_checkpoint(
+    out_dir: &Path,
+    target: &TargetFingerprint,
+    profile: &ProbeProfile,
+) -> Result<Option<MeasurementCheckpoint>> {
+    let path = out_dir.join(MEASUREMENT_CHECKPOINT_JSON);
+    let bytes = match fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(source) => return Err(CliareError::ReadMeasurementCheckpoint { path, source }),
+    };
+    let checkpoint: MeasurementCheckpoint = serde_json::from_slice(&bytes).map_err(|source| {
+        CliareError::ParseMeasurementCheckpoint {
+            path: path.clone(),
+            source,
+        }
+    })?;
+
+    if checkpoint.schema_version != MEASUREMENT_CHECKPOINT_SCHEMA_VERSION
+        || checkpoint.engine != MEASUREMENT_ENGINE
+        || checkpoint.cliare_version != env!("CARGO_PKG_VERSION")
+        || &checkpoint.target != target
+        || &checkpoint.profile != profile
+        || checkpoint.completed.len() != checkpoint.probes_completed
+    {
+        return Ok(None);
+    }
+
+    let evidence_path = checkpoint.evidence_path.clone();
+    match fs::metadata(&evidence_path).await {
+        Ok(metadata) if metadata.is_file() => Ok(Some(checkpoint)),
+        Ok(_) => Ok(None),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(CliareError::ReadMeasurementCheckpoint {
+            path: evidence_path,
+            source,
+        }),
+    }
+}
+
+async fn remove_measurement_checkpoint(out_dir: &Path) -> Result<()> {
+    let path = out_dir.join(MEASUREMENT_CHECKPOINT_JSON);
+    match fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(CliareError::RemoveMeasurementCheckpoint { path, source }),
+    }
+}
+
+async fn cleanup_abandoned_in_progress_files(out_dir: &std::path::Path) -> Result<()> {
+    let mut entries = match fs::read_dir(out_dir).await {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(CliareError::CleanupInProgressArtifact {
+                path: out_dir.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(source) => {
+                return Err(CliareError::CleanupInProgressArtifact {
+                    path: out_dir.to_path_buf(),
+                    source,
+                });
+            }
+        };
+        let path = entry.path();
+        let is_in_progress = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(EVIDENCE_IN_PROGRESS_PREFIX));
+        if !is_in_progress {
+            continue;
+        }
+        fs::remove_file(&path)
+            .await
+            .map_err(|source| CliareError::CleanupInProgressArtifact {
+                path: path.clone(),
+                source,
+            })?;
+    }
+
+    Ok(())
 }
 
 impl MeasurementCacheManifest {
@@ -1179,8 +1504,16 @@ impl MeasurementCacheManifest {
         self.schema_version == MEASUREMENT_CACHE_SCHEMA_VERSION
             && self.cliare_version == env!("CARGO_PKG_VERSION")
             && self.engine == MEASUREMENT_ENGINE
+            && !self.run_id.trim().is_empty()
             && &self.target == target
             && &self.profile == profile
+    }
+
+    async fn artifact_digests_match(&self, out_dir: &std::path::Path) -> Result<bool> {
+        if self.artifact_digests.is_empty() {
+            return Ok(false);
+        }
+        Ok(self.artifact_digests == artifact_digests(out_dir).await?)
     }
 
     fn into_summary(self, out_dir: &std::path::Path) -> MeasurementSummary {
@@ -1233,21 +1566,43 @@ async fn write_cache_manifest(
     out_dir: &std::path::Path,
     summary: &MeasurementSummary,
     profile: ProbeProfile,
+    run_id: &str,
 ) -> Result<()> {
     let path = out_dir.join("measure-cache.json");
     let manifest = MeasurementCacheManifest {
         schema_version: MEASUREMENT_CACHE_SCHEMA_VERSION.to_owned(),
         cliare_version: env!("CARGO_PKG_VERSION").to_owned(),
         engine: MEASUREMENT_ENGINE.to_owned(),
+        run_id: run_id.to_owned(),
         target: summary.target.clone(),
         profile,
+        artifact_digests: artifact_digests(out_dir).await?,
         summary: summary.facts.clone(),
     };
     let bytes =
         serde_json::to_vec_pretty(&manifest).map_err(CliareError::SerializeMeasurementCache)?;
-    fs::write(&path, bytes)
+    crate::artifacts::write_atomic(&path, &bytes)
         .await
         .map_err(|source| CliareError::WriteMeasurementCache { path, source })
+}
+
+async fn artifact_digests(out_dir: &std::path::Path) -> Result<Vec<ArtifactDigest>> {
+    let mut digests = Vec::with_capacity(REQUIRED_MEASUREMENT_FILES.len());
+    for name in REQUIRED_MEASUREMENT_FILES {
+        let path = out_dir.join(name);
+        let bytes = fs::read(&path)
+            .await
+            .map_err(|source| CliareError::ReadMeasurementCache {
+                path: path.clone(),
+                source,
+            })?;
+        digests.push(ArtifactDigest {
+            path: (*name).to_owned(),
+            sha256: format!("{:x}", Sha256::digest(&bytes)),
+            size_bytes: bytes.len() as u64,
+        });
+    }
+    Ok(digests)
 }
 
 fn bootstrap_probes(target: &TargetFingerprint) -> Vec<ProbeSpec> {
@@ -1386,6 +1741,7 @@ mod tests {
     use crate::cli::{MeasureArgs, TraversalProfile};
     use crate::evidence::ProbeIntent;
     use crate::fingerprint::TargetFingerprint;
+    use crate::sandbox::SnapshotLimits;
 
     #[test]
     fn bootstrap_contains_only_generic_safe_probes() {
@@ -1428,6 +1784,139 @@ mod tests {
         assert!(second.starts_with("measure-"));
     }
 
+    #[tokio::test]
+    async fn fresh_measurement_removes_stale_cache_manifest() {
+        let root = unique_test_dir("measure-stale-cache");
+        fs::create_dir_all(&root).expect("creates cache test directory");
+        let cache_path = root.join("measure-cache.json");
+        fs::write(&cache_path, "{}").expect("writes stale cache");
+
+        super::remove_stale_cache_manifest(&root)
+            .await
+            .expect("stale cache is removed");
+
+        assert!(!cache_path.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn fresh_measurement_removes_abandoned_in_progress_evidence_logs() {
+        let root = unique_test_dir("measure-in-progress-cleanup");
+        fs::create_dir_all(&root).expect("creates cleanup test directory");
+        let abandoned = root.join(format!(
+            "{}dead-worker",
+            crate::evidence::EVIDENCE_IN_PROGRESS_PREFIX
+        ));
+        let keep = root.join("evidence.jsonl");
+        fs::write(&abandoned, "partial").expect("writes abandoned evidence");
+        fs::write(&keep, "committed").expect("writes committed evidence");
+
+        super::cleanup_abandoned_in_progress_files(&root)
+            .await
+            .expect("abandoned in-progress evidence is removed");
+
+        assert!(!abandoned.exists());
+        assert!(keep.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn artifact_digests_change_when_required_artifact_changes() {
+        let root = unique_test_dir("measure-artifact-digests");
+        fs::create_dir_all(&root).expect("creates digest test directory");
+        for (index, name) in super::REQUIRED_MEASUREMENT_FILES.iter().enumerate() {
+            fs::write(root.join(name), format!("artifact-{index}"))
+                .expect("writes required artifact");
+        }
+
+        let first = super::artifact_digests(&root)
+            .await
+            .expect("first artifact digests are computed");
+        fs::write(root.join(super::REQUIRED_MEASUREMENT_FILES[0]), "changed")
+            .expect("changes required artifact");
+        let second = super::artifact_digests(&root)
+            .await
+            .expect("second artifact digests are computed");
+
+        assert_eq!(first.len(), super::REQUIRED_MEASUREMENT_FILES.len());
+        assert!(first.iter().all(|digest| !digest.sha256.is_empty()));
+        assert_ne!(first, second);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn resume_checkpoint_requires_matching_profile_target_and_evidence_log() {
+        let root = unique_test_dir("measure-checkpoint");
+        fs::create_dir_all(&root).expect("creates checkpoint test directory");
+        let target = TargetFingerprint {
+            requested: "tool".into(),
+            resolved: "/tmp/tool".into(),
+            binary_sha256: "abc".to_owned(),
+            size_bytes: 1,
+        };
+        let profile = super::ProbeProfile {
+            traversal_profile: TraversalProfile::Quick,
+            sandbox_profile: "isolated".to_owned(),
+            runtime_context: crate::context::RuntimeContext::default(),
+            timeout_ms: 1_000,
+            output_limit_bytes: 1024,
+            max_depth: 1,
+            max_probes: 2,
+            min_expected_value: 3,
+            concurrency_limit: 1,
+            snapshot_limits: SnapshotLimits::new(4, 5, 6),
+        };
+        let evidence_path = root.join(format!(
+            "{}live-worker",
+            crate::evidence::EVIDENCE_IN_PROGRESS_PREFIX
+        ));
+        fs::write(&evidence_path, "").expect("writes resumable evidence log");
+        let checkpoint = super::MeasurementCheckpoint {
+            schema_version: super::MEASUREMENT_CHECKPOINT_SCHEMA_VERSION.to_owned(),
+            cliare_version: env!("CARGO_PKG_VERSION").to_owned(),
+            engine: super::MEASUREMENT_ENGINE.to_owned(),
+            target: target.clone(),
+            profile: profile.clone(),
+            evidence_path: evidence_path.clone(),
+            next_event_id: 7,
+            probes_scheduled: 0,
+            probes_completed: 0,
+            rounds: 0,
+            completed: Vec::new(),
+        };
+        fs::write(
+            root.join(super::MEASUREMENT_CHECKPOINT_JSON),
+            serde_json::to_vec(&checkpoint).expect("serializes checkpoint"),
+        )
+        .expect("writes checkpoint");
+
+        let loaded = super::read_resume_checkpoint(&root, &target, &profile)
+            .await
+            .expect("checkpoint read succeeds")
+            .expect("matching checkpoint is accepted");
+        assert_eq!(loaded.next_event_id, 7);
+
+        let stale_profile = super::ProbeProfile {
+            max_probes: 99,
+            ..profile.clone()
+        };
+        assert!(
+            super::read_resume_checkpoint(&root, &target, &stale_profile)
+                .await
+                .expect("stale checkpoint read succeeds")
+                .is_none()
+        );
+
+        fs::remove_file(&evidence_path).expect("removes evidence log");
+        assert!(
+            super::read_resume_checkpoint(&root, &target, &profile)
+                .await
+                .expect("missing evidence read succeeds")
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn terminal_summary_lists_score_and_artifacts() {
         let summary = super::MeasurementSummary {
@@ -1460,6 +1949,10 @@ mod tests {
                 sandbox_home: PathBuf::from(".cliare/sandbox/home"),
                 sandbox_workdir: PathBuf::from(".cliare/sandbox/cwd"),
                 sandbox_env_policy: "cleared_with_allowlist".to_owned(),
+                snapshot_max_files: 10_000,
+                snapshot_max_directories: 2_000,
+                snapshot_max_hash_bytes: 64 * 1024 * 1024,
+                hostile_binary_containment: false,
                 score_total: 82.4,
                 score_measured_weight: 0.9,
                 score_max_weight: 1.0,
@@ -1489,6 +1982,7 @@ mod tests {
                 side_effect_files_total: 0,
                 side_effect_probe_count: 0,
                 credential_like_side_effects: 0,
+                side_effect_scan_truncated: false,
                 observed_max_depth: 1,
                 traversal_profile: "standard".to_owned(),
                 max_depth: 5,
@@ -1628,6 +2122,9 @@ EOF
             max_probes: Some(1),
             min_expected_value: Some(1),
             concurrency: None,
+            snapshot_max_files: None,
+            snapshot_max_directories: None,
+            snapshot_max_hash_bytes: None,
             context: None,
             context_name: None,
             auth_state: None,

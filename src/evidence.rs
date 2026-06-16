@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::fs::{self, File, OpenOptions};
@@ -14,6 +14,7 @@ use crate::process::{OutputCapture, ProbeOutcome};
 use crate::sandbox::{ProbeSandboxEvidence, SandboxMetadata, SideEffectSummary};
 
 const SCHEMA_VERSION: &str = "cliare.evidence.v1";
+pub const EVIDENCE_IN_PROGRESS_PREFIX: &str = ".evidence.jsonl.in-progress.";
 
 #[derive(Debug, Clone, Copy)]
 pub struct EventId(u64);
@@ -24,11 +25,17 @@ impl EventId {
         self.0 += 1;
         current
     }
+
+    fn current(self) -> u64 {
+        self.0
+    }
 }
 
 #[derive(Debug)]
 pub struct EvidenceWriter {
     next_event_id: EventId,
+    path: PathBuf,
+    final_path: PathBuf,
     file: File,
 }
 
@@ -41,17 +48,46 @@ impl EvidenceWriter {
                 source,
             })?;
 
-        let path = out_dir.join(EVIDENCE_JSONL);
+        let final_path = out_dir.join(EVIDENCE_JSONL);
+        let path = out_dir.join(format!(
+            "{EVIDENCE_IN_PROGRESS_PREFIX}{}",
+            std::process::id()
+        ));
         let file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
             .open(&path)
             .await
-            .map_err(|source| CliareError::OpenEvidenceLog { path, source })?;
+            .map_err(|source| CliareError::OpenEvidenceLog {
+                path: path.clone(),
+                source,
+            })?;
 
         Ok(Self {
             next_event_id: EventId(1),
+            path,
+            final_path,
+            file,
+        })
+    }
+
+    pub async fn resume(out_dir: &Path, path: PathBuf, next_event_id: u64) -> Result<Self> {
+        let final_path = out_dir.join(EVIDENCE_JSONL);
+        let file = OpenOptions::new()
+            .create(false)
+            .append(true)
+            .open(&path)
+            .await
+            .map_err(|source| CliareError::OpenEvidenceLog {
+                path: path.clone(),
+                source,
+            })?;
+
+        Ok(Self {
+            next_event_id: EventId(next_event_id),
+            path,
+            final_path,
             file,
         })
     }
@@ -77,6 +113,29 @@ impl EvidenceWriter {
             .map_err(CliareError::WriteEvidence)?;
 
         Ok(event_id)
+    }
+
+    pub async fn commit(mut self) -> Result<PathBuf> {
+        self.file
+            .flush()
+            .await
+            .map_err(CliareError::WriteEvidence)?;
+        drop(self.file);
+        fs::rename(&self.path, &self.final_path)
+            .await
+            .map_err(|source| CliareError::CommitEvidence {
+                path: self.final_path.clone(),
+                source,
+            })?;
+        Ok(self.final_path)
+    }
+
+    pub fn next_event_id(&self) -> u64 {
+        self.next_event_id.current()
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 }
 
@@ -121,7 +180,7 @@ pub struct ProbeScheduled {
     pub sandbox: ProbeSandboxEvidence,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProcessCompleted {
     pub probe_id: String,
     pub argv: Vec<String>,
@@ -137,7 +196,7 @@ pub struct RunFinished {
     pub probes_completed: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProbeIntent {
     Help,
@@ -155,7 +214,7 @@ pub enum ProbeIntent {
     OutputPlainHelp,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ProcessStatus {
     Exited { code: Option<i32> },

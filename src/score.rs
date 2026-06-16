@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tokio::fs;
 
-use crate::artifacts::{REPORT_MD, SCORECARD_JSON};
+use crate::artifacts::{REPORT_MD, SCORECARD_JSON, write_atomic};
 use crate::claims::{
     ClaimSet, CommandClaim, FlagClaim, FlagValueKind, OutputContractClaim, OutputContractScope,
 };
@@ -18,7 +17,7 @@ use crate::observation::ShapeObservation;
 use crate::output::ObservedOutputKind;
 use crate::path_classification;
 use crate::precondition::PreconditionKind;
-use crate::sandbox::SandboxMetadata;
+use crate::sandbox::{SandboxMetadata, SnapshotLimits};
 pub use crate::score_model::ScoreDimension as Dimension;
 use crate::score_model::ScoreModelSpec;
 
@@ -74,6 +73,10 @@ pub struct Coverage {
     sandbox_home: PathBuf,
     sandbox_workdir: PathBuf,
     sandbox_env_policy: &'static str,
+    snapshot_max_files: usize,
+    snapshot_max_directories: usize,
+    snapshot_max_hash_bytes: u64,
+    hostile_binary_containment: bool,
     commands_discovered: usize,
     commands_runtime_confirmed: usize,
     commands_precondition_blocked: usize,
@@ -96,6 +99,7 @@ pub struct Coverage {
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
+    side_effect_scan_truncated: bool,
     avg_command_confidence: f64,
     avg_flag_confidence: f64,
     observed_max_depth: usize,
@@ -195,6 +199,7 @@ pub struct ScoreArtifactSummary {
     pub side_effect_files_total: usize,
     pub side_effect_probe_count: usize,
     pub credential_like_side_effects: usize,
+    pub side_effect_scan_truncated: bool,
     pub observed_max_depth: usize,
     pub traversal_profile: &'static str,
     pub max_depth: usize,
@@ -217,6 +222,10 @@ pub struct ScoreArtifactSummary {
     pub sandbox_home: PathBuf,
     pub sandbox_workdir: PathBuf,
     pub sandbox_env_policy: &'static str,
+    pub snapshot_max_files: usize,
+    pub snapshot_max_directories: usize,
+    pub snapshot_max_hash_bytes: u64,
+    pub hostile_binary_containment: bool,
     pub runtime_context: RuntimeContext,
 }
 
@@ -245,6 +254,8 @@ pub struct SandboxScoreContext {
     pub home: PathBuf,
     pub workdir: PathBuf,
     pub env_policy: &'static str,
+    pub snapshot_limits: SnapshotLimits,
+    pub hostile_binary_containment: bool,
 }
 
 impl From<&SandboxMetadata> for SandboxScoreContext {
@@ -255,6 +266,8 @@ impl From<&SandboxMetadata> for SandboxScoreContext {
             home: metadata.home.clone(),
             workdir: metadata.workdir.clone(),
             env_policy: env_policy_label(metadata.env_policy),
+            snapshot_limits: metadata.snapshot_limits,
+            hostile_binary_containment: metadata.hostile_binary_containment,
         }
     }
 }
@@ -301,6 +314,7 @@ pub async fn write_score_artifacts(
         side_effect_files_total: scorecard.coverage.side_effect_files_total,
         side_effect_probe_count: scorecard.coverage.side_effect_probe_count,
         credential_like_side_effects: scorecard.coverage.credential_like_side_effects,
+        side_effect_scan_truncated: scorecard.coverage.side_effect_scan_truncated,
         observed_max_depth: scorecard.coverage.observed_max_depth,
         traversal_profile: scorecard.coverage.traversal_profile,
         max_depth: scorecard.coverage.max_depth,
@@ -325,6 +339,10 @@ pub async fn write_score_artifacts(
         sandbox_home: scorecard.coverage.sandbox_home.clone(),
         sandbox_workdir: scorecard.coverage.sandbox_workdir.clone(),
         sandbox_env_policy: scorecard.coverage.sandbox_env_policy,
+        snapshot_max_files: scorecard.coverage.snapshot_max_files,
+        snapshot_max_directories: scorecard.coverage.snapshot_max_directories,
+        snapshot_max_hash_bytes: scorecard.coverage.snapshot_max_hash_bytes,
+        hostile_binary_containment: scorecard.coverage.hostile_binary_containment,
         runtime_context: scorecard.runtime_context.clone(),
     })
 }
@@ -332,7 +350,7 @@ pub async fn write_score_artifacts(
 async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join(SCORECARD_JSON);
     let bytes = serde_json::to_vec_pretty(&scorecard).map_err(CliareError::SerializeScorecard)?;
-    fs::write(&path, bytes)
+    write_atomic(&path, &bytes)
         .await
         .map_err(|source| CliareError::WriteScorecard {
             path: path.clone(),
@@ -343,7 +361,8 @@ async fn write_scorecard(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBu
 
 async fn write_report(out_dir: &Path, scorecard: &Scorecard) -> Result<PathBuf> {
     let path = out_dir.join(REPORT_MD);
-    fs::write(&path, report::render(scorecard))
+    let report = report::render(scorecard);
+    write_atomic(&path, report.as_bytes())
         .await
         .map_err(|source| CliareError::WriteReport {
             path: path.clone(),
@@ -441,17 +460,36 @@ fn subscores(metrics: &Metrics, model: &ScoreModelSpec) -> BTreeMap<Dimension, D
             rationale: "advertised machine-readable output modes and safe parse probes".to_owned(),
         },
     );
-    subscores.insert(
-        Dimension::Safety,
-        DimensionScore {
-            score: Some(round_score(safety_score(metrics, model))),
-            weight: model.weight(Dimension::Safety),
-            status: DimensionStatus::Measured,
-            rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
-        },
-    );
+    subscores.insert(Dimension::Safety, safety_dimension_score(metrics, model));
 
     subscores
+}
+
+fn safety_dimension_score(metrics: &Metrics, model: &ScoreModelSpec) -> DimensionScore {
+    let weight = model.weight(Dimension::Safety);
+    if !metrics.side_effect_observation_supported() {
+        return DimensionScore {
+            score: None,
+            weight,
+            status: DimensionStatus::NotMeasured,
+            rationale: "host execution does not register filesystem snapshot regions".to_owned(),
+        };
+    }
+    if metrics.coverage.side_effect_scan_truncated {
+        return DimensionScore {
+            score: None,
+            weight,
+            status: DimensionStatus::NotMeasured,
+            rationale: "filesystem side-effect snapshot exceeded scanner budget".to_owned(),
+        };
+    }
+
+    DimensionScore {
+        score: Some(round_score(safety_score(metrics, model))),
+        weight,
+        status: DimensionStatus::Measured,
+        rationale: "persistent sandbox filesystem side effects from safe probes".to_owned(),
+    }
 }
 
 fn total_score(
@@ -663,6 +701,28 @@ fn findings(metrics: &Metrics, model: &ScoreModelSpec) -> Vec<Finding> {
         });
     }
 
+    if !metrics.side_effect_observation_supported() {
+        findings.push(Finding {
+            id: "finding.safety.side_effects_unobserved_in_host_mode",
+            dimension: Dimension::Safety,
+            severity: Severity::Medium,
+            title: "Host-mode filesystem side effects were not observed",
+            detail: "This run used host execution mode, which intentionally does not register filesystem snapshot regions. Side-effect totals are unmeasured, not proof of clean behavior.".to_owned(),
+            recommendation: "Use isolated execution for filesystem side-effect scoring, or treat host-mode safety as a context-specific manual review input.",
+        });
+    }
+
+    if metrics.coverage.side_effect_scan_truncated {
+        findings.push(Finding {
+            id: "finding.safety.side_effect_scan_truncated",
+            dimension: Dimension::Safety,
+            severity: Severity::High,
+            title: "Filesystem side-effect scanning was truncated",
+            detail: "The sandbox snapshot exceeded a scanner budget. Side-effect totals are partial, so filesystem safety is not fully measured.".to_owned(),
+            recommendation: "Reduce discovery-time filesystem writes or raise scanner limits only in a controlled profile with explicit review.",
+        });
+    }
+
     if metrics.coverage.side_effect_files_total > 0 {
         findings.push(Finding {
             id: "finding.safety.safe_probe_side_effects",
@@ -864,6 +924,10 @@ impl Metrics {
                 sandbox_home: run_context.sandbox.home,
                 sandbox_workdir: run_context.sandbox.workdir,
                 sandbox_env_policy: run_context.sandbox.env_policy,
+                snapshot_max_files: run_context.sandbox.snapshot_limits.max_files,
+                snapshot_max_directories: run_context.sandbox.snapshot_limits.max_directories,
+                snapshot_max_hash_bytes: run_context.sandbox.snapshot_limits.max_hash_bytes,
+                hostile_binary_containment: run_context.sandbox.hostile_binary_containment,
                 commands_discovered,
                 commands_runtime_confirmed,
                 commands_precondition_blocked,
@@ -886,6 +950,7 @@ impl Metrics {
                 side_effect_files_total: process_metrics.side_effect_files_total,
                 side_effect_probe_count: process_metrics.side_effect_probe_count,
                 credential_like_side_effects: process_metrics.credential_like_side_effects,
+                side_effect_scan_truncated: process_metrics.side_effect_scan_truncated,
                 avg_command_confidence,
                 avg_flag_confidence,
                 observed_max_depth: observed_max_depth(&commands),
@@ -964,6 +1029,10 @@ impl Metrics {
             .saturating_sub(self.output_mode_precondition_blocked)
             .saturating_sub(self.output_mode_help_text_probes)
             .saturating_sub(self.output_mode_global_scope_failures)
+    }
+
+    fn side_effect_observation_supported(&self) -> bool {
+        self.coverage.sandbox_profile != "host"
     }
 }
 
@@ -1046,6 +1115,7 @@ struct ProcessMetrics {
     side_effect_files_total: usize,
     side_effect_probe_count: usize,
     credential_like_side_effects: usize,
+    side_effect_scan_truncated: bool,
     precondition_blocked: usize,
     auth_required: usize,
     local_context_required: usize,
@@ -1121,6 +1191,7 @@ impl ProcessMetrics {
             if side_effects.total > 0 {
                 metrics.side_effect_probe_count += 1;
             }
+            metrics.side_effect_scan_truncated |= side_effects.truncated;
             metrics.credential_like_side_effects += side_effects
                 .changes
                 .iter()
@@ -1621,6 +1692,39 @@ mod tests {
     }
 
     #[test]
+    fn host_mode_marks_safety_unmeasured() {
+        let scorecard = scorecard(
+            target(),
+            &[observation(
+                "e_000003",
+                ProbeIntent::Help,
+                vec![],
+                "Commands:\n  inspect  Inspect state\n",
+                Some(0),
+            )],
+            ScoreRunContext {
+                sandbox: SandboxScoreContext {
+                    profile: "host",
+                    root: "/tmp/project".into(),
+                    home: "/Users/example".into(),
+                    workdir: "/tmp/project".into(),
+                    env_policy: "inherited",
+                    snapshot_limits: crate::sandbox::SnapshotLimits::default(),
+                    hostile_binary_containment: false,
+                },
+                ..ScoreRunContext::default()
+            },
+        );
+
+        let safety = &scorecard.subscores[&Dimension::Safety];
+        assert_eq!(safety.score, None);
+        assert!(matches!(safety.status, DimensionStatus::NotMeasured));
+        assert!(scorecard.findings.iter().any(|finding| {
+            finding.id == "finding.safety.side_effects_unobserved_in_host_mode"
+        }));
+    }
+
+    #[test]
     fn scorecard_embeds_bundled_model_provenance() {
         let scorecard = scorecard(target(), &[], ScoreRunContext::default());
 
@@ -1684,6 +1788,8 @@ AYUDA
             home: "/tmp/cliare/sandbox/home".into(),
             workdir: "/tmp/cliare/sandbox/cwd".into(),
             env_policy: "cleared_with_allowlist",
+            snapshot_limits: crate::sandbox::SnapshotLimits::default(),
+            hostile_binary_containment: false,
         }
     }
 

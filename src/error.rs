@@ -84,6 +84,13 @@ pub enum CliareError {
     #[error("failed to write evidence event")]
     WriteEvidence(#[source] std::io::Error),
 
+    #[error("failed to commit evidence log {path}")]
+    CommitEvidence {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to serialize evidence event")]
     SerializeEvidence(#[source] serde_json::Error),
 
@@ -212,6 +219,51 @@ pub enum CliareError {
 
     #[error("failed to write measurement cache manifest {path}")]
     WriteMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove stale measurement cache manifest {path}")]
+    RemoveMeasurementCache {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to clean abandoned in-progress measurement artifact {path}")]
+    CleanupInProgressArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read measurement checkpoint {path}")]
+    ReadMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse measurement checkpoint {path}")]
+    ParseMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize measurement checkpoint")]
+    SerializeMeasurementCheckpoint(#[source] serde_json::Error),
+
+    #[error("failed to write measurement checkpoint {path}")]
+    WriteMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove measurement checkpoint {path}")]
+    RemoveMeasurementCheckpoint {
         path: PathBuf,
         #[source]
         source: std::io::Error,

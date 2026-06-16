@@ -12,9 +12,11 @@ This document defines the operational promises CLIARE can make today and the pro
 Current operational contracts:
 
 - artifact-level measurement cache
+- internal probe-level checkpoint/resume
 - target fingerprinting
 - runtime context declaration
 - isolated and host execution modes
+- configurable filesystem snapshot budgets
 - bounded probing and output capture
 - detached job tracking
 - guard comparison against a saved baseline scorecard
@@ -24,7 +26,7 @@ Current operational contracts:
 
 Not current:
 
-- probe-level checkpoint/resume
+- public `cliare measure --resume`
 - `cliare replay`
 - `cliare rescore`
 - `cliare cache explain`
@@ -43,7 +45,8 @@ Not current:
 | Contract | Current status | Launch meaning |
 |----------|----------------|----------------|
 | Target fingerprint | Implemented | Cache and scorecards are tied to the measured binary |
-| Artifact-level cache | Implemented | Completed measurements can be reused when exact identity checks pass |
+| Artifact-level cache | Implemented | Completed measurements can be reused when exact identity and artifact digest checks pass |
+| Internal probe-level checkpoint/resume | Implemented | Compatible interrupted measurements can resume without public checkpoint selection controls |
 | Probe-level replay/rescore | Not implemented | Do not claim old evidence can be replayed or rescored through a command |
 | Runtime context declaration | Implemented | Auth, fixture, local context, network, and dependency state are explicit metadata |
 | Dynamic CLI invalidation | Partial | Context is captured, but plugin/config/remote-state hashes are not automatic cache keys |
@@ -78,6 +81,9 @@ Current cache identity requires:
 - probe profile matches
 - runtime context embedded in the profile matches
 - required measurement artifacts exist
+- required measurement artifact digests and sizes match the manifest
+
+The cache manifest stores a run ID and per-artifact SHA-256 digests for the required artifact set. If any required artifact is missing or changed, the cache is treated as a miss.
 
 Required artifacts for cache reuse:
 
@@ -228,6 +234,9 @@ Current isolated mode mitigates accidents by:
 - enforcing per-probe timeout
 - enforcing retained output limits
 - capturing persistent file side effects inside configured sandbox regions
+- enforcing configurable snapshot limits for maximum files, directories, and hashed bytes
+
+Measurement artifacts record the active snapshot limits and an explicit `hostile_binary_containment` boolean. The current value is `false` because isolated mode is not a malware or adversarial-code sandbox.
 
 Current host mode intentionally exposes host context:
 
@@ -247,6 +256,8 @@ Current limitations:
 Operational rule:
 
 > Isolated mode is a local safety and evidence boundary, not a hostile-binary containment boundary.
+
+Concrete command recipes for validating future containment backends and classifying current evidence are in [`../operations/hostile-binary-containment-command-playbook.md`](../operations/hostile-binary-containment-command-playbook.md).
 
 Use host mode only when measuring authenticated or local-context behavior is the point of the run.
 
@@ -447,8 +458,11 @@ Implemented now:
 
 - target fingerprinting
 - artifact-level cache
+- cache artifact digest manifest
+- internal checkpoint/resume
 - runtime contexts
 - isolated and host execution profiles
+- configurable snapshot limits
 - guard baseline comparison
 - local policy checks
 - score-model metadata
@@ -459,11 +473,10 @@ Future hardening:
 
 - structured cache explanation
 - replay/rescore
-- checkpoint/resume
+- public checkpoint/resume controls
 - baseline accept workflow
 - dynamic plugin/config hashing
 - reproducibility labels
-- artifact hash manifest
 - signed provenance
 - network-denied/container/native sandbox verification levels
 - public leaderboard governance

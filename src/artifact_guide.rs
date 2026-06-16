@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use tokio::fs;
-
-use crate::artifacts::{AGENT_SKILL_MD, README_MD};
+use crate::artifacts::{AGENT_SKILL_MD, README_MD, write_atomic};
 use crate::error::{CliareError, Result};
 
 #[derive(Debug, Clone)]
@@ -26,37 +24,21 @@ async fn write_guides(
 ) -> Result<ArtifactGuideSummary> {
     let readme_path = out_dir.join(README_MD);
     let agent_skill_path = out_dir.join(AGENT_SKILL_MD);
-    write_atomic(&readme_path, readme.as_bytes()).await?;
-    write_atomic(&agent_skill_path, agent_skill.as_bytes()).await?;
+    write_guide(&readme_path, readme.as_bytes()).await?;
+    write_guide(&agent_skill_path, agent_skill.as_bytes()).await?;
     Ok(ArtifactGuideSummary {
         readme_path,
         agent_skill_path,
     })
 }
 
-async fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let temp_path = atomic_temp_path(path);
-    fs::write(&temp_path, bytes)
-        .await
-        .map_err(|source| CliareError::WriteArtifactGuide {
-            path: temp_path.clone(),
-            source,
-        })?;
-    fs::rename(&temp_path, path)
+async fn write_guide(path: &Path, bytes: &[u8]) -> Result<()> {
+    write_atomic(path, bytes)
         .await
         .map_err(|source| CliareError::WriteArtifactGuide {
             path: path.to_path_buf(),
             source,
-        })?;
-    Ok(())
-}
-
-fn atomic_temp_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("artifact-guide");
-    path.with_file_name(format!("{file_name}.tmp.{}", std::process::id()))
+        })
 }
 
 fn measurement_readme() -> &'static str {

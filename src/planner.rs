@@ -99,6 +99,12 @@ impl DeterministicPlanner {
         }
     }
 
+    pub fn mark_seen(&mut self, probes: impl IntoIterator<Item = ProbeSpec>) {
+        for probe in probes {
+            self.scheduled_args.insert(probe.args);
+        }
+    }
+
     fn probe_plans_for(&mut self, claim: &CommandClaim) -> Vec<ProbePlan> {
         if claim.path().is_empty() {
             return Vec::new();

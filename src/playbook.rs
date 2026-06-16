@@ -1319,7 +1319,7 @@ fn shell_token(value: &str) -> String {
 }
 
 fn effective_artifact_dir(args: &PlaybookArgs, target: &str) -> PathBuf {
-    if args.out == PathBuf::from(DEFAULT_OUT_PLACEHOLDER) {
+    if args.out == Path::new(DEFAULT_OUT_PLACEHOLDER) {
         if target == TARGET_PLACEHOLDER {
             PathBuf::from(DEFAULT_OUT_PLACEHOLDER)
         } else {

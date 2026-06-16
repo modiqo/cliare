@@ -9,7 +9,44 @@ use sha2::{Digest, Sha256};
 use tokio::fs::{self, File};
 use tokio::io::AsyncReadExt;
 
+#[cfg(not(test))]
+pub const DEFAULT_SNAPSHOT_MAX_FILES: usize = 10_000;
+#[cfg(test)]
+pub const DEFAULT_SNAPSHOT_MAX_FILES: usize = 32;
+#[cfg(not(test))]
+pub const DEFAULT_SNAPSHOT_MAX_DIRS: usize = 2_000;
+#[cfg(test)]
+pub const DEFAULT_SNAPSHOT_MAX_DIRS: usize = 32;
+pub const DEFAULT_SNAPSHOT_MAX_HASH_BYTES: u64 = 64 * 1024 * 1024;
+
 use crate::error::{CliareError, Result};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SnapshotLimits {
+    pub max_files: usize,
+    pub max_directories: usize,
+    pub max_hash_bytes: u64,
+}
+
+impl SnapshotLimits {
+    pub fn new(max_files: usize, max_directories: usize, max_hash_bytes: u64) -> Self {
+        Self {
+            max_files,
+            max_directories,
+            max_hash_bytes,
+        }
+    }
+}
+
+impl Default for SnapshotLimits {
+    fn default() -> Self {
+        Self {
+            max_files: DEFAULT_SNAPSHOT_MAX_FILES,
+            max_directories: DEFAULT_SNAPSHOT_MAX_DIRS,
+            max_hash_bytes: DEFAULT_SNAPSHOT_MAX_HASH_BYTES,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
@@ -39,9 +76,11 @@ pub struct SandboxMetadata {
     pub tmp: PathBuf,
     pub env_policy: EnvPolicy,
     pub env_keys: Vec<String>,
+    pub snapshot_limits: SnapshotLimits,
+    pub hostile_binary_containment: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EnvPolicy {
     ClearedWithAllowlist,
@@ -54,6 +93,8 @@ pub struct ProbeSandboxEvidence {
     pub cwd: PathBuf,
     pub env_policy: EnvPolicy,
     pub env_keys: Vec<String>,
+    pub snapshot_limits: SnapshotLimits,
+    pub hostile_binary_containment: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +102,7 @@ pub struct ProcessSandbox {
     pub root: PathBuf,
     pub cwd: PathBuf,
     pub env: BTreeMap<String, String>,
+    snapshot_limits: SnapshotLimits,
     regions: Vec<SandboxRegionRoot>,
 }
 
@@ -69,6 +111,7 @@ pub struct Sandbox {
     metadata: SandboxMetadata,
     env: BTreeMap<String, String>,
     provided_workdir: Option<PathBuf>,
+    snapshot_limits: SnapshotLimits,
 }
 
 impl Sandbox {
@@ -85,13 +128,29 @@ impl Sandbox {
         workdir: Option<&Path>,
         profile: SandboxProfile,
     ) -> Result<Self> {
+        Self::create_with_profile_and_limits(out_dir, workdir, profile, SnapshotLimits::default())
+            .await
+    }
+
+    pub async fn create_with_profile_and_limits(
+        out_dir: &Path,
+        workdir: Option<&Path>,
+        profile: SandboxProfile,
+        snapshot_limits: SnapshotLimits,
+    ) -> Result<Self> {
         match profile {
-            SandboxProfile::Isolated => Self::create_isolated(out_dir, workdir).await,
-            SandboxProfile::Host => Self::create_host(out_dir, workdir).await,
+            SandboxProfile::Isolated => {
+                Self::create_isolated(out_dir, workdir, snapshot_limits).await
+            }
+            SandboxProfile::Host => Self::create_host(out_dir, workdir, snapshot_limits).await,
         }
     }
 
-    async fn create_isolated(out_dir: &Path, workdir: Option<&Path>) -> Result<Self> {
+    async fn create_isolated(
+        out_dir: &Path,
+        workdir: Option<&Path>,
+        snapshot_limits: SnapshotLimits,
+    ) -> Result<Self> {
         let root = out_dir.join("sandbox");
         if fs::metadata(&root).await.is_ok() {
             fs::remove_dir_all(&root)
@@ -122,16 +181,23 @@ impl Sandbox {
             tmp: paths.tmp,
             env_policy: EnvPolicy::ClearedWithAllowlist,
             env_keys,
+            snapshot_limits,
+            hostile_binary_containment: false,
         };
 
         Ok(Self {
             metadata,
             env,
             provided_workdir,
+            snapshot_limits,
         })
     }
 
-    async fn create_host(out_dir: &Path, workdir: Option<&Path>) -> Result<Self> {
+    async fn create_host(
+        out_dir: &Path,
+        workdir: Option<&Path>,
+        snapshot_limits: SnapshotLimits,
+    ) -> Result<Self> {
         let provided_workdir = match workdir {
             Some(path) => Some(resolve_workdir(path).await?),
             None => None,
@@ -167,12 +233,15 @@ impl Sandbox {
             tmp,
             env_policy: EnvPolicy::Inherited,
             env_keys,
+            snapshot_limits,
+            hostile_binary_containment: false,
         };
 
         Ok(Self {
             metadata,
             env,
             provided_workdir,
+            snapshot_limits,
         })
     }
 
@@ -184,6 +253,7 @@ impl Sandbox {
         process_sandbox(
             SandboxPaths::from_metadata(&self.metadata),
             self.env.clone(),
+            self.snapshot_limits,
         )
     }
 
@@ -192,6 +262,7 @@ impl Sandbox {
             return Ok(process_host(
                 self.metadata.workdir.clone(),
                 self.env.clone(),
+                self.snapshot_limits,
             ));
         }
         let paths = SandboxPaths::with_workdir(
@@ -199,7 +270,11 @@ impl Sandbox {
             self.provided_workdir.clone(),
         );
         create_execution_dirs(&paths).await?;
-        Ok(process_sandbox(paths.clone(), sandbox_env(&paths)))
+        Ok(process_sandbox(
+            paths.clone(),
+            sandbox_env(&paths),
+            self.snapshot_limits,
+        ))
     }
 
     pub fn probe_evidence(&self) -> ProbeSandboxEvidence {
@@ -208,6 +283,8 @@ impl Sandbox {
             cwd: self.metadata.workdir.clone(),
             env_policy: self.metadata.env_policy,
             env_keys: self.metadata.env_keys.clone(),
+            snapshot_limits: self.snapshot_limits,
+            hostile_binary_containment: self.metadata.hostile_binary_containment,
         }
     }
 
@@ -217,6 +294,8 @@ impl Sandbox {
             cwd: execution.cwd.clone(),
             env_policy: self.metadata.env_policy,
             env_keys: self.metadata.env_keys.clone(),
+            snapshot_limits: self.snapshot_limits,
+            hostile_binary_containment: self.metadata.hostile_binary_containment,
         }
     }
 }
@@ -322,11 +401,16 @@ async fn ensure_existing_workdir(path: &Path) -> Result<()> {
     }
 }
 
-fn process_sandbox(paths: SandboxPaths, env: BTreeMap<String, String>) -> ProcessSandbox {
+fn process_sandbox(
+    paths: SandboxPaths,
+    env: BTreeMap<String, String>,
+    snapshot_limits: SnapshotLimits,
+) -> ProcessSandbox {
     ProcessSandbox {
         root: paths.root,
         cwd: paths.workdir.clone(),
         env,
+        snapshot_limits,
         regions: vec![
             SandboxRegionRoot::new(SandboxRegion::Home, paths.home),
             SandboxRegionRoot::new_with_hash_mode(
@@ -401,11 +485,16 @@ fn host_env(cwd: &Path) -> BTreeMap<String, String> {
     env
 }
 
-fn process_host(cwd: PathBuf, env: BTreeMap<String, String>) -> ProcessSandbox {
+fn process_host(
+    cwd: PathBuf,
+    env: BTreeMap<String, String>,
+    snapshot_limits: SnapshotLimits,
+) -> ProcessSandbox {
     ProcessSandbox {
         root: cwd.clone(),
         cwd,
         env,
+        snapshot_limits,
         regions: Vec::new(),
     }
 }
@@ -441,7 +530,7 @@ enum SnapshotHashMode {
     Metadata,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxRegion {
     Home,
@@ -452,7 +541,7 @@ pub enum SandboxRegion {
     Tmp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileChangeKind {
     Created,
@@ -460,7 +549,7 @@ pub enum FileChangeKind {
     Deleted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
 pub struct FileChange {
     pub kind: FileChangeKind,
     pub region: SandboxRegion,
@@ -469,18 +558,22 @@ pub struct FileChange {
     pub sha256: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SideEffectSummary {
     pub created: usize,
     pub modified: usize,
     pub deleted: usize,
     pub total: usize,
+    pub truncated: bool,
+    pub truncation_reason: Option<String>,
     pub changes: Vec<FileChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideEffectSnapshot {
     files: BTreeMap<PathBuf, FileSnapshot>,
+    truncated: bool,
+    truncation_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -494,12 +587,20 @@ struct FileSnapshot {
 impl ProcessSandbox {
     pub async fn snapshot(&self) -> Result<SideEffectSnapshot> {
         let mut files = BTreeMap::new();
+        let mut budget = SnapshotBudget::new(self.snapshot_limits);
 
         for region_root in &self.regions {
-            scan_region(&self.root, region_root, &mut files).await?;
+            scan_region(&self.root, region_root, &mut files, &mut budget).await?;
+            if budget.truncated() {
+                break;
+            }
         }
 
-        Ok(SideEffectSnapshot { files })
+        Ok(SideEffectSnapshot {
+            files,
+            truncated: budget.truncated(),
+            truncation_reason: budget.truncation_reason().map(str::to_owned),
+        })
     }
 }
 
@@ -558,8 +659,76 @@ impl SideEffectSnapshot {
             modified,
             deleted,
             total: changes.len(),
+            truncated: self.truncated || after.truncated,
+            truncation_reason: self
+                .truncation_reason
+                .clone()
+                .or_else(|| after.truncation_reason.clone()),
             changes,
         }
+    }
+}
+
+#[derive(Debug)]
+struct SnapshotBudget {
+    limits: SnapshotLimits,
+    files: usize,
+    directories: usize,
+    hash_bytes: u64,
+    truncation_reason: Option<&'static str>,
+}
+
+impl SnapshotBudget {
+    fn new(limits: SnapshotLimits) -> Self {
+        Self {
+            limits,
+            files: 0,
+            directories: 0,
+            hash_bytes: 0,
+            truncation_reason: None,
+        }
+    }
+
+    fn record_directory(&mut self) -> bool {
+        self.directories = self.directories.saturating_add(1);
+        if self.directories > self.limits.max_directories {
+            self.truncate("directory_budget_exhausted");
+            false
+        } else {
+            true
+        }
+    }
+
+    fn record_file(&mut self) -> bool {
+        self.files = self.files.saturating_add(1);
+        if self.files > self.limits.max_files {
+            self.truncate("file_budget_exhausted");
+            false
+        } else {
+            true
+        }
+    }
+
+    fn remaining_hash_bytes(&self) -> u64 {
+        self.limits.max_hash_bytes.saturating_sub(self.hash_bytes)
+    }
+
+    fn consume_hash_bytes(&mut self, bytes: u64) {
+        self.hash_bytes = self.hash_bytes.saturating_add(bytes);
+    }
+
+    fn truncate(&mut self, reason: &'static str) {
+        if self.truncation_reason.is_none() {
+            self.truncation_reason = Some(reason);
+        }
+    }
+
+    fn truncated(&self) -> bool {
+        self.truncation_reason.is_some()
+    }
+
+    fn truncation_reason(&self) -> Option<&'static str> {
+        self.truncation_reason
     }
 }
 
@@ -567,10 +736,14 @@ async fn scan_region(
     sandbox_root: &Path,
     region_root: &SandboxRegionRoot,
     files: &mut BTreeMap<PathBuf, FileSnapshot>,
+    budget: &mut SnapshotBudget,
 ) -> Result<()> {
     let mut pending = vec![region_root.path.clone()];
 
     while let Some(dir) = pending.pop() {
+        if !budget.record_directory() {
+            return Ok(());
+        }
         let mut entries = match fs::read_dir(&dir).await {
             Ok(entries) => entries,
             Err(source) if source.kind() == ErrorKind::NotFound => continue,
@@ -595,6 +768,9 @@ async fn scan_region(
                 }
             };
             let path = entry.path();
+            if budget.truncated() {
+                return Ok(());
+            }
             let metadata = match entry.metadata().await {
                 Ok(metadata) => metadata,
                 Err(source) if source.kind() == ErrorKind::NotFound => continue,
@@ -609,8 +785,22 @@ async fn scan_region(
             if metadata.is_dir() {
                 pending.push(path);
             } else if metadata.is_file() {
+                if !budget.record_file() {
+                    return Ok(());
+                }
                 let sha256 = match region_root.hash_mode {
-                    SnapshotHashMode::Content => sha256_file(&path).await?,
+                    SnapshotHashMode::Content => {
+                        match sha256_file(&path, budget.remaining_hash_bytes()).await? {
+                            FileHash::Complete { sha256, bytes_read } => {
+                                budget.consume_hash_bytes(bytes_read);
+                                sha256
+                            }
+                            FileHash::Truncated => {
+                                budget.truncate("hash_byte_budget_exhausted");
+                                None
+                            }
+                        }
+                    }
                     SnapshotHashMode::Metadata => None,
                 };
                 let relative_path = path
@@ -626,6 +816,9 @@ async fn scan_region(
                         sha256,
                     },
                 );
+                if budget.truncated() {
+                    return Ok(());
+                }
             }
         }
     }
@@ -642,10 +835,26 @@ fn modified_unix_nanos(metadata: &std::fs::Metadata) -> Option<u128> {
         .map(|duration| duration.as_nanos())
 }
 
-async fn sha256_file(path: &Path) -> Result<Option<String>> {
+enum FileHash {
+    Complete {
+        sha256: Option<String>,
+        bytes_read: u64,
+    },
+    Truncated,
+}
+
+async fn sha256_file(path: &Path, max_bytes: u64) -> Result<FileHash> {
+    if max_bytes == 0 {
+        return Ok(FileHash::Truncated);
+    }
     let mut file = match File::open(path).await {
         Ok(file) => file,
-        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) if source.kind() == ErrorKind::NotFound => {
+            return Ok(FileHash::Complete {
+                sha256: None,
+                bytes_read: 0,
+            });
+        }
         Err(source) => {
             return Err(CliareError::ReadSandboxFile {
                 path: path.to_path_buf(),
@@ -655,6 +864,7 @@ async fn sha256_file(path: &Path) -> Result<Option<String>> {
     };
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut bytes_read_total = 0_u64;
 
     loop {
         let bytes_read =
@@ -667,17 +877,25 @@ async fn sha256_file(path: &Path) -> Result<Option<String>> {
         if bytes_read == 0 {
             break;
         }
-        hasher.update(&buffer[..bytes_read]);
+        let bytes_read = bytes_read as u64;
+        if bytes_read_total.saturating_add(bytes_read) > max_bytes {
+            return Ok(FileHash::Truncated);
+        }
+        bytes_read_total = bytes_read_total.saturating_add(bytes_read);
+        hasher.update(&buffer[..bytes_read as usize]);
     }
 
-    Ok(Some(format!("{:x}", hasher.finalize())))
+    Ok(FileHash::Complete {
+        sha256: Some(format!("{:x}", hasher.finalize())),
+        bytes_read: bytes_read_total,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{FileChangeKind, Sandbox, SandboxRegion};
+    use super::{FileChangeKind, Sandbox, SandboxProfile, SandboxRegion, SnapshotLimits};
 
     #[tokio::test]
     async fn snapshots_report_created_modified_and_deleted_files_by_region() {
@@ -765,6 +983,77 @@ mod tests {
             .expect("workdir change is reported");
         assert_eq!(change.kind, FileChangeKind::Modified);
         assert_eq!(change.sha256, None);
+
+        let _ = tokio::fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn snapshot_reports_truncation_when_file_budget_is_exhausted() {
+        let root = unique_test_dir("sandbox-snapshot-budget");
+        let sandbox = Sandbox::create(&root).await.expect("sandbox is created");
+        let execution = sandbox.execution();
+
+        let before = execution
+            .snapshot()
+            .await
+            .expect("before snapshot succeeds");
+        for index in 0..40 {
+            tokio::fs::write(
+                sandbox.metadata().tmp.join(format!("created-{index}")),
+                "new",
+            )
+            .await
+            .expect("created fixture is written");
+        }
+        let after = execution.snapshot().await.expect("after snapshot succeeds");
+        let diff = before.diff(&after);
+
+        assert!(diff.truncated);
+        assert_eq!(
+            diff.truncation_reason.as_deref(),
+            Some("file_budget_exhausted")
+        );
+
+        let _ = tokio::fs::remove_dir_all(root).await;
+    }
+
+    #[tokio::test]
+    async fn snapshot_uses_limits_supplied_by_profile_configuration() {
+        let root = unique_test_dir("sandbox-configured-snapshot-budget");
+        let limits = SnapshotLimits::new(1, 64, 1024);
+        let sandbox =
+            Sandbox::create_with_profile_and_limits(&root, None, SandboxProfile::Isolated, limits)
+                .await
+                .expect("sandbox is created");
+        let execution = sandbox
+            .execution_for_probe("p_000001")
+            .await
+            .expect("probe execution is created");
+
+        assert_eq!(sandbox.metadata().snapshot_limits, limits);
+        assert!(!sandbox.metadata().hostile_binary_containment);
+        let evidence = sandbox.probe_evidence_for(&execution);
+        assert_eq!(evidence.snapshot_limits, limits);
+        assert!(!evidence.hostile_binary_containment);
+
+        let before = execution
+            .snapshot()
+            .await
+            .expect("before snapshot succeeds");
+        tokio::fs::write(execution.cwd.join("one"), "new")
+            .await
+            .expect("first fixture is written");
+        tokio::fs::write(execution.cwd.join("two"), "new")
+            .await
+            .expect("second fixture is written");
+        let after = execution.snapshot().await.expect("after snapshot succeeds");
+        let diff = before.diff(&after);
+
+        assert!(diff.truncated);
+        assert_eq!(
+            diff.truncation_reason.as_deref(),
+            Some("file_budget_exhausted")
+        );
 
         let _ = tokio::fs::remove_dir_all(root).await;
     }
