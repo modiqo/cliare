@@ -1,0 +1,13 @@
+A 16:9 horizontal editorial riso illustration that explains ONE idea: "When command shape is uncertain, agents burn tokens rediscovering a CLI by trial and error."
+
+Composition (loop / route, editorial not formal): Blip is stuck on a small treadmill made of terminal prompt strips. The treadmill loops past repeated help scrolls, rejected flags, and missing operand signs, then back to the same prompt. A small token meter drains into a cup at the side. Blip is walking forward with a deadpan face, doing work but not making progress. Generous negative space; subject large and confident.
+
+CHARACTER (locked, keep exactly on the reference model): the recurring mascot - a rounded-cube body, one rounded-rectangle screen face with two dot eyes, blank deadpan, no eyebrows, no mouth, one short antenna with an accent-colored ball tip, stubby arms and legs. It MUST perform the move, not decorate. In a light palette, build it with a LIGHT body plus structure-ink outline and a structure-ink screen, not pure black. The mascot is a solid OPAQUE shape in front of the scene; background lines stop at its silhouette. Its limbs join the body cleanly at sensible points; no extra, floating, or mid-body arms or legs. Any tool is held in a hand and clearly separated from the torso, or rests in the scene.
+
+LINE LANGUAGE: draw EVERYTHING - mascot, objects, arrows - in ONE bold, even-weight, softly-rounded outline, not thin scratchy sketch lines.
+
+STYLE: risograph print - grainy halftone texture, slight ink-layer offset, faint paper grain, flat fills, no gradients, no soft shadows.
+
+PALETTE: warm paper #F5E9C8. Structure ink #1D2328 for all linework, forms, and label text. Accent #12A6B7 used sparingly for Blip antenna ball and the draining token stream.
+
+LABELS: exactly 3 short hand-lettered English labels - "Help loop", "Retries", "Token burn" - in the structure-ink color placed directly on bare paper. Never put label text on a colored fill. No title bar, no type label, no logo.

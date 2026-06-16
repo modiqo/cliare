@@ -1,0 +1,13 @@
+A 16:9 horizontal editorial riso illustration that explains ONE idea: "CLIs are becoming the hands agents use to reach real services."
+
+Composition (throughput): Blip stands at a small terminal workbench wearing two oversized command-line gloves. The gloves reach outward as simple mechanical hands toward three distant service objects: a code repository cabinet, a payment ledger, and a cloud box. The terminal workbench is the only built object near Blip. The scene reads as practical reach, not magic. Generous negative space; subject large and confident.
+
+CHARACTER (locked, keep exactly on the reference model): the recurring mascot - a rounded-cube body, one rounded-rectangle screen face with two dot eyes, blank deadpan, no eyebrows, no mouth, one short antenna with an accent-colored ball tip, stubby arms and legs. It MUST perform the move, not decorate. In a light palette, build it with a LIGHT body plus structure-ink outline and a structure-ink screen, not pure black. The mascot is a solid OPAQUE shape in front of the scene; background lines stop at its silhouette. Its limbs join the body cleanly at sensible points; no extra, floating, or mid-body arms or legs. Any tool is held in a hand and clearly separated from the torso, or rests in the scene.
+
+LINE LANGUAGE: draw EVERYTHING - mascot, objects, arrows - in ONE bold, even-weight, softly-rounded outline, not thin scratchy sketch lines.
+
+STYLE: risograph print - grainy halftone texture, slight ink-layer offset, faint paper grain, flat fills, no gradients, no soft shadows.
+
+PALETTE: warm paper #F5E9C8. Structure ink #1D2328 for all linework, forms, and label text. Accent #12A6B7 used sparingly for Blip antenna ball and the command-line glove reach lines.
+
+LABELS: exactly 3 short hand-lettered English labels - "Agent hands", "CLIs", "Services" - in the structure-ink color placed directly on bare paper. Never put label text on a colored fill. No title bar, no type label, no logo.

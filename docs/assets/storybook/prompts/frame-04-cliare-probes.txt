@@ -1,0 +1,13 @@
+A 16:9 horizontal explainer riso illustration that explains ONE idea: "CLIARE exercises the released CLI the way an agent would, under the context the maintainer chooses."
+
+Composition (explainer - flow): a hand-built sketch-diagram of one left-to-right structure. Station 1 is a released CLI box. Station 2 is a context dial with small settings for clean, repo, auth, and host. Station 3 is an evidence press operated by Blip pulling a lever. Station 4 is an evidence drawer receiving stamped probe cards. One main flow direction, left to right, drawn as simple hand-drawn arrows in the flow color. The mascot is a WORKING PART of the structure, pulling the lever of the evidence press, never a presenter beside it. No title, no border, no grid, no legend, no formal flowchart boxes. The structure spans about 60 percent of the frame with calm negative space.
+
+CHARACTER (locked, keep exactly on the reference model): the recurring mascot - a rounded-cube body, one rounded-rectangle screen face with two dot eyes, blank deadpan, no eyebrows, no mouth, one short antenna with an accent-colored ball tip, stubby arms and legs. It MUST perform the move, not decorate. In a light palette, build it with a LIGHT body plus structure-ink outline and a structure-ink screen, not pure black. The mascot is a solid OPAQUE shape in front of the scene; background lines stop at its silhouette. Its limbs join the body cleanly at sensible points; no extra, floating, or mid-body arms or legs. Any tool is held in a hand and clearly separated from the torso, or rests in the scene.
+
+LINE LANGUAGE: draw EVERYTHING - mascot, objects, arrows - in ONE bold, even-weight, softly-rounded outline, not thin scratchy sketch lines.
+
+STYLE: risograph print - grainy halftone texture, slight ink-layer offset, faint paper grain, flat fills, no gradients, no soft shadows.
+
+PALETTE: warm paper #F5E9C8. Structure ink #1D2328 for all linework, forms, and callout text. Accent #12A6B7 used sparingly for Blip antenna ball and flow arrows. Semantic roles: the flow arrows and the one flow note use the accent ink; everything else, including all callout text, uses the structure ink.
+
+CALLOUTS: exactly 4 short hand-lettered English callouts - "Released CLI", "Chosen context", "CLIARE probes", "Evidence" - each appearing exactly once, placed directly on bare paper near what they name. Hand-letter ONLY these words, no other text, numbers, signatures, or color codes anywhere in the image. Never put callout text on a colored fill. No title bar, no type label, no logo.
