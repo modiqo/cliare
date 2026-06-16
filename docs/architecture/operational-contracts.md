@@ -257,6 +257,8 @@ Operational rule:
 
 > Isolated mode is a local safety and evidence boundary, not a hostile-binary containment boundary.
 
+Concrete command recipes for validating future containment backends and classifying current evidence are in [`../operations/hostile-binary-containment-command-playbook.md`](../operations/hostile-binary-containment-command-playbook.md).
+
 Use host mode only when measuring authenticated or local-context behavior is the point of the run.
 
 ---
