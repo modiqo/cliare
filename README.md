@@ -203,6 +203,48 @@ cargo build --locked --bin cliare
 ./target/debug/cliare metadata --format json
 ```
 
+The source package also includes a `justfile` with optional command shortcuts for common CLIARE workflows. Install [`just`](https://just.systems/) separately if you want to use these recipes; the `cliare` binary itself does not require it.
+
+List available recipes:
+
+```sh
+just --list
+```
+
+Measure a large local CLI surface in the background:
+
+```sh
+just measure-detached supabase
+just jobs supabase
+```
+
+This expands to a deep traversal that writes artifacts under `.cliare/supabase`:
+
+```sh
+cliare measure supabase --out .cliare/supabase --profile deep --max-depth 12 --max-probes 5000 --concurrency 8 --refresh --detach
+```
+
+Override traversal budget when a CLI needs more or less exploration:
+
+```sh
+just max_depth=16 max_probes=10000 measure-detached gh
+just profile=standard max_depth=5 max_probes=256 measure kubectl
+```
+
+For path-based local binaries, pass a stable artifact id:
+
+```sh
+just measure-detached ./target/release/mycli mycli
+```
+
+Review accumulated artifacts:
+
+```sh
+just review supabase
+just report supabase security
+just agent-surface supabase
+```
+
 Release preparation lives in [RELEASE.md](RELEASE.md). The version history is [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick Start: Maintainer Audit
