@@ -1,6 +1,6 @@
 # Release Process
 
-This repository is prepared for binary and crates.io releases. The current crate version is `0.1.4`.
+This repository is prepared for binary and crates.io releases. The current crate version is `0.1.5`.
 
 ## Channels
 
@@ -32,7 +32,7 @@ The installer supports:
 
 ```sh
 CLIARE_INSTALL_DIR=/usr/local/bin
-CLIARE_VERSION=v0.1.4
+CLIARE_VERSION=v0.1.5
 CLIARE_REPO=modiqo/cliare
 ```
 
@@ -81,9 +81,9 @@ cargo run -- issues list --out .cliare/cliare --format human
 4. Tag the release:
 
 ```sh
-git tag -a v0.1.4 -m "v0.1.4"
+git tag -a v0.1.5 -m "v0.1.5"
 git push origin main
-git push origin v0.1.4
+git push origin v0.1.5
 ```
 
 ## crates.io

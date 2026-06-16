@@ -639,7 +639,7 @@ Current top-level fields include:
 ```json
 {
   "schema_version": "cliare.artifact-map.v1",
-  "cliare_version": "0.1.4",
+  "cliare_version": "0.1.5",
   "generated_at": "2026-06-15T21:11:30Z",
   "folder": ".cliare/cliare-on-cliare",
   "artifact_kind": "measurement",

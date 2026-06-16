@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.5] - 2026-06-16
+
+Operational hardening for measurement artifacts.
+
+- Adds probe-level measurement checkpoints and compatible resume support.
+- Adds cache manifest run IDs and per-artifact digests.
+- Cleans abandoned in-progress evidence logs before fresh measurements.
+- Makes snapshot scanner caps configurable through measurement and guard CLI options.
+- Documents hostile-binary containment as external operational policy and records that current isolated measurements are not a hostile-binary containment boundary.
+
 ## [0.1.4] - 2026-06-16
 
 Documentation and release install clarity.
