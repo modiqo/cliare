@@ -17,7 +17,7 @@ use crate::observation::ShapeObservation;
 use crate::output::ObservedOutputKind;
 use crate::path_classification;
 use crate::precondition::PreconditionKind;
-use crate::sandbox::SandboxMetadata;
+use crate::sandbox::{SandboxMetadata, SnapshotLimits};
 pub use crate::score_model::ScoreDimension as Dimension;
 use crate::score_model::ScoreModelSpec;
 
@@ -73,6 +73,10 @@ pub struct Coverage {
     sandbox_home: PathBuf,
     sandbox_workdir: PathBuf,
     sandbox_env_policy: &'static str,
+    snapshot_max_files: usize,
+    snapshot_max_directories: usize,
+    snapshot_max_hash_bytes: u64,
+    hostile_binary_containment: bool,
     commands_discovered: usize,
     commands_runtime_confirmed: usize,
     commands_precondition_blocked: usize,
@@ -218,6 +222,10 @@ pub struct ScoreArtifactSummary {
     pub sandbox_home: PathBuf,
     pub sandbox_workdir: PathBuf,
     pub sandbox_env_policy: &'static str,
+    pub snapshot_max_files: usize,
+    pub snapshot_max_directories: usize,
+    pub snapshot_max_hash_bytes: u64,
+    pub hostile_binary_containment: bool,
     pub runtime_context: RuntimeContext,
 }
 
@@ -246,6 +254,8 @@ pub struct SandboxScoreContext {
     pub home: PathBuf,
     pub workdir: PathBuf,
     pub env_policy: &'static str,
+    pub snapshot_limits: SnapshotLimits,
+    pub hostile_binary_containment: bool,
 }
 
 impl From<&SandboxMetadata> for SandboxScoreContext {
@@ -256,6 +266,8 @@ impl From<&SandboxMetadata> for SandboxScoreContext {
             home: metadata.home.clone(),
             workdir: metadata.workdir.clone(),
             env_policy: env_policy_label(metadata.env_policy),
+            snapshot_limits: metadata.snapshot_limits,
+            hostile_binary_containment: metadata.hostile_binary_containment,
         }
     }
 }
@@ -327,6 +339,10 @@ pub async fn write_score_artifacts(
         sandbox_home: scorecard.coverage.sandbox_home.clone(),
         sandbox_workdir: scorecard.coverage.sandbox_workdir.clone(),
         sandbox_env_policy: scorecard.coverage.sandbox_env_policy,
+        snapshot_max_files: scorecard.coverage.snapshot_max_files,
+        snapshot_max_directories: scorecard.coverage.snapshot_max_directories,
+        snapshot_max_hash_bytes: scorecard.coverage.snapshot_max_hash_bytes,
+        hostile_binary_containment: scorecard.coverage.hostile_binary_containment,
         runtime_context: scorecard.runtime_context.clone(),
     })
 }
@@ -908,6 +924,10 @@ impl Metrics {
                 sandbox_home: run_context.sandbox.home,
                 sandbox_workdir: run_context.sandbox.workdir,
                 sandbox_env_policy: run_context.sandbox.env_policy,
+                snapshot_max_files: run_context.sandbox.snapshot_limits.max_files,
+                snapshot_max_directories: run_context.sandbox.snapshot_limits.max_directories,
+                snapshot_max_hash_bytes: run_context.sandbox.snapshot_limits.max_hash_bytes,
+                hostile_binary_containment: run_context.sandbox.hostile_binary_containment,
                 commands_discovered,
                 commands_runtime_confirmed,
                 commands_precondition_blocked,
@@ -1689,6 +1709,8 @@ mod tests {
                     home: "/Users/example".into(),
                     workdir: "/tmp/project".into(),
                     env_policy: "inherited",
+                    snapshot_limits: crate::sandbox::SnapshotLimits::default(),
+                    hostile_binary_containment: false,
                 },
                 ..ScoreRunContext::default()
             },
@@ -1766,6 +1788,8 @@ AYUDA
             home: "/tmp/cliare/sandbox/home".into(),
             workdir: "/tmp/cliare/sandbox/cwd".into(),
             env_policy: "cleared_with_allowlist",
+            snapshot_limits: crate::sandbox::SnapshotLimits::default(),
+            hostile_binary_containment: false,
         }
     }
 

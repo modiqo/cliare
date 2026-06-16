@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
@@ -14,7 +14,7 @@ use crate::sandbox::{ProcessSandbox, SideEffectSummary};
 
 const STREAM_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProbeSpec {
     pub args: Vec<String>,
     pub path: Vec<String>,
@@ -205,7 +205,7 @@ pub struct ProbeOutcome {
     pub side_effects: SideEffectSummary,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OutputCapture {
     pub sha256: String,
     pub bytes: usize,

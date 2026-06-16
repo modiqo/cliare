@@ -231,6 +231,44 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to clean abandoned in-progress measurement artifact {path}")]
+    CleanupInProgressArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to read measurement checkpoint {path}")]
+    ReadMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse measurement checkpoint {path}")]
+    ParseMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize measurement checkpoint")]
+    SerializeMeasurementCheckpoint(#[source] serde_json::Error),
+
+    #[error("failed to write measurement checkpoint {path}")]
+    WriteMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to remove measurement checkpoint {path}")]
+    RemoveMeasurementCheckpoint {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
     #[error("failed to create progress directory {path}")]
     CreateProgressDir {
         path: PathBuf,

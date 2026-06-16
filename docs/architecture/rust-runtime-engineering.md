@@ -270,10 +270,12 @@ Current limitations:
 Current behavior:
 
 - creates the artifact directory
-- opens `evidence.jsonl` with truncate semantics for a fresh run
+- opens an in-progress evidence file for a fresh run
+- appends to the checkpointed in-progress evidence file for a compatible resumed run
 - starts event IDs at `e_000001`
 - writes line-delimited JSON
 - flushes after each event
+- atomically commits the completed evidence log to `evidence.jsonl`
 
 Current event kinds:
 
@@ -284,10 +286,10 @@ Current event kinds:
 
 Current limitation:
 
-- There is no append/resume mode.
-- There is no checkpoint boundary.
+- Resume is internal; there is no public `measure --resume` checkpoint selector.
+- In-flight probes from an interrupted run are not trusted as completed evidence and may be re-run.
 - There is no public replay command.
-- If a later report-writing step fails, evidence written so far remains on disk, but the run is not treated as a resumable checkpoint.
+- If a later report-writing step fails, evidence written so far remains on disk, but replaying downstream artifacts from that evidence is not a public command.
 
 ---
 
@@ -319,11 +321,13 @@ Current cache identity includes:
 - cache schema version
 - CLIARE package version
 - measurement engine label
+- run ID
 - target fingerprint
 - probe profile
 - runtime context embedded in the profile
+- SHA-256 digests and sizes for required measurement artifacts
 
-Cache reuse also requires the required measurement artifacts to exist:
+Cache reuse also requires the required measurement artifacts to exist and match the manifest digests:
 
 - `evidence.jsonl`
 - `shape.json`
@@ -337,7 +341,7 @@ Cache reuse also requires the required measurement artifacts to exist:
 
 `--refresh` bypasses the cache.
 
-This is artifact-level reuse. It is not probe-level memoization and not checkpoint/resume.
+This is completed-artifact reuse. It is not probe-level memoization across different runs.
 
 ---
 
@@ -493,11 +497,10 @@ These are future improvements, not current implementation:
 
 - split the crate into smaller internal crates once module boundaries stabilize
 - richer probe keys that include env policy, sandbox policy, fixture state, stdin hash, and TTY mode
-- checkpoint files and `measure --resume`
+- public `measure --resume` controls
 - replay existing evidence into shape, command index, reports, and scorecards
 - rescore existing artifacts with a new model version
-- append-only evidence mode with validation
-- artifact hash manifests
+- append-only evidence replay with stronger validation
 - OS-specific sandbox backends
 - network policy enforcement
 - process-tree cleanup guarantees

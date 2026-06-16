@@ -70,7 +70,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 |---|---|---|
 | [System Architecture](architecture/system-architecture.md) | Components, data flow, storage, CLI commands, plugin boundary | Probe -> Evidence -> Inference -> Shape -> Score -> Report |
 | [Probe Sandbox Runtime](architecture/probe-sandbox-runtime.md) | How CLIARE safely exercises arbitrary binaries | Temp HOME, network policy, filesystem diffing, timeouts, profiles |
-| [Checkpointing and Resume](architecture/checkpointing-and-resume.md) | Cache reuse, detached jobs, progress logs, artifact lifecycle, and future resume direction | Artifact cache and detached jobs are current; probe-level resume is future work |
+| [Checkpointing and Resume](architecture/checkpointing-and-resume.md) | Cache reuse, detached jobs, progress logs, artifact lifecycle, and checkpoint behavior | Artifact cache, detached jobs, and internal probe-level resume are current; public replay/rescore is future work |
 | [Rust Runtime Engineering](architecture/rust-runtime-engineering.md) | Current Rust crate layout, bounded Tokio probing, sandbox/process execution, cache/jobs, and runtime invariants | Single-crate implementation with deterministic planner, typed errors, and bounded subprocess execution |
 | [Operational Contracts](architecture/operational-contracts.md) | Current cache, runtime context, guard, policy, sandbox, dependency, score-model, and reproducibility contracts | Artifact cache, guard, policy, and contexts are current; certification and replay are future work |
 
@@ -208,7 +208,7 @@ CLIARE should produce durable artifacts that separate evidence, inference, comma
 
 The artifact map is the directory-level navigation contract. It describes the folder kind, file roles, schemas, required and missing artifacts, current job state, and recommended inspection order.
 
-The evidence log is the raw observation record for the completed measurement. Current runs rewrite it on fresh measurement; replay and resume are future work.
+The evidence log is the raw observation record for the completed measurement. Active runs write in-progress evidence and compatible interrupted measurements can resume internally; public replay and rescore commands are future work.
 
 The shape catalog is the raw inferred command surface.
 

@@ -220,11 +220,12 @@ Implemented:
 - active detached-job guard per artifact directory
 - artifact-level cache through `measure-cache.json`
 - `--refresh` to bypass reusable artifacts
+- internal checkpoint/resume for compatible interrupted measurements
 
 Current limitation:
 
-- This is not probe-level checkpoint/resume.
-- Interrupted partial runs are not resumed.
+- There is no public `measure --resume` control.
+- Replay/rescore from existing evidence remains future work.
 
 ---
 

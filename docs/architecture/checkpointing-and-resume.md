@@ -1,7 +1,7 @@
 # 10 - Cache, Jobs, And Resume Direction
 
-> **Scope:** Measurement reuse, detached execution, progress reporting, artifact lifecycle, crash behavior, and the future checkpoint/resume model.
-> **Status:** Current implementation plus planned direction.
+> **Scope:** Measurement reuse, detached execution, progress reporting, artifact lifecycle, crash behavior, and checkpoint/resume behavior.
+> **Status:** Current implementation plus remaining direction.
 
 ---
 
@@ -10,16 +10,17 @@
 CLIARE currently supports:
 
 - artifact-level measurement reuse through `measure-cache.json`
+- internal probe-level checkpoint/resume for compatible interrupted measurements
 - progress logs under the measurement artifact directory
 - foreground and detached measurement job tracking
 - an active-job guard for detached measurements
 - benchmark output locking and atomic benchmark report writes
 
-CLIARE does not currently support true probe-level checkpoint/resume. There is no public `--resume`, `replay`, or `rescore` command today. A fresh measurement truncates and rewrites `evidence.jsonl`; a cached measurement reuses a completed artifact set only when the target, profile, CLIARE version, engine, and required artifacts all match.
+CLIARE does not currently expose a public `--resume`, `replay`, or `rescore` command. Resume is internal and conservative: a fresh non-`--refresh` measurement may resume from `<artifact-dir>/measure-checkpoint.json` only when the target fingerprint, probe profile, runtime context, CLIARE version, engine, checkpoint counters, and in-progress evidence log are compatible.
 
 The current rule is:
 
-> Completed measurement artifacts may be reused exactly. Partial probe execution is not resumed yet.
+> Completed measurement artifacts may be reused exactly. Compatible partial probe execution may resume from the last completed probe checkpoint; incompatible or incomplete checkpoint state is treated as a fresh cache miss.
 
 ---
 
@@ -42,19 +43,22 @@ if --refresh is not set, check measure-cache.json
   +--> cache hit: regenerate lightweight guides/reports and return summary
   |
   v
-cache miss: create progress log and runtime-context.json
+cache miss: read compatible measure-checkpoint.json or clean abandoned in-progress evidence
   |
   v
-create sandbox and evidence writer
+create progress log and runtime-context.json
   |
   v
-run deterministic traversal until frontier exhaustion or probe budget
+create sandbox and evidence writer, or append to checkpointed in-progress evidence
+  |
+  v
+run deterministic traversal until frontier exhaustion or probe budget, writing a checkpoint after each completed probe
   |
   v
 write evidence, shape, command index, scorecard, reports, issues, and guides
   |
   v
-write measure-cache.json
+write measure-cache.json and remove measure-checkpoint.json
 ```
 
 The cache check happens before probes are executed. `--refresh` bypasses the cache and forces a new probe run.
@@ -102,8 +106,10 @@ It records:
 - `schema_version`
 - `cliare_version`
 - `engine`
+- `run_id`
 - target fingerprint
 - probe profile
+- per-artifact SHA-256 digests and sizes for required measurement artifacts
 - measurement summary facts
 
 The current engine label is:
@@ -120,6 +126,7 @@ A cache hit requires all of the following:
 - the target fingerprint matches the current target
 - the probe profile matches the current run options and runtime context
 - all required measurement artifacts still exist
+- all recorded required-artifact digests and sizes match the files on disk
 
 If any check fails, CLIARE treats the cache as a miss and runs probes again.
 
@@ -182,12 +189,13 @@ Current event kinds are:
 - `run_finished`
 
 The writer flushes each event after writing it. A fresh run opens `evidence.jsonl` with truncate semantics, so an earlier evidence log is replaced when a new measurement is executed in the same artifact directory.
+During an active measurement, evidence is first written to an in-progress file named `.evidence.jsonl.in-progress.<pid>`. Successful completion atomically commits that file to `evidence.jsonl`. A compatible checkpoint resumes by appending to the recorded in-progress evidence file.
 
 Current implication:
 
 - completed evidence is useful for inspection and downstream artifacts
-- partial evidence may exist after a crash or interrupted run
-- partial evidence is not currently validated and resumed by the CLI
+- compatible partial evidence may be resumed by the next non-`--refresh` measurement
+- abandoned in-progress evidence files are removed before a fresh run starts
 - there is no public replay command that regenerates shape, scorecard, and reports from an existing evidence log
 
 ---
@@ -306,7 +314,7 @@ Benchmark locking does not imply general measurement locking for every foregroun
 These capabilities are not implemented today:
 
 - `.cliare/run.json` run manifests
-- `.cliare/checkpoints/` scheduler, sandbox, inference, or scoring checkpoints
+- `.cliare/checkpoints/` multi-phase scheduler, sandbox, inference, or scoring checkpoints
 - `cliare measure --resume`
 - `cliare measure --new-run`
 - `cliare measure --no-cache`
@@ -314,33 +322,31 @@ These capabilities are not implemented today:
 - `cliare replay`
 - `cliare rescore`
 - probe-level reuse across runs
-- artifact hash manifests
 - confidence intervals for partial measurements
-- automatic recovery from an interrupted partial evidence log
+- public control over checkpoint selection or checkpoint retention
 - hosted checkpoint lifecycle
 
-The absence of these features is important for operators. If a run is interrupted, rerun `cliare measure` and let it either hit the completed cache or start a fresh measurement. Use `--refresh` when you explicitly want to ignore reusable artifacts.
+The absence of these public controls is important for operators. If a run is interrupted, rerun `cliare measure` and let it either hit the completed cache, resume a compatible internal checkpoint, or start a fresh measurement. Use `--refresh` when you explicitly want to ignore reusable artifacts and any internal checkpoint.
 
 ---
 
-## Future Checkpointing Direction
+## Remaining Checkpointing Direction
 
-The desired future model is:
+The desired broader model is:
 
 > Evidence remains durable, probe scheduling is checkpointed, and downstream inference/scoring/reporting can be replayed deterministically.
 
-A sound checkpoint implementation should add:
+The internal checkpoint implementation covers completed-probe resume for the measurement traversal. Remaining work should add:
 
 - a run manifest with run ID, target fingerprint, profile, budget, status, and artifact references
-- a scheduler checkpoint with completed probes, pending frontier, budget state, and traversal policy version
-- evidence-log validation before reuse
-- explicit resume semantics that verify target fingerprint and profile compatibility
+- pending-frontier and budget-state checkpoints for richer scheduler replay
+- stronger evidence-log validation before reuse
+- explicit public resume semantics and UX
 - replay from evidence into shape, scorecard, reports, and issues
 - rescore from existing shape or evidence when only the scoring model changes
-- artifact hashes for provenance and cache integrity
 - crash-conscious writes for checkpoint files and derived artifacts
 
-Future resume behavior should be conservative:
+Resume behavior should remain conservative:
 
 - resume only when the target fingerprint still matches
 - resume only when the traversal profile and runtime context still match

@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::context::{ContextArgs, RuntimeContextProfile, RuntimeContextState};
 use crate::issue_disposition::IssueDispositionStatus;
-use crate::sandbox::SandboxProfile;
+use crate::sandbox::{
+    DEFAULT_SNAPSHOT_MAX_DIRS, DEFAULT_SNAPSHOT_MAX_FILES, DEFAULT_SNAPSHOT_MAX_HASH_BYTES,
+    SandboxProfile, SnapshotLimits,
+};
 
 pub const QUICK_MAX_DEPTH: usize = 3;
 pub const QUICK_MAX_PROBES: usize = 64;
@@ -596,6 +599,18 @@ pub struct MeasureArgs {
     #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
     pub concurrency: Option<usize>,
 
+    /// Maximum files scanned per side-effect snapshot.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub snapshot_max_files: Option<usize>,
+
+    /// Maximum directories scanned per side-effect snapshot.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub snapshot_max_directories: Option<usize>,
+
+    /// Maximum bytes hashed per side-effect snapshot.
+    #[arg(long, value_name = "BYTES", value_parser = parse_positive_u64)]
+    pub snapshot_max_hash_bytes: Option<u64>,
+
     /// Runtime context profile. When set, --out is a suite root and artifacts are written under contexts/<context>.
     #[arg(long, value_enum)]
     pub context: Option<RuntimeContextProfile>,
@@ -669,6 +684,17 @@ impl MeasureArgs {
         self.concurrency
             .unwrap_or_else(|| self.profile.default_concurrency())
     }
+
+    pub fn snapshot_limits(&self) -> SnapshotLimits {
+        SnapshotLimits::new(
+            self.snapshot_max_files
+                .unwrap_or(DEFAULT_SNAPSHOT_MAX_FILES),
+            self.snapshot_max_directories
+                .unwrap_or(DEFAULT_SNAPSHOT_MAX_DIRS),
+            self.snapshot_max_hash_bytes
+                .unwrap_or(DEFAULT_SNAPSHOT_MAX_HASH_BYTES),
+        )
+    }
 }
 
 #[derive(Debug, Args)]
@@ -725,6 +751,18 @@ pub struct GuardArgs {
     #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
     pub concurrency: Option<usize>,
 
+    /// Maximum files scanned per side-effect snapshot.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub snapshot_max_files: Option<usize>,
+
+    /// Maximum directories scanned per side-effect snapshot.
+    #[arg(long, value_name = "N", value_parser = parse_positive_usize)]
+    pub snapshot_max_directories: Option<usize>,
+
+    /// Maximum bytes hashed per side-effect snapshot.
+    #[arg(long, value_name = "BYTES", value_parser = parse_positive_u64)]
+    pub snapshot_max_hash_bytes: Option<u64>,
+
     /// Runtime context profile. When set, --out is a suite root and artifacts are written under contexts/<context>.
     #[arg(long, value_enum)]
     pub context: Option<RuntimeContextProfile>,
@@ -775,6 +813,9 @@ impl From<&GuardArgs> for MeasureArgs {
             max_probes: args.max_probes,
             min_expected_value: args.min_expected_value,
             concurrency: args.concurrency,
+            snapshot_max_files: args.snapshot_max_files,
+            snapshot_max_directories: args.snapshot_max_directories,
+            snapshot_max_hash_bytes: args.snapshot_max_hash_bytes,
             context: args.context,
             context_name: args.context_name.clone(),
             auth_state: args.auth_state,
@@ -858,9 +899,22 @@ fn parse_positive_usize(raw: &str) -> std::result::Result<usize, String> {
     }
 }
 
+fn parse_positive_u64(raw: &str) -> std::result::Result<u64, String> {
+    let value = raw
+        .parse::<u64>()
+        .map_err(|source| format!("expected positive integer: {source}"))?;
+    if value == 0 {
+        Err("expected positive integer greater than zero".to_owned())
+    } else {
+        Ok(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::{CommandFactory, Parser};
+
+    use crate::sandbox::SnapshotLimits;
 
     use super::{
         Cli, Command, DEEP_CONCURRENCY, DEEP_MAX_DEPTH, DEEP_MAX_PROBES, DEEP_MIN_EXPECTED_VALUE,
@@ -887,6 +941,40 @@ mod tests {
         assert!(help.contains("context"));
         assert!(help.contains("metadata"));
         assert!(help.contains("--version"));
+    }
+
+    #[test]
+    fn measure_accepts_configurable_snapshot_limits() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "measure",
+            "target",
+            "--snapshot-max-files",
+            "12",
+            "--snapshot-max-directories",
+            "13",
+            "--snapshot-max-hash-bytes",
+            "14",
+        ])
+        .expect("valid measure command");
+
+        match cli.command {
+            Command::Measure(args) => {
+                assert_eq!(args.snapshot_limits(), SnapshotLimits::new(12, 13, 14));
+            }
+            Command::Guard(_)
+            | Command::Jobs(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Issues(_)
+            | Command::Playbook(_)
+            | Command::Metadata(_) => {
+                panic!("expected measure command")
+            }
+        }
     }
 
     #[test]
