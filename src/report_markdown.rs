@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::artifact_guide::ArtifactGuideSummary;
-use crate::report_format::{command_path_label, escape_markdown, output_mode_label, shell_words};
+use crate::report_format::{
+    command_path_label, escape_markdown, output_mode_label, shell_arg, shell_words,
+};
 use crate::report_model::*;
 
 const COMMAND_SAMPLE_LIMIT: usize = 5;
@@ -21,15 +23,27 @@ pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
     writeln!(&mut text).expect("writing to string cannot fail");
 
     render_persona_decision(&mut text, packet);
-    render_plain_english_guide(&mut text);
-    render_ci_action_brief(&mut text, packet);
-    render_persona_score_summary(&mut text, packet);
-    render_persona_findings(&mut text, packet);
-    render_reviewed_decisions(&mut text, packet);
-    render_persona_command_guidance(&mut text, packet);
-    render_run_recommendations(&mut text, packet);
-    render_artifact_navigation(&mut text, packet);
-    render_notes(&mut text, packet);
+    if packet.persona == Persona::Maintainer {
+        render_ci_action_brief(&mut text, packet);
+        render_persona_findings(&mut text, packet);
+        render_reviewed_decisions(&mut text, packet);
+        render_persona_command_guidance(&mut text, packet);
+        render_run_recommendations(&mut text, packet);
+        render_plain_english_guide(&mut text);
+        render_persona_score_summary(&mut text, packet);
+        render_artifact_navigation(&mut text, packet);
+        render_notes(&mut text, packet);
+    } else {
+        render_plain_english_guide(&mut text);
+        render_ci_action_brief(&mut text, packet);
+        render_persona_score_summary(&mut text, packet);
+        render_persona_findings(&mut text, packet);
+        render_reviewed_decisions(&mut text, packet);
+        render_persona_command_guidance(&mut text, packet);
+        render_run_recommendations(&mut text, packet);
+        render_artifact_navigation(&mut text, packet);
+        render_notes(&mut text, packet);
+    }
 
     text
 }
@@ -91,7 +105,7 @@ pub(crate) fn render_drilldown_markdown(packet: &ReportDrilldownPacket) -> Strin
     writeln!(&mut text).expect("writing to string cannot fail");
     for issue in &packet.issues {
         if packet.persona == Persona::Maintainer {
-            render_maintainer_finding(&mut text, issue);
+            render_maintainer_finding(&mut text, &packet.source_artifacts.artifact_dir, issue);
         } else {
             render_named_finding(&mut text, packet.persona, issue);
         }
@@ -210,7 +224,12 @@ fn render_plain_english_guide(text: &mut String) {
 }
 
 fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
-    writeln!(text, "## CI Action Brief").expect("writing to string cannot fail");
+    let heading = if packet.persona == Persona::Maintainer {
+        "## Maintainer Action Queue"
+    } else {
+        "## CI Action Brief"
+    };
+    writeln!(text, "{heading}").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 
     if packet.top_issues.is_empty() {
@@ -312,7 +331,7 @@ fn render_maintainer_action_brief(
 ) {
     writeln!(
         text,
-        "Treat the rows below as agent-readiness work areas. Start with concrete contract gaps before advisory compatibility work, and use `command-index.json` only when you need exact command parameters or evidence pointers."
+        "Start here. Each item says what is wrong, what agents lose because of it, how to fix it, and how to record a disposition when the behavior is acceptable for this run."
     )
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
@@ -322,7 +341,7 @@ fn render_maintainer_action_brief(
         .expect("writing to string cannot fail");
     writeln!(
         text,
-        "| Work queue | `{}` area(s), `{}` high severity, `{}` need fixtures |",
+        "| Work queue | `{}` issue(s), `{}` high severity, `{}` need fixtures |",
         packet.top_issues.len(),
         high,
         fixture_required
@@ -336,26 +355,19 @@ fn render_maintainer_action_brief(
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 
-    writeln!(
-        text,
-        "| Area | Severity | Meaning | Affected | Do this | Verify |"
-    )
-    .expect("writing to string cannot fail");
-    writeln!(text, "|---|---|---|---:|---|---|").expect("writing to string cannot fail");
-    for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
-        writeln!(
+    for (index, issue) in packet
+        .top_issues
+        .iter()
+        .take(PERSONA_FINDING_LIMIT)
+        .enumerate()
+    {
+        render_maintainer_action_item(
             text,
-            "| {} | `{}` | {} | {} | {} | `{}` |",
-            escape_markdown(issue.agent_readiness_area.label()),
-            issue.severity.label(),
-            escape_markdown(issue_meaning(issue)),
-            issue.affected_commands.len(),
-            escape_markdown(persona_issue_action(packet.persona, issue)),
-            escape_markdown(&issue.verification.command)
-        )
-        .expect("writing to string cannot fail");
+            &packet.source_artifacts.artifact_dir,
+            issue,
+            index + 1,
+        );
     }
-    writeln!(text).expect("writing to string cannot fail");
 }
 
 fn render_persona_score_summary(text: &mut String, packet: &PersonaOutcomePacket) {
@@ -502,13 +514,168 @@ fn issue_where_label(issue: &Issue) -> String {
     labels.join(", ")
 }
 
-fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
-    let heading = if packet.persona == Persona::Maintainer {
-        "## Agent Readiness Findings"
-    } else {
-        "## Priority Findings"
+fn maintainer_agent_outcome(issue: &Issue) -> String {
+    let outcome = match issue.agent_readiness_area {
+        AgentReadinessArea::OutputContracts => {
+            "Agents cannot safely read command results, so they may guess at text output or drop state."
+        }
+        AgentReadinessArea::Preconditions => {
+            "Agents waste discovery loops because they cannot tell whether a command is missing or just needs setup."
+        }
+        AgentReadinessArea::CommandDiscovery | AgentReadinessArea::HelpCoverage => {
+            "Agents waste discovery loops because the command surface is not clearly confirmable."
+        }
+        AgentReadinessArea::Compatibility => {
+            "Agents may try an optional navigation path and spend extra retries before falling back to canonical help."
+        }
+        AgentReadinessArea::Diagnostics => {
+            "Agents cannot repair failed command attempts without guessing at the next command."
+        }
+        AgentReadinessArea::Execution => {
+            "Agents cannot route to this command confidently because execution behavior is not reliable enough."
+        }
+        AgentReadinessArea::Safety => {
+            "Agents need extra policy review because the run touched behavior with safety or side-effect implications."
+        }
+        AgentReadinessArea::Coverage => {
+            "Maintainers cannot trust that the measured surface is complete enough for agent routing decisions."
+        }
+        AgentReadinessArea::Policy => {
+            "Agents and CI need an explicit policy decision before this behavior can be treated as allowed."
+        }
+        AgentReadinessArea::Publishing => {
+            "Public claims may overstate what the current evidence actually proves."
+        }
+        AgentReadinessArea::Calibration => {
+            "Benchmark or calibration users may label the run incorrectly without a clearer decision."
+        }
     };
-    writeln!(text, "{heading}").expect("writing to string cannot fail");
+
+    if issue.impact.trim().is_empty() {
+        outcome.to_owned()
+    } else {
+        format!("{outcome} {}", issue.impact)
+    }
+}
+
+fn maintainer_fix_text(issue: &Issue) -> String {
+    format!(
+        "{} {}",
+        persona_issue_action(Persona::Maintainer, issue),
+        issue.recommendation
+    )
+}
+
+fn render_maintainer_action_item(
+    text: &mut String,
+    artifact_dir: &Path,
+    issue: &Issue,
+    priority: usize,
+) {
+    writeln!(text, "### {}. {}", priority, escape_markdown(&issue.title))
+        .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Issue: `{}` (`{}`, {} affected).",
+        escape_markdown(&issue.id),
+        issue.severity.label(),
+        issue.affected_commands.len()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Agent outcome: {}",
+        escape_markdown(&maintainer_agent_outcome(issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Fix: {}",
+        escape_markdown(&maintainer_fix_text(issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- If acceptable: {}",
+        escape_markdown(&maintainer_disposition_text(artifact_dir, issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Evidence: {}",
+        escape_markdown(&maintainer_evidence_text(issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Verify: `{}`",
+        escape_markdown(&issue.verification.command)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+}
+
+fn maintainer_disposition_text(artifact_dir: &Path, issue: &Issue) -> String {
+    if let Some(disposition) = &issue.disposition {
+        return format!(
+            "Already dispositioned as `{}`: {}",
+            disposition.status.label(),
+            disposition.reason
+        );
+    }
+
+    format!(
+        "record a disposition: `{}`",
+        maintainer_disposition_command(artifact_dir, issue)
+    )
+}
+
+fn maintainer_disposition_command(artifact_dir: &Path, issue: &Issue) -> String {
+    let status = match issue.confidence {
+        IssueConfidence::NeedsFixture => "needs-fixture",
+        IssueConfidence::Advisory => "deferred",
+        _ => "intentional",
+    };
+    let reason = match issue.confidence {
+        IssueConfidence::NeedsFixture => "Needs safe fixture operands before CI can judge it.",
+        IssueConfidence::Blocked => {
+            "Expected precondition for this measured profile; document the required setup."
+        }
+        IssueConfidence::Advisory => "Optional compatibility; not part of the current fix queue.",
+        _ => "Reviewed and accepted for this measured profile.",
+    };
+
+    format!(
+        "cliare issues mark {} --out {} --status {} --reason {}",
+        shell_arg(&issue.id),
+        shell_arg(&artifact_dir.display().to_string()),
+        status,
+        shell_arg(reason)
+    )
+}
+
+fn maintainer_evidence_text(issue: &Issue) -> String {
+    let command_part = match issue.affected_commands.len() {
+        0 => "No affected commands listed.".to_owned(),
+        1 => "1 affected command.".to_owned(),
+        count => format!("{count} affected commands."),
+    };
+    let evidence_part = match issue.evidence.len() {
+        0 => "Open the drill-down for context.".to_owned(),
+        1 => "1 evidence reference.".to_owned(),
+        count => format!("{count} evidence references."),
+    };
+    format!("{command_part} {evidence_part}")
+}
+
+fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
+    if packet.persona == Persona::Maintainer {
+        render_maintainer_evidence_drilldown(text, packet);
+        return;
+    }
+
+    writeln!(text, "## Priority Findings").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     if packet.top_issues.is_empty() {
         writeln!(
@@ -520,43 +687,25 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         return;
     }
 
-    if packet.persona == Persona::Maintainer {
-        writeln!(
-            text,
-            "Start with the area table, then open a drill-down only when you need command samples, evidence, or verification details."
-        )
-        .expect("writing to string cannot fail");
-        writeln!(text).expect("writing to string cannot fail");
-        writeln!(
-            text,
-            "| Area | Severity | Meaning | Disposition | Affected | Issue | Action |"
-        )
-        .expect("writing to string cannot fail");
-        writeln!(text, "|---|---|---|---|---:|---|---|").expect("writing to string cannot fail");
-        for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
-            render_maintainer_finding_row(text, issue);
-        }
-    } else {
-        writeln!(
-            text,
-            "Start with this table, then open the matching drill-down section only when you need command samples, evidence, or verification details."
-        )
-        .expect("writing to string cannot fail");
-        writeln!(text).expect("writing to string cannot fail");
-        writeln!(
-            text,
-            "| Priority | Meaning | Disposition | Affected | Issue | Action |"
-        )
-        .expect("writing to string cannot fail");
-        writeln!(text, "|---:|---|---|---:|---|---|").expect("writing to string cannot fail");
-        for (index, issue) in packet
-            .top_issues
-            .iter()
-            .take(PERSONA_FINDING_LIMIT)
-            .enumerate()
-        {
-            render_persona_finding_row(text, packet.persona, issue, index + 1);
-        }
+    writeln!(
+        text,
+        "Start with this table, then open the matching drill-down section only when you need command samples, evidence, or verification details."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Priority | Meaning | Disposition | Affected | Issue | Action |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text, "|---:|---|---|---:|---|---|").expect("writing to string cannot fail");
+    for (index, issue) in packet
+        .top_issues
+        .iter()
+        .take(PERSONA_FINDING_LIMIT)
+        .enumerate()
+    {
+        render_persona_finding_row(text, packet.persona, issue, index + 1);
     }
     writeln!(text).expect("writing to string cannot fail");
     if packet.top_issues.len() > PERSONA_FINDING_LIMIT {
@@ -578,28 +727,43 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         .take(PERSONA_FINDING_LIMIT)
         .enumerate()
     {
-        if packet.persona == Persona::Maintainer {
-            render_maintainer_finding(text, issue);
-        } else {
-            render_persona_finding(text, packet.persona, issue, index + 1);
-        }
+        render_persona_finding(text, packet.persona, issue, index + 1);
     }
 }
 
-fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
+fn render_maintainer_evidence_drilldown(text: &mut String, packet: &PersonaOutcomePacket) {
+    writeln!(text, "## Evidence Drill-Down").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    if packet.top_issues.is_empty() {
+        writeln!(
+            text,
+            "No maintainer evidence drill-down is needed for this run."
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text).expect("writing to string cannot fail");
+        return;
+    }
+
     writeln!(
         text,
-        "| {} | `{}` | {} | `{}` | {} | `{}` {} | {} |",
-        escape_markdown(issue.agent_readiness_area.label()),
-        issue.severity.label(),
-        escape_markdown(issue_meaning(issue)),
-        issue_disposition_label(issue),
-        issue.affected_commands.len(),
-        escape_markdown(&issue.id),
-        escape_markdown(&issue.title),
-        escape_markdown(persona_issue_action(Persona::Maintainer, issue))
+        "Open these details only when an action item needs command examples or evidence references."
     )
     .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    if packet.top_issues.len() > PERSONA_FINDING_LIMIT {
+        writeln!(
+            text,
+            "This report shows the top {} maintainer findings. See `issues.json` for the remaining {} issue(s).",
+            PERSONA_FINDING_LIMIT,
+            packet.top_issues.len() - PERSONA_FINDING_LIMIT
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text).expect("writing to string cannot fail");
+    }
+
+    for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
+        render_maintainer_finding(text, &packet.source_artifacts.artifact_dir, issue);
+    }
 }
 
 fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue, priority: usize) {
@@ -617,7 +781,7 @@ fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue
     .expect("writing to string cannot fail");
 }
 
-fn render_maintainer_finding(text: &mut String, issue: &Issue) {
+fn render_maintainer_finding(text: &mut String, artifact_dir: &Path, issue: &Issue) {
     let area = issue.agent_readiness_area.label();
     writeln!(text, "<details>").expect("writing to string cannot fail");
     writeln!(
@@ -637,7 +801,7 @@ fn render_maintainer_finding(text: &mut String, issue: &Issue) {
     )
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
-    render_finding_body(text, Persona::Maintainer, issue);
+    render_maintainer_finding_body(text, artifact_dir, issue);
     writeln!(text, "</details>").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 }
@@ -766,6 +930,94 @@ fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
         }
     }
     writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_maintainer_finding_body(text: &mut String, artifact_dir: &Path, issue: &Issue) {
+    writeln!(text, "- Issue: {}", escape_markdown(&issue.title))
+        .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Agent outcome: {}",
+        escape_markdown(&maintainer_agent_outcome(issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Fix: {}",
+        escape_markdown(&maintainer_fix_text(issue))
+    )
+    .expect("writing to string cannot fail");
+    if let Some(disposition) = &issue.disposition {
+        writeln!(
+            text,
+            "- Disposition: `{}` - {}",
+            disposition.status.label(),
+            escape_markdown(&disposition.reason)
+        )
+        .expect("writing to string cannot fail");
+    } else {
+        writeln!(
+            text,
+            "- If acceptable: {}",
+            escape_markdown(&maintainer_disposition_text(artifact_dir, issue))
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(
+        text,
+        "- Verify: `{}`",
+        escape_markdown(&issue.verification.command)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Expected change: {}",
+        escape_markdown(&issue.verification.expected_change)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Area: {}",
+        escape_markdown(issue.agent_readiness_area.label())
+    )
+    .expect("writing to string cannot fail");
+
+    render_command_examples(text, issue);
+    render_evidence_refs(text, issue);
+}
+
+fn render_command_examples(text: &mut String, issue: &Issue) {
+    if issue.affected_commands.is_empty() {
+        return;
+    }
+
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "{}:", command_section_heading(issue)).expect("writing to string cannot fail");
+    let commands = issue_command_samples(issue);
+    for command in commands.iter().take(PERSONA_COMMAND_SAMPLE_LIMIT) {
+        render_issue_command_sample(text, command);
+    }
+    if issue.affected_commands.len() > PERSONA_COMMAND_SAMPLE_LIMIT {
+        writeln!(
+            text,
+            "- ... {} more {} in `issues.json`.",
+            issue.affected_commands.len() - PERSONA_COMMAND_SAMPLE_LIMIT,
+            command_overflow_label(issue)
+        )
+        .expect("writing to string cannot fail");
+    }
+}
+
+fn render_evidence_refs(text: &mut String, issue: &Issue) {
+    if issue.evidence.is_empty() {
+        return;
+    }
+
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "{}:", evidence_section_heading(issue)).expect("writing to string cannot fail");
+    for evidence in issue.evidence.iter().take(PERSONA_EVIDENCE_SAMPLE_LIMIT) {
+        render_issue_evidence_sample(text, evidence);
+    }
 }
 
 fn render_reviewed_decisions(text: &mut String, packet: &PersonaOutcomePacket) {
@@ -1683,9 +1935,11 @@ pub(crate) fn render_written_summary(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{
         ci_action_text, command_section_heading, issue_meaning, persona_issue_action,
-        render_maintainer_finding, render_maintainer_finding_row, render_persona_finding,
+        render_maintainer_action_item, render_maintainer_finding, render_persona_finding,
         render_persona_finding_row, use_when_text,
     };
     use crate::report_model::{
@@ -1770,18 +2024,26 @@ mod tests {
         );
         issue.agent_readiness_area = AgentReadinessArea::OutputContracts;
 
-        let mut row = String::new();
-        render_maintainer_finding_row(&mut row, &issue);
-        assert!(row.starts_with("| Output Contracts | `medium` | CLIARE found the contract"));
-        assert!(row.contains("`issue.test` Test issue"));
-        assert!(row.contains("Add a safe validation path"));
+        let mut action = String::new();
+        render_maintainer_action_item(&mut action, Path::new(".cliare/test"), &issue, 1);
+        assert!(action.starts_with("### 1. Test issue"));
+        assert!(action.contains("- Issue: `issue.test` (`medium`, 1 affected)."));
+        assert!(action.contains("- Agent outcome: Agents cannot safely read command results"));
+        assert!(action.contains("- Fix: Add a safe validation path"));
+        assert!(action.contains("- If acceptable: record a disposition"));
+        assert!(action.contains("cliare issues mark issue.test --out .cliare/test"));
+        assert!(
+            action.contains("- Evidence: 1 affected command. Open the drill-down for context.")
+        );
+        assert!(action.contains("- Verify: `cliare measure test`"));
 
         let mut detail = String::new();
-        render_maintainer_finding(&mut detail, &issue);
+        render_maintainer_finding(&mut detail, Path::new(".cliare/test"), &issue);
         assert!(detail.contains("<summary>Output Contracts: Test issue (`issue.test`)</summary>"));
-        assert!(detail.contains("- Meaning: CLIARE found the contract"));
+        assert!(detail.contains("- Agent outcome: Agents cannot safely read command results"));
+        assert!(detail.contains("- Fix: Add a safe validation path"));
+        assert!(detail.contains("- If acceptable: record a disposition"));
         assert!(detail.contains("- Area: Output Contracts"));
-        assert!(detail.contains("- Agent impact: Agents cannot reliably read command results."));
         assert!(!detail.contains("P1"));
     }
 
