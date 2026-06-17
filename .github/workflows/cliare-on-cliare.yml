@@ -110,63 +110,73 @@ jobs:
           const issueList = JSON.parse(fs.readFileSync(`${out}/issues-list.json`, "utf8"));
 
           const escapeCell = (value) => String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
             .replaceAll("|", "\\|")
             .replaceAll("\n", "<br>");
           const code = (value) => `\`${escapeCell(value)}\``;
           const score = (value) => Number.isFinite(value) ? value.toFixed(1) : "n/a";
-          const subscore = (name) => scorecard.subscores?.[name];
-          const subscoreLabel = (name) => {
-            const entry = subscore(name);
-            if (!entry) {
-              return "n/a";
+          const conditionMeaning = (issue) => {
+            switch (issue.confidence) {
+              case "observed":
+                return "CLIARE directly saw this behavior in the run.";
+              case "blocked":
+                return "CLIARE reached this area, but required setup, context, or sample inputs blocked safe confirmation.";
+              case "needs_fixture":
+                return "CLIARE found the contract, but needs safe sample input before it can validate it.";
+              case "inferred":
+                return "CLIARE inferred this from runtime or help evidence; confirm before treating it as a product bug.";
+              case "advisory":
+                return "This is optional compatibility or polish, not a first-order blocker.";
+              default:
+                return "CLIARE generated this issue from the current evidence set.";
             }
-            return `${name}: ${score(entry.score)}/100`;
           };
-          const areaScore = (issue) => {
-            const area = issue.agent_readiness_area || issue.category || "";
-            const normalized = area.replaceAll("-", "_");
-            if (normalized.includes("output")) {
-              return subscoreLabel("output");
-            }
-            if (normalized.includes("safety") || normalized.includes("security")) {
-              return subscoreLabel("safety");
-            }
-            if (normalized.includes("diagnostic") || normalized.includes("recovery")) {
-              return subscoreLabel("recovery");
-            }
-            if (normalized.includes("execution")) {
-              return subscoreLabel("execution");
-            }
-            if (normalized.includes("grammar") || normalized.includes("help")) {
-              return subscoreLabel("grammar");
-            }
-            if (normalized.includes("discovery") || normalized.includes("compatibility") || normalized.includes("precondition")) {
-              return subscoreLabel("discovery");
-            }
-            return "n/a";
-          };
-          const statusHint = (issue) => {
+          const dispositionMeaning = (issue) => {
             const id = issue.issue_id || "<issue-id>";
             if (issue.disposition) {
-              return `${code(issue.disposition.status)}<br>${escapeCell(issue.disposition.reason || "")}`;
+              const status = issue.disposition.status || "reviewed";
+              const statusLabel = String(status).replaceAll("_", "-");
+              const reason = issue.disposition.reason || "Reviewed in CI.";
+              const action = issue.action_required
+                ? "CI still treats this as action-required."
+                : "CI treats this as reviewed for this dogfood run.";
+              return `${code(statusLabel)}<br>${escapeCell(reason)}<br>${escapeCell(action)}`;
             }
-            const area = issue.agent_readiness_area || issue.category || "";
-            const defaultStatus = area.includes("safety") ? "accepted-risk" : "intentional";
-            return code(`./target/debug/cliare issues mark '${id}' --out ${out} --status ${defaultStatus} --reason 'Reviewed in CI; document rationale here.'`);
+            return `Needs maintainer review.<br>${code(`./target/debug/cliare issues mark '${id}' --out ${out} --status intentional --reason 'Reviewed in CI; document rationale here.'`)}`;
           };
-          const commandSamples = (issue) => {
+          const issueLabel = (issue) => [
+            code(issue.issue_id || "unknown"),
+            escapeCell(issue.title || "Untitled issue"),
+            `Severity: ${code(issue.severity || "unknown")}`,
+          ].join("<br>");
+          const meaningLabel = (issue) => [
+            escapeCell(conditionMeaning(issue)),
+            escapeCell(issue.impact || issue.why_it_matters || ""),
+          ].filter(Boolean).join("<br>");
+          const commandScope = (issue) => {
             if (!issue.affected_command_count) {
-              return "none listed";
+              return "No command samples.";
             }
-            const samples = (issue.command_samples || []).slice(0, 2).map((sample) => {
-              const summary = sample.summary || sample.reason || sample.state || "";
-              return `${code(sample.command)}<br>${escapeCell(summary)}`;
-            });
+            const samples = (issue.command_samples || [])
+              .slice(0, 3)
+              .map((sample) => code(sample.command));
             const remaining = issue.affected_command_count - samples.length;
             if (remaining > 0) {
-              samples.push(`${remaining} more`);
+              samples.push(`${remaining} more in ${code("issues.json")}`);
             }
             return samples.join("<br>");
+          };
+          const nextStep = (issue) => {
+            const parts = [dispositionMeaning(issue)];
+            if (issue.recommendation) {
+              parts.push(escapeCell(issue.recommendation));
+            }
+            if (issue.verification?.command) {
+              parts.push(`Verify: ${code(issue.verification.command)}`);
+            }
+            return parts.join("<br>");
           };
 
           const dimensions = Object.entries(scorecard.subscores || {})
@@ -176,14 +186,10 @@ jobs:
           const issues = issueList.issues || [];
           const visibleIssues = issues.slice(0, 20);
           const issueRows = visibleIssues.map((issue) => `| ${[
-            code(issue.issue_id),
-            escapeCell(issue.title || "Untitled issue"),
-            escapeCell(issue.severity || "unknown"),
-            escapeCell(issue.agent_readiness_area || issue.category || "unknown"),
-            escapeCell(areaScore(issue)),
-            escapeCell(String(issue.affected_command_count ?? 0)),
-            commandSamples(issue),
-            statusHint(issue),
+            issueLabel(issue),
+            meaningLabel(issue),
+            commandScope(issue),
+            nextStep(issue),
           ].join(" | ")} |`);
 
           const lines = [
@@ -213,25 +219,26 @@ jobs:
             "",
             "### Issue Review Queue",
             "",
-            "| Issue ID | Title | Severity | Area | Score context | Commands | Examples | Disposition hint |",
-            "| --- | --- | --- | --- | --- | ---: | --- | --- |",
-            ...(issueRows.length ? issueRows : ["| none | No open issues were generated. | n/a | n/a | n/a | 0 | n/a | n/a |"]),
+            "This table is written for review: what CLIARE means, where it showed up, and what CI is doing with it.",
+            "",
+            "| Issue | Plain meaning | Where it showed up | CI decision and next step |",
+            "| --- | --- | --- | --- |",
+            ...(issueRows.length ? issueRows : ["| none | No open issues were generated. | No affected commands. | No action required. |"]),
             ...(issues.length > visibleIssues.length ? [``, `_Showing first ${visibleIssues.length} of ${issues.length} issues._`] : []),
             "",
-            "### Disposition Hints",
+            "### Review State",
             "",
-            "Use dispositions for reviewed findings that should not keep reappearing as unreviewed CI noise. The issue id is the finding type for aggregated findings.",
+            "Reviewed dispositions keep expected dogfood behavior visible without treating it as fresh CI noise.",
             "",
-            "| Status | Use when |",
+            "| State | Plain meaning |",
             "| --- | --- |",
-            "| `intentional` | The behavior is a deliberate CLI design choice. |",
-            "| `needs-fixture` | CLIARE needs safe sample operands, local context, or fixture data before judging it. |",
-            "| `not-applicable` | The finding does not apply to the measured deployment profile. |",
-            "| `accepted-risk` | Security or platform owners reviewed and accepted the residual risk. |",
-            "| `false-positive` | The evidence is misleading and should not be treated as a product issue. |",
-            "| `deferred` | The issue is real but intentionally scheduled for later. |",
-            "",
-            "To persist a disposition, run the suggested `cliare issues mark ...` command locally and keep the resulting `issue-dispositions.json` with the artifact set used by CI.",
+            "| `open` | Needs review or a product change. |",
+            "| `intentional` | Reviewed as deliberate CLI behavior. |",
+            "| `needs-fixture` | Needs safe sample operands or local context before judging. |",
+            "| `not-applicable` | Does not apply to this measured deployment profile. |",
+            "| `accepted-risk` | Reviewed and accepted by the owning team. |",
+            "| `false-positive` | Evidence is misleading and should not be treated as a product issue. |",
+            "| `deferred` | Real issue, intentionally scheduled for later. |",
             ""
           ];
           const text = `${lines.join("\n")}\n`;
