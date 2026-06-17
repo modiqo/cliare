@@ -21,6 +21,7 @@ pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
     writeln!(&mut text).expect("writing to string cannot fail");
 
     render_persona_decision(&mut text, packet);
+    render_plain_english_guide(&mut text);
     render_ci_action_brief(&mut text, packet);
     render_persona_score_summary(&mut text, packet);
     render_persona_findings(&mut text, packet);
@@ -65,23 +66,21 @@ pub(crate) fn render_drilldown_markdown(packet: &ReportDrilldownPacket) -> Strin
 
     writeln!(
         &mut text,
-        "| Area | Severity | Confidence | Disposition | Affected | Issue | Agent Impact | Action |"
+        "| Area | Severity | Meaning | Disposition | Affected | Issue | Action |"
     )
     .expect("writing to string cannot fail");
-    writeln!(&mut text, "|---|---|---|---|---:|---|---|---|")
-        .expect("writing to string cannot fail");
+    writeln!(&mut text, "|---|---|---|---|---:|---|---|").expect("writing to string cannot fail");
     for issue in &packet.issues {
         writeln!(
             &mut text,
-            "| {} | `{}` | `{}` | `{}` | {} | `{}` {} | {} | {} |",
+            "| {} | `{}` | {} | `{}` | {} | `{}` {} | {} |",
             escape_markdown(issue.agent_readiness_area.label()),
             issue.severity.label(),
-            issue.confidence.label(),
+            escape_markdown(issue_meaning(issue)),
             issue_disposition_label(issue),
             issue.affected_commands.len(),
             escape_markdown(&issue.id),
             escape_markdown(&issue.title),
-            escape_markdown(issue.agent_readiness_area.agent_impact()),
             escape_markdown(persona_issue_action(packet.persona, issue))
         )
         .expect("writing to string cannot fail");
@@ -113,6 +112,100 @@ fn render_persona_decision(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text).expect("writing to string cannot fail");
     writeln!(text, "{}", escape_markdown(&persona_decision(packet)))
         .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_plain_english_guide(text: &mut String) {
+    writeln!(text, "## Plain-English Guide").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "Use this section to decode the report before opening JSON artifacts. The tables below say what each label means and what a reviewer should do next."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "| Report label | Plain meaning | First action |")
+        .expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|").expect("writing to string cannot fail");
+    for (label, meaning, action) in [
+        (
+            "observed",
+            "CLIARE directly saw this behavior at runtime.",
+            "Treat it as concrete evidence and fix or explicitly accept it.",
+        ),
+        (
+            "blocked",
+            "CLIARE reached the command or probe, but setup, auth, context, fixtures, or dependencies stopped safe confirmation.",
+            "Document or provide the missing precondition before exposing the command to agents.",
+        ),
+        (
+            "needs_fixture",
+            "CLIARE found a contract, but needs safe sample input before it can validate it.",
+            "Add a safe fixture, sample operand, or dry-run validation path.",
+        ),
+        (
+            "inferred",
+            "CLIARE inferred this from help/layout evidence, but runtime confirmation is incomplete.",
+            "Confirm it before changing broad behavior or routing agents through it.",
+        ),
+        (
+            "advisory",
+            "This is useful polish, not the first blocker.",
+            "Handle it after concrete failures, blockers, and fixture gaps.",
+        ),
+    ] {
+        writeln!(
+            text,
+            "| `{}` | {} | {} |",
+            label,
+            escape_markdown(meaning),
+            escape_markdown(action)
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Command state | Plain meaning | Harness treatment |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|").expect("writing to string cannot fail");
+    for (state, meaning, treatment) in [
+        (
+            "ready",
+            "Runtime-confirmed and no blocking gaps were found.",
+            "Candidate for automatic routing, subject to local policy.",
+        ),
+        (
+            "conditional",
+            "The command can work when a known condition is satisfied.",
+            "Expose only when the harness can satisfy that condition.",
+        ),
+        (
+            "needs_fixture",
+            "The command needs safe input or sample data before validation.",
+            "Do not route automatically until fixtures exist.",
+        ),
+        (
+            "blocked",
+            "A required precondition blocked safe confirmation.",
+            "Treat as unavailable until the precondition is provisioned.",
+        ),
+        (
+            "candidate",
+            "The command is inferred but not runtime-confirmed.",
+            "Do not expose automatically.",
+        ),
+    ] {
+        writeln!(
+            text,
+            "| `{}` | {} | {} |",
+            state,
+            escape_markdown(meaning),
+            escape_markdown(treatment)
+        )
+        .expect("writing to string cannot fail");
+    }
     writeln!(text).expect("writing to string cannot fail");
 }
 
@@ -188,7 +281,7 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
 
-    writeln!(text, "| Priority | Do this | Where | Why | Verify |")
+    writeln!(text, "| Priority | Meaning | Where | Do this | Verify |")
         .expect("writing to string cannot fail");
     writeln!(text, "|---:|---|---|---|---|").expect("writing to string cannot fail");
     for (index, issue) in packet
@@ -201,9 +294,9 @@ fn render_ci_action_brief(text: &mut String, packet: &PersonaOutcomePacket) {
             text,
             "| P{} | {} | {} | {} | `{}` |",
             index + 1,
-            escape_markdown(&ci_action_text(packet.persona, issue)),
+            escape_markdown(issue_meaning(issue)),
             escape_markdown(&issue_where_label(issue)),
-            escape_markdown(&issue.impact),
+            escape_markdown(&ci_action_text(packet.persona, issue)),
             escape_markdown(&issue.verification.command)
         )
         .expect("writing to string cannot fail");
@@ -245,19 +338,18 @@ fn render_maintainer_action_brief(
 
     writeln!(
         text,
-        "| Area | Severity | Confidence | Affected | Agent Impact | Maintainer Action | Verify |"
+        "| Area | Severity | Meaning | Affected | Do this | Verify |"
     )
     .expect("writing to string cannot fail");
-    writeln!(text, "|---|---|---|---:|---|---|---|").expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|---:|---|---|").expect("writing to string cannot fail");
     for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
         writeln!(
             text,
-            "| {} | `{}` | `{}` | {} | {} | {} | `{}` |",
+            "| {} | `{}` | {} | {} | {} | `{}` |",
             escape_markdown(issue.agent_readiness_area.label()),
             issue.severity.label(),
-            issue.confidence.label(),
+            escape_markdown(issue_meaning(issue)),
             issue.affected_commands.len(),
-            escape_markdown(issue.agent_readiness_area.agent_impact()),
             escape_markdown(persona_issue_action(packet.persona, issue)),
             escape_markdown(&issue.verification.command)
         )
@@ -356,6 +448,32 @@ fn ci_action_text(persona: Persona, issue: &Issue) -> String {
     }
 }
 
+fn issue_meaning(issue: &Issue) -> &'static str {
+    match issue.confidence {
+        IssueConfidence::Observed if issue.category == ActionCategory::Safety => {
+            "CLIARE directly saw this runtime behavior; review the evidence and decide whether to fix, allow, or block it."
+        }
+        IssueConfidence::Observed => {
+            "CLIARE directly saw this behavior; treat it as a concrete contract gap."
+        }
+        IssueConfidence::Blocked => {
+            "CLIARE reached this area, but setup or required inputs blocked safe confirmation."
+        }
+        IssueConfidence::NeedsFixture => {
+            "CLIARE found the contract, but needs safe sample data before it can validate it."
+        }
+        IssueConfidence::Inferred if issue_has_runtime_confirmed_commands(issue) => {
+            "CLIARE saw real commands, but this specific gap still needs confirmation."
+        }
+        IssueConfidence::Inferred => {
+            "CLIARE inferred this from help text; confirm it before routing agents or changing broad behavior."
+        }
+        IssueConfidence::Advisory => {
+            "This is optional compatibility or polish; handle it after blockers and concrete failures."
+        }
+    }
+}
+
 fn fixture_hint(issue: &Issue) -> &'static str {
     if issue
         .affected_commands
@@ -411,11 +529,10 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         writeln!(text).expect("writing to string cannot fail");
         writeln!(
             text,
-            "| Area | Severity | Confidence | Disposition | Affected | Evidence | Issue | Agent Impact | Maintainer Action |"
+            "| Area | Severity | Meaning | Disposition | Affected | Issue | Action |"
         )
         .expect("writing to string cannot fail");
-        writeln!(text, "|---|---|---|---|---:|---:|---|---|---|")
-            .expect("writing to string cannot fail");
+        writeln!(text, "|---|---|---|---|---:|---|---|").expect("writing to string cannot fail");
         for issue in packet.top_issues.iter().take(PERSONA_FINDING_LIMIT) {
             render_maintainer_finding_row(text, issue);
         }
@@ -428,11 +545,10 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
         writeln!(text).expect("writing to string cannot fail");
         writeln!(
             text,
-            "| Priority | Severity | Category | Confidence | Disposition | Affected | Evidence | Issue | Persona Action |"
+            "| Priority | Meaning | Disposition | Affected | Issue | Action |"
         )
         .expect("writing to string cannot fail");
-        writeln!(text, "|---:|---|---|---|---|---:|---:|---|---|")
-            .expect("writing to string cannot fail");
+        writeln!(text, "|---:|---|---|---:|---|---|").expect("writing to string cannot fail");
         for (index, issue) in packet
             .top_issues
             .iter()
@@ -473,16 +589,14 @@ fn render_persona_findings(text: &mut String, packet: &PersonaOutcomePacket) {
 fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
     writeln!(
         text,
-        "| {} | `{}` | `{}` | `{}` | {} | {} | `{}` {} | {} | {} |",
+        "| {} | `{}` | {} | `{}` | {} | `{}` {} | {} |",
         escape_markdown(issue.agent_readiness_area.label()),
         issue.severity.label(),
-        issue.confidence.label(),
+        escape_markdown(issue_meaning(issue)),
         issue_disposition_label(issue),
         issue.affected_commands.len(),
-        issue.evidence.len(),
         escape_markdown(&issue.id),
         escape_markdown(&issue.title),
-        escape_markdown(issue.agent_readiness_area.agent_impact()),
         escape_markdown(persona_issue_action(Persona::Maintainer, issue))
     )
     .expect("writing to string cannot fail");
@@ -491,14 +605,11 @@ fn render_maintainer_finding_row(text: &mut String, issue: &Issue) {
 fn render_persona_finding_row(text: &mut String, persona: Persona, issue: &Issue, priority: usize) {
     writeln!(
         text,
-        "| P{} | `{}` | `{}` | `{}` | `{}` | {} | {} | `{}` {} | {} |",
+        "| P{} | {} | `{}` | {} | `{}` {} | {} |",
         priority,
-        issue.severity.label(),
-        issue.category.label(),
-        issue.confidence.label(),
+        escape_markdown(issue_meaning(issue)),
         issue_disposition_label(issue),
         issue.affected_commands.len(),
-        issue.evidence.len(),
         escape_markdown(&issue.id),
         escape_markdown(&issue.title),
         escape_markdown(persona_issue_action(persona, issue))
@@ -577,6 +688,8 @@ fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
         issue.confidence.label()
     )
     .expect("writing to string cannot fail");
+    writeln!(text, "- Meaning: {}", escape_markdown(issue_meaning(issue)))
+        .expect("writing to string cannot fail");
     if persona == Persona::Maintainer {
         writeln!(
             text,
@@ -1371,6 +1484,8 @@ fn render_issue_markdown(text: &mut String, issue: &Issue, heading_level: usize)
         .expect("writing to string cannot fail");
     writeln!(text, "- Confidence: `{}`", issue.confidence.label())
         .expect("writing to string cannot fail");
+    writeln!(text, "- Meaning: {}", escape_markdown(issue_meaning(issue)))
+        .expect("writing to string cannot fail");
     if let Some(disposition) = &issue.disposition {
         writeln!(
             text,
@@ -1569,9 +1684,9 @@ pub(crate) fn render_written_summary(
 #[cfg(test)]
 mod tests {
     use super::{
-        ci_action_text, command_section_heading, persona_issue_action, render_maintainer_finding,
-        render_maintainer_finding_row, render_persona_finding, render_persona_finding_row,
-        use_when_text,
+        ci_action_text, command_section_heading, issue_meaning, persona_issue_action,
+        render_maintainer_finding, render_maintainer_finding_row, render_persona_finding,
+        render_persona_finding_row, use_when_text,
     };
     use crate::report_model::{
         ActionCategory, ActionSeverity, AgentReadinessArea, Issue, IssueCommand, IssueConfidence,
@@ -1630,13 +1745,19 @@ mod tests {
 
         let mut row = String::new();
         render_persona_finding_row(&mut row, Persona::Harness, &issue, 1);
-        assert!(row.starts_with("| P1 | `medium` | `safety` | `observed` | `open` | 1 | 0 |"));
+        assert!(
+            row.starts_with(
+                "| P1 | CLIARE directly saw this runtime behavior; review the evidence"
+            )
+        );
+        assert!(row.contains("`open` | 1 | `issue.test` Test issue"));
         assert!(row.contains("Do not run this probe profile"));
 
         let mut detail = String::new();
         render_persona_finding(&mut detail, Persona::Harness, &issue, 1);
         assert!(detail.contains("<details>"));
         assert!(detail.contains("<summary>P1: Test issue (`issue.test`)</summary>"));
+        assert!(detail.contains("- Meaning: CLIARE directly saw this runtime behavior"));
         assert!(detail.contains("</details>"));
     }
 
@@ -1651,15 +1772,37 @@ mod tests {
 
         let mut row = String::new();
         render_maintainer_finding_row(&mut row, &issue);
-        assert!(row.starts_with("| Output Contracts | `medium` | `needs_fixture` |"));
-        assert!(row.contains("Agents cannot reliably read command results."));
+        assert!(row.starts_with("| Output Contracts | `medium` | CLIARE found the contract"));
+        assert!(row.contains("`issue.test` Test issue"));
+        assert!(row.contains("Add a safe validation path"));
 
         let mut detail = String::new();
         render_maintainer_finding(&mut detail, &issue);
         assert!(detail.contains("<summary>Output Contracts: Test issue (`issue.test`)</summary>"));
+        assert!(detail.contains("- Meaning: CLIARE found the contract"));
         assert!(detail.contains("- Area: Output Contracts"));
         assert!(detail.contains("- Agent impact: Agents cannot reliably read command results."));
         assert!(!detail.contains("P1"));
+    }
+
+    #[test]
+    fn issue_meaning_translates_report_conditions() {
+        assert!(
+            issue_meaning(&test_issue(
+                IssueConfidence::Blocked,
+                ActionCategory::Discovery,
+                Some("runtime_confirmed"),
+            ))
+            .contains("setup or required inputs blocked")
+        );
+        assert!(
+            issue_meaning(&test_issue(
+                IssueConfidence::Inferred,
+                ActionCategory::Discovery,
+                None,
+            ))
+            .contains("inferred this from help text")
+        );
     }
 
     #[test]

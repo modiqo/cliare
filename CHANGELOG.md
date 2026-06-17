@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.6] - 2026-06-17
+
+Report readability and workflow guidance.
+
+- Adds plain-English report guidance for persona reports.
+- Replaces internal issue-table columns with reader-facing meaning and action columns.
+- Fixes invalid-probe recovery findings so precondition recovery does not trigger a contradictory invalid-probe warning.
+- Adds an ordered `just` workflow cheatsheet and renames run-folder parameters away from ambiguous `id` wording.
+- Updates generated CLIARE skill guidance to match the new persona report table shape.
+
 ## [0.1.5] - 2026-06-16
 
 Operational hardening for measurement artifacts.

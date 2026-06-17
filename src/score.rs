@@ -642,7 +642,7 @@ fn findings(metrics: &Metrics, model: &ScoreModelSpec) -> Vec<Finding> {
     }
 
     if metrics.invalid_probe_count > 0
-        && recovery_score(metrics, model) < model.thresholds.recovery_score_minimum
+        && invalid_probe_recovery_score(metrics) < model.thresholds.recovery_score_minimum
     {
         findings.push(Finding {
             id: "finding.recovery.invalid_probe_acceptance",
@@ -753,6 +753,14 @@ fn findings(metrics: &Metrics, model: &ScoreModelSpec) -> Vec<Finding> {
     }
 
     findings
+}
+
+fn invalid_probe_recovery_score(metrics: &Metrics) -> f64 {
+    100.0
+        * ratio(
+            metrics.invalid_probe_rejections,
+            metrics.invalid_probe_count,
+        )
 }
 
 fn score_label(score: Option<f64>) -> String {
@@ -1385,6 +1393,62 @@ mod tests {
         let scorecard = scorecard(target, &observations, ScoreRunContext::default());
 
         assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
+    }
+
+    #[test]
+    fn invalid_probe_finding_uses_invalid_rejection_rate_not_total_recovery_score() {
+        let observations = vec![
+            observation(
+                "e_000003",
+                ProbeIntent::InvalidFlag,
+                vec!["measure".to_owned()],
+                "error: unexpected argument",
+                Some(2),
+            ),
+            observation(
+                "e_000005",
+                ProbeIntent::Help,
+                vec!["project".to_owned()],
+                "owner is required when not running interactively",
+                Some(1),
+            ),
+        ];
+
+        let scorecard = scorecard(target(), &observations, ScoreRunContext::default());
+
+        assert_eq!(scorecard.coverage.precondition_blocked_probes, 1);
+        assert_eq!(scorecard.coverage.actionable_precondition_probes, 0);
+        assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 70.0);
+        assert!(
+            scorecard
+                .findings
+                .iter()
+                .all(|finding| { finding.id != "finding.recovery.invalid_probe_acceptance" })
+        );
+        assert!(
+            scorecard
+                .findings
+                .iter()
+                .any(|finding| { finding.id == "finding.precondition.runtime_blocked" })
+        );
+    }
+
+    #[test]
+    fn invalid_probe_finding_reports_accepted_invalid_probes() {
+        let observations = vec![observation(
+            "e_000003",
+            ProbeIntent::InvalidFlag,
+            vec!["measure".to_owned()],
+            "ignored unknown flag",
+            Some(0),
+        )];
+
+        let scorecard = scorecard(target(), &observations, ScoreRunContext::default());
+
+        assert!(scorecard.findings.iter().any(|finding| {
+            finding.id == "finding.recovery.invalid_probe_acceptance"
+                && finding.detail == "0 of 1 invalid probes rejected with nonzero exit status."
+        }));
     }
 
     #[test]

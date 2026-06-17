@@ -267,8 +267,8 @@ Answer as a {role}. Focus on {emphasis}.
 
 Use this output shape:
 
-| Priority | Severity | Category | Confidence | Affected | Issue | Persona action |
-|---:|---|---|---|---:|---|---|
+| Priority | Meaning | Disposition | Affected | Issue | Action |
+|---:|---|---|---:|---|---|
 
 Then provide drill-down only for the selected priority row.
 
