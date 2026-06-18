@@ -16,7 +16,7 @@ CLIARE answers those questions by measuring the released CLI binary as a black b
 
 CLIARE stands for **CLI Agent Readiness Evaluation**.
 
-## How CLIARE Works
+## From CLI Drift to Agent-Ready Command Surfaces
 
 CLIARE is pronounced like "Claire": she cares about whether your CLI can be used reliably by agents, maintainers, and security reviewers.
 
