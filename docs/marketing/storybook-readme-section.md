@@ -8,12 +8,6 @@ relative to this `docs/` directory.
 CLIARE is pronounced like "Claire": she cares about whether your CLI can be used
 reliably by agents, maintainers, and security reviewers.
 
-![CLIARE serves command shape, readiness, and security evidence](../assets/storybook/00-cliare-hub.png)
-
-CLIARE gives harnesses a command-shape file, maintainers a CLI-readiness view
-for agents, and security teams evidence-backed findings about discovery side
-effects and runtime assumptions.
-
 ### 1. CLIs are becoming agent hands
 
 ![CLIs are agent hands](../assets/storybook/01-agent-hands.png)
