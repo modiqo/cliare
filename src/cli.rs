@@ -57,6 +57,8 @@ pub enum Command {
     Skills(SkillsArgs),
     /// Review, mark, and list evidence-backed CLIARE issues.
     Issues(IssuesArgs),
+    /// Query the measured command surface for harness routing.
+    Surface(SurfaceArgs),
     /// Print role-specific operational playbooks.
     Playbook(PlaybookArgs),
     /// Print CLIARE implementation metadata.
@@ -207,6 +209,161 @@ pub enum IssuesListFormat {
     Human,
     Markdown,
     Json,
+}
+
+#[derive(Debug, Args)]
+#[command(
+    after_help = "Harnesses should use `surface query` or `surface explain` instead of parsing command-index.json directly."
+)]
+pub struct SurfaceArgs {
+    #[command(subcommand)]
+    pub command: SurfaceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SurfaceCommand {
+    /// Rank commands that match a harness intent.
+    Query(SurfaceQueryArgs),
+    /// Explain one measured command path for harness routing.
+    Explain(SurfaceExplainArgs),
+    /// List measured commands with optional readiness filtering.
+    List(SurfaceListArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SurfaceQueryArgs {
+    /// Harness intent to match, such as "check job status".
+    #[arg(value_name = "INTENT")]
+    pub intent: String,
+
+    /// Measurement artifact directory containing command-index.json.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Only return commands with this output capability.
+    #[arg(long, value_enum)]
+    pub require_output: Option<SurfaceOutputRequirement>,
+
+    /// Maximum ranked matches to return.
+    #[arg(long, value_name = "N", default_value_t = 5, value_parser = parse_positive_usize)]
+    pub limit: usize,
+
+    /// Representation to print to stdout.
+    #[arg(long, value_enum, default_value_t = SurfaceFormat::Json)]
+    pub format: SurfaceFormat,
+}
+
+#[derive(Debug, Args)]
+pub struct SurfaceExplainArgs {
+    /// Command path to explain, such as "jobs status".
+    #[arg(value_name = "COMMAND", num_args = 1..)]
+    pub command: Vec<String>,
+
+    /// Measurement artifact directory containing command-index.json.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Add this output capability to the synthesized argv template when available.
+    #[arg(long, value_enum)]
+    pub require_output: Option<SurfaceOutputRequirement>,
+
+    /// Representation to print to stdout.
+    #[arg(long, value_enum, default_value_t = SurfaceFormat::Json)]
+    pub format: SurfaceFormat,
+}
+
+#[derive(Debug, Args)]
+pub struct SurfaceListArgs {
+    /// Measurement artifact directory containing command-index.json.
+    #[arg(long, value_name = "DIR", default_value = ".cliare", value_hint = ValueHint::DirPath)]
+    pub out: PathBuf,
+
+    /// Context name to select when --out points at a context suite root.
+    #[arg(long, value_name = "NAME")]
+    pub context: Option<String>,
+
+    /// Only list commands with this readiness state.
+    #[arg(long, value_enum)]
+    pub state: Option<SurfaceReadiness>,
+
+    /// Only list commands with this output capability.
+    #[arg(long, value_enum)]
+    pub require_output: Option<SurfaceOutputRequirement>,
+
+    /// Maximum commands to return.
+    #[arg(long, value_name = "N", default_value_t = 50, value_parser = parse_positive_usize)]
+    pub limit: usize,
+
+    /// Representation to print to stdout.
+    #[arg(long, value_enum, default_value_t = SurfaceFormat::Json)]
+    pub format: SurfaceFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceFormat {
+    Human,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceReadiness {
+    Ready,
+    Conditional,
+    NeedsFixture,
+    Blocked,
+    Candidate,
+}
+
+impl SurfaceReadiness {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Conditional => "conditional",
+            Self::NeedsFixture => "needs_fixture",
+            Self::Blocked => "blocked",
+            Self::Candidate => "candidate",
+        }
+    }
+}
+
+impl std::fmt::Display for SurfaceReadiness {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum SurfaceOutputRequirement {
+    Json,
+    Yaml,
+    MachineReadable,
+}
+
+impl SurfaceOutputRequirement {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Yaml => "yaml",
+            Self::MachineReadable => "machine-readable",
+        }
+    }
+}
+
+impl std::fmt::Display for SurfaceOutputRequirement {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
 }
 
 #[derive(Debug, Args)]
@@ -937,6 +1094,7 @@ mod tests {
         assert!(help.contains("describe"));
         assert!(help.contains("skills"));
         assert!(help.contains("issues"));
+        assert!(help.contains("surface"));
         assert!(help.contains("playbook"));
         assert!(help.contains("context"));
         assert!(help.contains("metadata"));
@@ -971,7 +1129,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected measure command")
             }
         }
@@ -1004,7 +1163,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected measure command")
             }
         }
@@ -1030,7 +1190,8 @@ mod tests {
             | Command::Context(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected guard command")
             }
         }
@@ -1059,7 +1220,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected benchmark command")
             }
         }
@@ -1098,7 +1260,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected report command")
             }
         }
@@ -1135,7 +1298,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected report command")
             }
         }
@@ -1192,7 +1356,8 @@ mod tests {
             | Command::Describe(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected skills command")
             }
         }
@@ -1239,8 +1404,139 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected issues command")
+            }
+        }
+    }
+
+    #[test]
+    fn surface_query_accepts_intent_filters_and_format() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "surface",
+            "query",
+            "check job status",
+            "--out",
+            ".cliare-current",
+            "--context",
+            "clean",
+            "--require-output",
+            "json",
+            "--limit",
+            "3",
+            "--format",
+            "human",
+        ])
+        .expect("valid surface query command");
+
+        match cli.command {
+            Command::Surface(args) => match args.command {
+                super::SurfaceCommand::Query(args) => {
+                    assert_eq!(args.intent, "check job status");
+                    assert_eq!(args.out, std::path::PathBuf::from(".cliare-current"));
+                    assert_eq!(args.context.as_deref(), Some("clean"));
+                    assert_eq!(
+                        args.require_output,
+                        Some(super::SurfaceOutputRequirement::Json)
+                    );
+                    assert_eq!(args.limit, 3);
+                    assert_eq!(args.format, super::SurfaceFormat::Human);
+                }
+                super::SurfaceCommand::Explain(_) | super::SurfaceCommand::List(_) => {
+                    panic!("expected query command")
+                }
+            },
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Issues(_)
+            | Command::Playbook(_)
+            | Command::Metadata(_) => {
+                panic!("expected surface command")
+            }
+        }
+    }
+
+    #[test]
+    fn surface_explain_accepts_command_path_and_output_request() {
+        let cli = Cli::try_parse_from([
+            "cliare",
+            "surface",
+            "explain",
+            "jobs",
+            "status",
+            "--require-output",
+            "machine-readable",
+        ])
+        .expect("valid surface explain command");
+
+        match cli.command {
+            Command::Surface(args) => match args.command {
+                super::SurfaceCommand::Explain(args) => {
+                    assert_eq!(args.command, vec!["jobs".to_owned(), "status".to_owned()]);
+                    assert_eq!(
+                        args.require_output,
+                        Some(super::SurfaceOutputRequirement::MachineReadable)
+                    );
+                    assert_eq!(args.format, super::SurfaceFormat::Json);
+                }
+                super::SurfaceCommand::Query(_) | super::SurfaceCommand::List(_) => {
+                    panic!("expected explain command")
+                }
+            },
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Issues(_)
+            | Command::Playbook(_)
+            | Command::Metadata(_) => {
+                panic!("expected surface command")
+            }
+        }
+    }
+
+    #[test]
+    fn surface_list_accepts_readiness_filter() {
+        let cli = Cli::try_parse_from([
+            "cliare", "surface", "list", "--state", "ready", "--limit", "12",
+        ])
+        .expect("valid surface list command");
+
+        match cli.command {
+            Command::Surface(args) => match args.command {
+                super::SurfaceCommand::List(args) => {
+                    assert_eq!(args.state, Some(super::SurfaceReadiness::Ready));
+                    assert_eq!(args.limit, 12);
+                    assert_eq!(args.format, super::SurfaceFormat::Json);
+                }
+                super::SurfaceCommand::Query(_) | super::SurfaceCommand::Explain(_) => {
+                    panic!("expected list command")
+                }
+            },
+            Command::Measure(_)
+            | Command::Jobs(_)
+            | Command::Guard(_)
+            | Command::Benchmark(_)
+            | Command::Context(_)
+            | Command::Report(_)
+            | Command::Describe(_)
+            | Command::Skills(_)
+            | Command::Issues(_)
+            | Command::Playbook(_)
+            | Command::Metadata(_) => {
+                panic!("expected surface command")
             }
         }
     }
@@ -1279,7 +1575,8 @@ mod tests {
             | Command::Describe(_)
             | Command::Skills(_)
             | Command::Issues(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected playbook command")
             }
         }
@@ -1307,7 +1604,8 @@ mod tests {
                 | Command::Describe(_)
                 | Command::Skills(_)
                 | Command::Issues(_)
-                | Command::Metadata(_) => {
+                | Command::Metadata(_)
+                | Command::Surface(_) => {
                     panic!("expected playbook command")
                 }
             }
@@ -1362,7 +1660,8 @@ mod tests {
             | Command::Report(_)
             | Command::Describe(_)
             | Command::Skills(_)
-            | Command::Issues(_) => {
+            | Command::Issues(_)
+            | Command::Surface(_) => {
                 panic!("expected metadata command")
             }
             Command::Playbook(_) => {
@@ -1399,7 +1698,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected measure command")
             }
         }
@@ -1423,7 +1723,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected measure command")
             }
         }
@@ -1458,7 +1759,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected jobs command")
             }
         }
@@ -1494,7 +1796,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected describe command")
             }
         }
@@ -1567,7 +1870,8 @@ mod tests {
             | Command::Skills(_)
             | Command::Issues(_)
             | Command::Playbook(_)
-            | Command::Metadata(_) => {
+            | Command::Metadata(_)
+            | Command::Surface(_) => {
                 panic!("expected measure command")
             }
         }

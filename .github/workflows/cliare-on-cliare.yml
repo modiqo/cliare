@@ -92,7 +92,7 @@ jobs:
           extra-args: --refresh
           artifact-name: cliare-on-cliare-${{ steps.profile.outputs.profile }}
 
-      - name: Print CLIARE score and issues
+      - name: Print CLIARE maintainer report
         shell: bash
         run: |
           set -euo pipefail
@@ -101,150 +101,18 @@ jobs:
           if [[ -f ".github/cliare-on-cliare/issue-dispositions.json" ]]; then
             cp ".github/cliare-on-cliare/issue-dispositions.json" "$out/issue-dispositions.json"
           fi
+
           ./target/debug/cliare issues list --out "$out" --format json > "$out/issues-list.json"
+          ./target/debug/cliare report maintainer --out "$out" --write >/dev/null
+          ./target/debug/cliare report harness --out "$out" --write >/dev/null
+          ./target/debug/cliare report maintainer --out "$out" --format markdown > "$out/persona-maintainer-ci.md"
 
-          node <<'NODE'
-          const fs = require("fs");
-          const out = ".cliare/cliare-on-cliare";
-          const scorecard = JSON.parse(fs.readFileSync(`${out}/scorecard.json`, "utf8"));
-          const issueList = JSON.parse(fs.readFileSync(`${out}/issues-list.json`, "utf8"));
-
-          const escapeCell = (value) => String(value ?? "")
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll("|", "\\|")
-            .replaceAll("\n", "<br>");
-          const code = (value) => `\`${escapeCell(value)}\``;
-          const score = (value) => Number.isFinite(value) ? value.toFixed(1) : "n/a";
-          const conditionMeaning = (issue) => {
-            switch (issue.confidence) {
-              case "observed":
-                return "CLIARE directly saw this behavior in the run.";
-              case "blocked":
-                return "CLIARE reached this area, but required setup, context, or sample inputs blocked safe confirmation.";
-              case "needs_fixture":
-                return "CLIARE found the contract, but needs safe sample input before it can validate it.";
-              case "inferred":
-                return "CLIARE inferred this from runtime or help evidence; confirm before treating it as a product bug.";
-              case "advisory":
-                return "This is optional compatibility or polish, not a first-order blocker.";
-              default:
-                return "CLIARE generated this issue from the current evidence set.";
-            }
-          };
-          const dispositionMeaning = (issue) => {
-            const id = issue.issue_id || "<issue-id>";
-            if (issue.disposition) {
-              const status = issue.disposition.status || "reviewed";
-              const statusLabel = String(status).replaceAll("_", "-");
-              const reason = issue.disposition.reason || "Reviewed in CI.";
-              const action = issue.action_required
-                ? "CI still treats this as action-required."
-                : "CI treats this as reviewed for this dogfood run.";
-              return `${code(statusLabel)}<br>${escapeCell(reason)}<br>${escapeCell(action)}`;
-            }
-            return `Needs maintainer review.<br>${code(`./target/debug/cliare issues mark '${id}' --out ${out} --status intentional --reason 'Reviewed in CI; document rationale here.'`)}`;
-          };
-          const issueLabel = (issue) => [
-            code(issue.issue_id || "unknown"),
-            escapeCell(issue.title || "Untitled issue"),
-            `Severity: ${code(issue.severity || "unknown")}`,
-          ].join("<br>");
-          const meaningLabel = (issue) => [
-            escapeCell(conditionMeaning(issue)),
-            escapeCell(issue.impact || issue.why_it_matters || ""),
-          ].filter(Boolean).join("<br>");
-          const commandScope = (issue) => {
-            if (!issue.affected_command_count) {
-              return "No command samples.";
-            }
-            const samples = (issue.command_samples || [])
-              .slice(0, 3)
-              .map((sample) => code(sample.command));
-            const remaining = issue.affected_command_count - samples.length;
-            if (remaining > 0) {
-              samples.push(`${remaining} more in ${code("issues.json")}`);
-            }
-            return samples.join("<br>");
-          };
-          const nextStep = (issue) => {
-            const parts = [dispositionMeaning(issue)];
-            if (issue.recommendation) {
-              parts.push(escapeCell(issue.recommendation));
-            }
-            if (issue.verification?.command) {
-              parts.push(`Verify: ${code(issue.verification.command)}`);
-            }
-            return parts.join("<br>");
-          };
-
-          const dimensions = Object.entries(scorecard.subscores || {})
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([name, entry]) => `| ${escapeCell(name)} | ${score(entry.score)} | ${escapeCell(entry.status)} | ${entry.weight ?? "n/a"} |`);
-
-          const issues = issueList.issues || [];
-          const visibleIssues = issues.slice(0, 20);
-          const issueRows = visibleIssues.map((issue) => `| ${[
-            issueLabel(issue),
-            meaningLabel(issue),
-            commandScope(issue),
-            nextStep(issue),
-          ].join(" | ")} |`);
-
-          const lines = [
-            "",
-            "## CLIARE on CLIARE",
-            "",
-            "| Field | Value |",
-            "| --- | ---: |",
-            `| Total | ${score(scorecard.score.total)} |`,
-            `| Status | ${scorecard.score.status} |`,
-            `| Model | ${scorecard.score.model} |`,
-            `| Profile | ${scorecard.coverage.traversal_profile} |`,
-            `| Probes | ${scorecard.coverage.probes_completed} |`,
-            `| Commands discovered | ${scorecard.coverage.commands_discovered} |`,
-            `| Commands runtime-confirmed | ${scorecard.coverage.commands_runtime_confirmed} |`,
-            `| Traversal complete | ${scorecard.coverage.traversal_complete} |`,
-            `| Issues total | ${issueList.summary.issues_total} |`,
-            `| Action required | ${issueList.summary.action_required} |`,
-            `| Dispositioned | ${issueList.summary.dispositioned} |`,
-            `| Reviewed decisions | ${issueList.summary.reviewed_decisions} |`,
-            "",
-            "### Score Dimensions",
-            "",
-            "| Dimension | Score | Status | Weight |",
-            "| --- | ---: | --- | ---: |",
-            ...dimensions,
-            "",
-            "### Issue Review Queue",
-            "",
-            "This table is written for review: what CLIARE means, where it showed up, and what CI is doing with it.",
-            "",
-            "| Issue | Plain meaning | Where it showed up | CI decision and next step |",
-            "| --- | --- | --- | --- |",
-            ...(issueRows.length ? issueRows : ["| none | No open issues were generated. | No affected commands. | No action required. |"]),
-            ...(issues.length > visibleIssues.length ? [``, `_Showing first ${visibleIssues.length} of ${issues.length} issues._`] : []),
-            "",
-            "### Review State",
-            "",
-            "Reviewed dispositions keep expected dogfood behavior visible without treating it as fresh CI noise.",
-            "",
-            "| State | Plain meaning |",
-            "| --- | --- |",
-            "| `open` | Needs review or a product change. |",
-            "| `intentional` | Reviewed as deliberate CLI behavior. |",
-            "| `needs-fixture` | Needs safe sample operands or local context before judging. |",
-            "| `not-applicable` | Does not apply to this measured deployment profile. |",
-            "| `accepted-risk` | Reviewed and accepted by the owning team. |",
-            "| `false-positive` | Evidence is misleading and should not be treated as a product issue. |",
-            "| `deferred` | Real issue, intentionally scheduled for later. |",
-            ""
-          ];
-          const text = `${lines.join("\n")}\n`;
-          process.stdout.write(text);
-          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-          if (summaryPath) {
-            fs.appendFileSync(summaryPath, text);
-          }
-          NODE
+          cat "$out/persona-maintainer-ci.md"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo
+              echo "## CLIARE Maintainer Report"
+              echo
+              cat "$out/persona-maintainer-ci.md"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

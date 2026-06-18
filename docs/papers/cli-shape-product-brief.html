@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CLI Shape for Agent Harnesses: A Product Brief for CLIARE</title>
+  <style>
+    @page {
+      margin: 0.72in;
+    }
+
+    :root {
+      color-scheme: light;
+      --ink: #14171a;
+      --muted: #555f6d;
+      --rule: #d9dee7;
+      --panel: #f5f7fa;
+      --accent: #155e75;
+      --accent-soft: #e8f4f7;
+    }
+
+    html {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: white;
+      font-size: 11.5pt;
+      line-height: 1.48;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    main {
+      max-width: 7.2in;
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding: 0.15in 0 0.24in;
+      margin-bottom: 0.24in;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.12in;
+      color: var(--accent);
+      font-size: 9.5pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 30pt;
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0.14in 0 0;
+      color: var(--muted);
+      font-size: 14pt;
+      line-height: 1.35;
+      max-width: 6.2in;
+    }
+
+    .meta {
+      display: flex;
+      gap: 0.18in;
+      flex-wrap: wrap;
+      margin-top: 0.2in;
+      color: var(--muted);
+      font-size: 9.5pt;
+    }
+
+    section {
+      margin: 0.24in 0;
+      break-inside: avoid;
+    }
+
+    h2 {
+      margin: 0 0 0.09in;
+      font-size: 15pt;
+      line-height: 1.2;
+      letter-spacing: 0;
+      color: var(--accent);
+    }
+
+    h3 {
+      margin: 0.16in 0 0.06in;
+      font-size: 11.5pt;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0 0 0.1in;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border: 1px solid #b7d7df;
+      border-radius: 8px;
+      padding: 0.14in 0.16in;
+      margin: 0.18in 0;
+      break-inside: avoid;
+    }
+
+    .callout p:last-child {
+      margin-bottom: 0;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.16in;
+      align-items: start;
+    }
+
+    .box {
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      padding: 0.13in 0.14in;
+      background: var(--panel);
+      break-inside: avoid;
+    }
+
+    .box h3 {
+      margin-top: 0;
+    }
+
+    ul {
+      margin: 0.06in 0 0.1in;
+      padding-left: 0.22in;
+    }
+
+    li {
+      margin-bottom: 0.045in;
+    }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 9.3pt;
+    }
+
+    pre {
+      margin: 0.1in 0 0.12in;
+      padding: 0.11in 0.12in;
+      border-radius: 8px;
+      background: #111827;
+      color: #f9fafb;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      break-inside: avoid;
+    }
+
+    pre code {
+      color: inherit;
+      font-size: 9.2pt;
+    }
+
+    .compact-list {
+      padding-left: 0.18in;
+    }
+
+    .refs {
+      border-top: 1px solid var(--rule);
+      padding-top: 0.15in;
+      margin-top: 0.28in;
+      font-size: 9.2pt;
+      color: var(--muted);
+      break-inside: auto;
+    }
+
+    .refs h2 {
+      color: var(--ink);
+      font-size: 12.5pt;
+    }
+
+    .refs ol {
+      padding-left: 0.2in;
+    }
+
+    .refs li {
+      margin-bottom: 0.06in;
+    }
+
+    .foot {
+      color: var(--muted);
+      font-size: 9.5pt;
+    }
+
+    @media print {
+      section {
+        break-inside: auto;
+      }
+
+      .box,
+      .callout,
+      pre {
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">Product brief</p>
+    <h1>CLI Shape for Agent Harnesses</h1>
+    <p class="subtitle">Why agent-era CLIs need a measured interface contract, and where CLIARE fits.</p>
+    <div class="meta">
+      <span>CLIARE</span>
+      <span>June 17, 2026</span>
+      <span>Audience: CLI maintainers, platform teams, agent harness builders</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Executive Summary</h2>
+    <p>Agent harnesses increasingly work in code mode: they inspect repositories, edit files, run tests, call local tools, and use the shell as the control plane. That is why terminal-first agents such as Claude Code, Codex CLI, and Gemini CLI matter. Their public documentation is explicit about reading code, editing files, running commands, and bringing models directly into the terminal.<sup><a href="#ref-claude">1</a>, <a href="#ref-codex">2</a>, <a href="#ref-gemini">3</a></sup></p>
+    <p>This creates a new interface problem. Many CLIs are being built or repositioned so agents can reach them. At the same time, many of those CLIs are private, new, version-specific, plugin-driven, or changed after a model was trained. The harness cannot rely on memorized syntax. It discovers the surface at runtime by reading help, trying commands, parsing errors, and adapting to local state. That discovery loop is often non-deterministic.</p>
+    <div class="callout">
+      <p><strong>CLIARE's opportunity:</strong> become the neutral, evidence-backed shape layer for command-line interfaces: the CLI equivalent of an OpenAPI-style contract, but measured from the released executable and designed for local state, preconditions, side effects, and agent execution.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>The Opportunity</h2>
+    <p>The software industry already has standards for HTTP APIs. OpenAPI defines a language-agnostic interface description so humans and computers can understand an API without source access or traffic inspection.<sup><a href="#ref-openapi">4</a></sup> CLIs do not have an equivalent operational contract.</p>
+    <p>That gap is becoming expensive because agents prefer interfaces they can execute inside the environments where software work happens: repositories, terminals, CI workers, containers, and developer machines. A CLI is often the shortest path to authenticated operational authority. It already has the user's credentials, project context, config files, local cache, and established deployment workflow.</p>
+    <p>The opportunity is not to replace CLIs. It is to make them measurable and queryable enough that maintainers can improve them and harnesses can use them without guessing.</p>
+  </section>
+
+  <section>
+    <h2>The Problem</h2>
+    <p>The current agent-facing CLI ecosystem has three failure modes.</p>
+    <div class="two-col">
+      <div class="box">
+        <h3>1. Post-training surfaces</h3>
+        <p>New CLIs, private CLIs, internal subcommands, plugin commands, and fast release cycles appear after a model's training run. A harness has to discover them live. Two runs can diverge because auth, working directory, installed plugins, environment variables, or probe order changed.</p>
+      </div>
+      <div class="box">
+        <h3>2. Human-readable is not machine-operable</h3>
+        <p>A human can recover from missing examples, ambiguous preconditions, inconsistent exit codes, and output that changes shape. An agent usually pays for that with repeated discovery loops, invalid invocations, brittle parsing, or unnecessary escalation to the user.</p>
+      </div>
+    </div>
+    <div class="box">
+      <h3>3. Harnesses lack a standard query target</h3>
+      <p>A harness needs to answer simple questions before executing a command: what command matches this intent, what arguments are required, what output mode is parseable, what preconditions are missing, what is safe to probe, and what sequence should come next. Today that shape is usually reconstructed from help text, docs, examples, and failures.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Why This Matters to Maintainers</h2>
+    <p>Agent usage turns CLI design issues into product issues. A command with unclear preconditions can force agents to keep probing. A missing JSON mode can force fragile text parsing. A help command that mutates local state can make CI and harness execution unsafe. An invalid flag diagnostic that does not name the problem can waste multiple turns.</p>
+    <p>Maintainers need feedback that is direct enough to act on:</p>
+    <ul class="compact-list">
+      <li>This is the issue.</li>
+      <li>This is the agent or harness outcome it causes.</li>
+      <li>This is how to fix it.</li>
+      <li>If it is intentional, record a disposition so it does not keep returning as unreviewed noise.</li>
+    </ul>
+    <p>That is the same reporting direction CLIARE has moved toward: issue ledgers, persona packets, maintainer dispositions, and reports written around outcomes rather than internal scoring representations.</p>
+  </section>
+
+  <section>
+    <h2>Why This Matters to Harnesses</h2>
+    <p>Harness quality depends on the interface between the model and the environment. SWE-agent's research argues that agent-computer interface design affects software engineering agent performance, especially around repository navigation and command execution.<sup><a href="#ref-sweagent">5</a></sup> The same principle applies to third-party CLIs.</p>
+    <p>A harness should not have to rediscover a large CLI from scratch in every run. It needs a compact, deterministic, versioned surface it can query:</p>
+    <ul class="compact-list">
+      <li><strong>Intent routing:</strong> map "check job status" to likely commands.</li>
+      <li><strong>Invocation shape:</strong> know the command path, required operands, flags, examples, and argument template.</li>
+      <li><strong>Output contract:</strong> prefer JSON or other parseable modes when available.</li>
+      <li><strong>Readiness and risk:</strong> see missing preconditions, cautions, safety notes, and evidence confidence before execution.</li>
+      <li><strong>Version awareness:</strong> cache shape only when the measured binary, profile, context, and artifact set still match.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>How CLIARE Solves It</h2>
+    <p>CLIARE treats a CLI as a black-box runtime system. It measures the released executable, not just source declarations or documentation. The measurement records evidence, infers command shape, scores readiness dimensions, and emits artifacts that can be reviewed by humans or consumed by machines.</p>
+    <pre><code>cliare measure ./target/debug/mycli --out .cliare/mycli --profile standard
+cliare issues list --out .cliare/mycli --format human
+cliare surface query "check job status" --out .cliare/mycli --format json
+cliare surface explain "jobs status" --out .cliare/mycli</code></pre>
+    <p>The important shift is the surface resolver. The command index can be large. A harness should not have to read every row, infer which column matters, and reconstruct an invocation. It should ask a measured artifact directory for candidates and receive command paths, argument templates, output modes, preconditions, cautions, gaps, and evidence references.</p>
+    <p>That makes CLIARE useful in two loops: the maintainer improvement loop and the harness execution loop.</p>
+  </section>
+
+  <section>
+    <h2>Maintainer Outcome</h2>
+    <div class="two-col">
+      <div class="box">
+        <h3>Before</h3>
+        <ul>
+          <li>Agent failures arrive as vague bug reports.</li>
+          <li>CI may catch regressions only after users complain.</li>
+          <li>Docs, help text, parser behavior, and examples drift apart.</li>
+          <li>Intentional behavior keeps reappearing as unresolved noise.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>With CLIARE</h3>
+        <ul>
+          <li>Issues are tied to measured evidence and concrete outcomes.</li>
+          <li>CI can gate readiness regressions against a baseline.</li>
+          <li>Preconditions, output modes, diagnostics, and safety behavior become visible.</li>
+          <li>Reviewed dispositions keep accepted decisions explicit.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Harness Outcome</h2>
+    <div class="two-col">
+      <div class="box">
+        <h3>Before</h3>
+        <ul>
+          <li>Probe help, try commands, parse errors, repeat.</li>
+          <li>Depend on model memory of old or public syntax.</li>
+          <li>Build one-off adapters for each CLI.</li>
+          <li>Spend tokens and wall time on discovery instead of task execution.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>With CLIARE</h3>
+        <ul>
+          <li>Query measured shape by intent.</li>
+          <li>Select parseable output modes before execution.</li>
+          <li>Inspect preconditions and cautions up front.</li>
+          <li>Cache and verify shape by binary fingerprint and measurement profile.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the Standard Should Contain</h2>
+    <p>A CLI shape standard should not stop at command names. A useful agent-facing contract needs:</p>
+    <ul class="compact-list">
+      <li>Command path, aliases, short description, examples, and intent terms.</li>
+      <li>Arguments, flags, arity, defaults, conflicts, and required operands.</li>
+      <li>Output contracts, including parseable modes and validation evidence.</li>
+      <li>Preconditions: auth, project context, profile, fixture/input, plugin, dependency, or remote state.</li>
+      <li>Safety signals: discovery side effects, destructive verbs, dry-run support, and caution text.</li>
+      <li>Evidence references, confidence, binary fingerprint, measurement context, and schema version.</li>
+      <li>Maintainer dispositions for accepted risk, intentional design, false positives, and fixture-gated findings.</li>
+    </ul>
+    <p>OpenAPI reduced guesswork for HTTP APIs. CLIARE can do the same for command surfaces, with one difference: because CLI behavior depends on local runtime context, the standard should be evidence-backed and replayable, not just hand-authored.</p>
+  </section>
+
+  <section>
+    <h2>Product Positioning</h2>
+    <p>CLIARE should be positioned as the open standard and reference implementation for CLI shape measurement. It sits between maintainers and harnesses:</p>
+    <ul class="compact-list">
+      <li><strong>For maintainers:</strong> a CI-ready quality gate and issue workflow for making a CLI easier for agents to operate.</li>
+      <li><strong>For harnesses:</strong> a deterministic shape query interface that reduces blind discovery and improves execution planning.</li>
+      <li><strong>For ecosystems:</strong> a common artifact format for comparing readiness, tracking drift, and publishing trustable scorecards.</li>
+    </ul>
+    <p>This is complementary to existing tool protocols. MCP connects agents to external tools and data sources. OpenAPI describes HTTP APIs. CLIARE focuses on released command-line programs: the interface agents already reach when they operate in code environments.</p>
+  </section>
+
+  <section>
+    <h2>Near-Term Product Work</h2>
+    <ul class="compact-list">
+      <li>Stabilize the `surface` JSON schema so harnesses can depend on it.</li>
+      <li>Add labeled intent corpora to evaluate ranking quality beyond string matching.</li>
+      <li>Represent safe multi-command sequences, not just individual invocations.</li>
+      <li>Publish a concise maintainer checklist for high-scoring agent-ready CLIs.</li>
+      <li>Support scorecard publishing with provenance, versioning, and drift history.</li>
+    </ul>
+    <p class="foot">The current string-ranked resolver is a useful first step. A BM25 or Tantivy-backed ranker may become valuable for Git-scale CLIs, but the standard should first lock down the shape schema, evidence model, and harness contract.</p>
+  </section>
+
+  <section class="refs">
+    <h2>Selected Sources</h2>
+    <ol>
+      <li id="ref-claude">Anthropic, "Claude Code Overview." The documentation describes Claude Code as an agentic coding tool that reads codebases, edits files, runs commands, and is available in the terminal. <a href="https://docs.anthropic.com/en/docs/claude-code/overview">https://docs.anthropic.com/en/docs/claude-code/overview</a></li>
+      <li id="ref-codex">OpenAI, `openai/codex` README. The repository describes Codex CLI as a coding agent from OpenAI that runs locally on a computer and installs as a terminal CLI. <a href="https://github.com/openai/codex">https://github.com/openai/codex</a></li>
+      <li id="ref-gemini">Google, "Gemini CLI: your open-source AI agent," June 25, 2025. Google describes Gemini CLI as an open-source AI agent that brings Gemini directly into developers' terminals. <a href="https://blog.google/technology/developers/introducing-gemini-cli-open-source-ai-agent/">https://blog.google/technology/developers/introducing-gemini-cli-open-source-ai-agent/</a></li>
+      <li id="ref-openapi">OpenAPI Initiative, "OpenAPI Specification v3.2.0." The specification defines a standard, language-agnostic interface description for HTTP APIs. <a href="https://spec.openapis.org/oas/latest.html">https://spec.openapis.org/oas/latest.html</a></li>
+      <li id="ref-sweagent">John Yang et al., "SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering," arXiv:2405.15793, 2024. <a href="https://arxiv.org/abs/2405.15793">https://arxiv.org/abs/2405.15793</a></li>
+      <li>Shunyu Yao et al., "ReAct: Synergizing Reasoning and Acting in Language Models," arXiv:2210.03629, 2022. <a href="https://arxiv.org/abs/2210.03629">https://arxiv.org/abs/2210.03629</a></li>
+      <li>The Open Group, "Utility Syntax Guidelines," POSIX Base Specifications, Section 12.2. <a href="https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html">https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html</a></li>
+      <li>Supply-chain Levels for Software Artifacts, "SLSA Provenance," Version 1.2. <a href="https://slsa.dev/spec/v1.2/provenance">https://slsa.dev/spec/v1.2/provenance</a></li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

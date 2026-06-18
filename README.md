@@ -143,9 +143,9 @@ Benefits:
 
 ### For Agent Harness Builders
 
-CLIARE creates a command index that agents can read before exploring.
+CLIARE creates a measured command surface that harnesses can query before agents explore.
 
-Harnesses can load `command-index.json` to route through known commands, prefer parseable output contracts, honor preconditions, and avoid rediscovering syntax by trial and error. The result is lower token cost, fewer bad invocations, and more deliberate CLI use.
+Harnesses should use `cliare surface query`, `cliare surface explain`, and `cliare surface list` for compact intent-to-command routing answers. `command-index.json` remains the evidence-backed source of truth when a route needs audit or debugging.
 
 Benefits:
 
@@ -205,7 +205,7 @@ curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh 
 To install a specific release:
 
 ```sh
-curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.6/install.sh | CLIARE_VERSION=v0.1.6 sh
+curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.7/install.sh | CLIARE_VERSION=v0.1.7 sh
 ```
 
 Or install from source:
@@ -350,19 +350,28 @@ cliare report harness --out .cliare/mycli --write
 Then point your harness at:
 
 ```text
-.cliare/mycli/command-index.json
 .cliare/mycli/AGENT_SKILL.md
 .cliare/mycli/persona-harness.json
+.cliare/mycli/command-index.json
+```
+
+Resolve a task intent:
+
+```sh
+cliare surface query "check job status" --out .cliare/mycli --format json
+cliare surface query "list issues" --out .cliare/mycli --require-output json --format json
+cliare surface explain "jobs status" --out .cliare/mycli --format json
+cliare surface list --out .cliare/mycli --state ready --format json
 ```
 
 Harness routing should:
 
-1. Load `command-index.json`.
-2. Prefer commands with `agent_suitability` of `ready`.
-3. Treat `conditional` commands as requiring their listed preconditions.
+1. Query the surface resolver for a task intent.
+2. Prefer matches with `readiness` of `ready`.
+3. Treat `conditional` commands as requiring their listed cautions or preconditions.
 4. Prefer parseable output contracts when state needs to be read.
 5. Avoid `blocked`, `needs_fixture`, and low-confidence paths unless the harness can satisfy the missing context.
-6. Use evidence references only when a route needs audit or debugging.
+6. Open `command-index.json` only when a route needs full evidence or debugging.
 
 Print the full harness walkthrough:
 
@@ -536,6 +545,7 @@ The design and implementation notes live under [`docs/`](docs/index.md). Start w
 
 - [Design index](docs/index.md)
 - [Runtime evidence for agent-ready CLIs](docs/papers/runtime-evidence-for-agent-ready-clis.md)
+- [CLI shape for agent harnesses product brief](docs/papers/cli-shape-product-brief.html)
 - [Persona outcome packets](docs/guides/persona-outcome-packets.md)
 - [Agent-ready CLI standard template](docs/guides/agent-ready-cli-standard-template.md)
 - [Agent skills installation](docs/guides/agent-skills-installation.md)

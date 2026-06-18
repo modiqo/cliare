@@ -501,6 +501,55 @@ mod tests {
     }
 
     #[test]
+    fn metadata_spec_contains_surface_commands() {
+        let metadata = metadata();
+        let surface = metadata
+            .command_spec
+            .root
+            .subcommands
+            .iter()
+            .find(|command| command.name == "surface")
+            .expect("surface command is present");
+        let query = surface
+            .subcommands
+            .iter()
+            .find(|command| command.name == "query")
+            .expect("surface query command is present");
+        let explain = surface
+            .subcommands
+            .iter()
+            .find(|command| command.name == "explain")
+            .expect("surface explain command is present");
+        let list = surface
+            .subcommands
+            .iter()
+            .find(|command| command.name == "list")
+            .expect("surface list command is present");
+
+        assert!(query.args.iter().any(|arg| arg.id == "intent"));
+        assert!(query.args.iter().any(|arg| {
+            arg.long.as_deref() == Some("require-output")
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "machine-readable")
+        }));
+        assert!(
+            explain
+                .args
+                .iter()
+                .any(|arg| arg.id == "command" && arg.value_arity.max.is_none())
+        );
+        assert!(list.args.iter().any(|arg| {
+            arg.long.as_deref() == Some("state")
+                && arg
+                    .possible_values
+                    .iter()
+                    .any(|value| value.value == "conditional")
+        }));
+    }
+
+    #[test]
     fn metadata_spec_contains_playbook_roles() {
         let metadata = metadata();
         let playbook = metadata

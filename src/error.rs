@@ -353,6 +353,23 @@ pub enum CliareError {
         source: std::io::Error,
     },
 
+    #[error("failed to read command index {path}")]
+    ReadCommandIndex {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to parse command index {path}")]
+    ParseCommandIndex {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("failed to serialize surface query response")]
+    SerializeSurface(#[source] serde_json::Error),
+
     #[error("failed to read baseline scorecard {path}")]
     ReadBaselineScorecard {
         path: PathBuf,

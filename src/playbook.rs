@@ -150,7 +150,7 @@ impl RolePlaybook {
             schema_version: PLAYBOOK_SCHEMA_VERSION,
             role: PlaybookRole::Harness.label(),
             title: "CLIARE Harness Playbook",
-            goal: "Consume CLIARE artifacts as an agent-routing contract: command index first, harness packet second, generated skill third, then validate agent behavior against evidence.",
+            goal: "Consume CLIARE artifacts as an agent-routing contract: surface resolver first, command index as audit evidence, harness packet second, generated skill third, then validate agent behavior against evidence.",
             target,
             out,
             context: args.context.clone(),
@@ -178,7 +178,7 @@ impl RolePlaybook {
                 "issue-dispositions.json",
             ],
             completion_criteria: vec![
-                "Agent routing starts from `command-index.json`, not from ad hoc help probing.",
+                "Agent routing starts from `cliare surface query` or `cliare surface explain`, with `command-index.json` available as audit evidence.",
                 "The harness packet identifies safe commands, preconditions, output contracts, and known gaps.",
                 "The generated skill explains how to select commands, handle fixtures, and avoid unsafe probes.",
                 "Critical harness issues are fixed, dispositioned, or excluded from the agent-facing surface.",
@@ -314,6 +314,44 @@ impl<'a> CommandBuilder<'a> {
         self.push_context(&mut command);
         command.push_str(" --format ");
         command.push_str(format);
+        command
+    }
+
+    fn surface_query(&self, intent: &str, extra: &[&str]) -> String {
+        let mut command = format!(
+            "cliare surface query {} --out {}",
+            shell_arg(intent),
+            shell_path(self.out)
+        );
+        self.push_context(&mut command);
+        for arg in extra {
+            command.push(' ');
+            command.push_str(arg);
+        }
+        command
+    }
+
+    fn surface_explain(&self, command_path: &str, extra: &[&str]) -> String {
+        let mut command = format!(
+            "cliare surface explain {} --out {}",
+            shell_arg(command_path),
+            shell_path(self.out)
+        );
+        self.push_context(&mut command);
+        for arg in extra {
+            command.push(' ');
+            command.push_str(arg);
+        }
+        command
+    }
+
+    fn surface_list(&self, extra: &[&str]) -> String {
+        let mut command = format!("cliare surface list --out {}", shell_path(self.out));
+        self.push_context(&mut command);
+        for arg in extra {
+            command.push(' ');
+            command.push_str(arg);
+        }
         command
     }
 
@@ -572,8 +610,23 @@ fn harness_lifecycle(commands: &CommandBuilder<'_>) -> Vec<PlaybookSection> {
         PlaybookSection {
             order: 2,
             title: "Read Agent Surface",
-            purpose: "Use the command index and harness persona packet as the routing contract.",
+            purpose: "Use the surface resolver for intent-to-command routing, with the command index and harness packet as evidence.",
             commands: vec![
+                PlaybookCommand {
+                    title: "Resolve an intent",
+                    command: commands.surface_query("check job status", &["--format", "json"]),
+                    why: "Returns ranked command matches, argv templates, readiness, requirements, and cautions without loading the full command index into the harness.",
+                },
+                PlaybookCommand {
+                    title: "Explain a command",
+                    command: commands.surface_explain("jobs status", &["--format", "json"]),
+                    why: "Shows the measured invocation shape, required operands, suggested flags, output contracts, gaps, and evidence for one command.",
+                },
+                PlaybookCommand {
+                    title: "List routable commands",
+                    command: commands.surface_list(&["--state", "ready", "--format", "json"]),
+                    why: "Gives harness code a compact readiness-filtered projection instead of the full command-index artifact.",
+                },
                 PlaybookCommand {
                     title: "Harness packet",
                     command: commands.report("harness", &["--format", "markdown"]),
@@ -1473,6 +1526,17 @@ mod tests {
 
         assert!(text.contains("# CLIARE Harness Playbook"));
         assert!(text.contains("## 2. Read Agent Surface"));
+        assert!(
+            text.contains(
+                "cliare surface query 'check job status' --out .cliare/rote --format json"
+            )
+        );
+        assert!(
+            text.contains("cliare surface explain 'jobs status' --out .cliare/rote --format json")
+        );
+        assert!(
+            text.contains("cliare surface list --out .cliare/rote --state ready --format json")
+        );
         assert!(text.contains("cliare report harness --out .cliare/rote --format markdown"));
         assert!(text.contains("cliare skills install --agent all --scope project"));
         assert!(text.contains("AGENT_SKILL.md"));

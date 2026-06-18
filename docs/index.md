@@ -111,6 +111,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | Document | Purpose | Key Decisions |
 |---|---|---|
 | [Runtime Evidence for Agent-Ready Command-Line Interfaces](papers/runtime-evidence-for-agent-ready-clis.md) ([PDF](papers/runtime-evidence-for-agent-ready-clis.pdf)) | Technical paper covering the motivation, architecture, inference model, score semantics, evaluation strategy, calibration boundary, and research agenda | CLI-agent-readiness should be measured from runtime evidence produced by the released executable |
+| [CLI Shape for Agent Harnesses](papers/cli-shape-product-brief.html) ([PDF](papers/cli-shape-product-brief.pdf)) | Product brief for maintainers, platform teams, and harness builders | CLIARE can become an evidence-backed, OpenAPI-like shape layer for command-line interfaces |
 
 ---
 

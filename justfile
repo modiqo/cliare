@@ -31,6 +31,7 @@ cheatsheet:
       "2. Standard maintainer review" \
       "   just measure-standard <cli> <run-name>" \
       "   just review <run-name>" \
+      "   just issues <run-name>" \
       "   just report-area <run-name> output-contracts" \
       "   just report-issue <run-name> <issue-id>" \
       "" \
@@ -57,6 +58,8 @@ cheatsheet:
       "   just describe-write <run-name>" \
       "   just report-write <run-name> harness" \
       "   just agent-surface <run-name>" \
+      "   just surface-query <run-name> 'check job status'" \
+      "   just surface-explain <run-name> 'jobs status'" \
       "" \
       "8. Skills and corpus work" \
       "   just skills-list" \
@@ -176,7 +179,7 @@ jobs-context run context:
 report run persona="maintainer" format="markdown":
     {{ cliare_bin }} report {{ persona }} --out .cliare/{{ run }} --format {{ format }}
 
-# Write all persona reports and shared review artifacts.
+# Write one persona report and shared review artifacts.
 report-write run persona="maintainer":
     {{ cliare_bin }} report {{ persona }} --out .cliare/{{ run }} --write
 
@@ -191,6 +194,22 @@ report-issue run issue persona="maintainer" format="bundle":
 # List generated issues with maintainer dispositions.
 issues run format="human":
     {{ cliare_bin }} issues list --out .cliare/{{ run }} --format {{ format }}
+
+# Query the measured command surface for a harness intent.
+surface-query run intent format="human":
+    {{ cliare_bin }} surface query {{ quote(intent) }} --out .cliare/{{ run }} --format {{ format }}
+
+# Query commands with JSON output for a harness intent.
+surface-query-json run intent:
+    {{ cliare_bin }} surface query {{ quote(intent) }} --out .cliare/{{ run }} --require-output json --format json
+
+# Explain one measured command path for harness routing.
+surface-explain run command_path format="human":
+    {{ cliare_bin }} surface explain {{ quote(command_path) }} --out .cliare/{{ run }} --format {{ format }}
+
+# List measured commands by readiness state.
+surface-list run state="ready" format="human" limit="50":
+    {{ cliare_bin }} surface list --out .cliare/{{ run }} --state {{ state }} --limit {{ limit }} --format {{ format }}
 
 # Mark an issue with a maintainer disposition.
 issue-mark run issue status reason:
@@ -257,10 +276,8 @@ skills-install-dry agent="all" scope="project" project_dir=".":
 skills-install-project agent="all" project_dir=".":
     {{ cliare_bin }} skills install --agent {{ agent }} --scope project --project-dir {{ project_dir }}
 
-# Common post-measurement review loop.
+# Common post-measurement maintainer review.
 review run:
-    {{ cliare_bin }} describe .cliare/{{ run }} --format markdown
-    {{ cliare_bin }} issues list --out .cliare/{{ run }} --format human
     {{ cliare_bin }} report maintainer --out .cliare/{{ run }} --format markdown
 
 # Common agent-surface publishing loop.
