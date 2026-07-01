@@ -1,0 +1,13 @@
+[package]
+name = "cliare-evidence"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Evidence record models for CLIARE"
+
+[dependencies]
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
+serde.workspace = true

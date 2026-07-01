@@ -1,0 +1,239 @@
+use std::collections::BTreeSet;
+
+use super::model::{ArtifactKind, FileKind, FileSpec};
+
+pub(super) fn detect_artifact_kind(top_level: &BTreeSet<String>) -> ArtifactKind {
+    let measurement = top_level.contains("scorecard.json") || top_level.contains("evidence.jsonl");
+    let benchmark = top_level.contains("benchmark.json");
+    let context_suite = top_level.contains("context-suite.json")
+        || top_level.contains("context-compare.md")
+        || top_level.contains("contexts");
+    match (measurement, benchmark, context_suite) {
+        (false, false, true) => ArtifactKind::ContextSuite,
+        (true, true, _) => ArtifactKind::Mixed,
+        (true, false, _) => ArtifactKind::Measurement,
+        (false, true, _) => ArtifactKind::Benchmark,
+        (false, false, false) => ArtifactKind::Unknown,
+    }
+}
+
+pub(super) fn known_file_specs(kind: ArtifactKind) -> Vec<FileSpec> {
+    match kind {
+        ArtifactKind::Measurement | ArtifactKind::Mixed => measurement_specs(),
+        ArtifactKind::Benchmark => benchmark_specs(),
+        ArtifactKind::ContextSuite => context_suite_specs(),
+        ArtifactKind::Unknown => common_specs(),
+    }
+}
+
+fn measurement_specs() -> Vec<FileSpec> {
+    vec![
+        FileSpec::new(
+            "scorecard.json",
+            FileKind::Scorecard,
+            "Compact score, subscores, coverage pressure, findings, and provenance.",
+            true,
+            1,
+            "Start here to understand posture and whether the run is complete.",
+        ),
+        FileSpec::new(
+            "summary.md",
+            FileKind::CiSummary,
+            "Markdown summary intended for CI job summaries and pull request checks.",
+            false,
+            2,
+            "Use for a concise human-readable overview.",
+        ),
+        FileSpec::new(
+            "issues.json",
+            FileKind::IssueLedger,
+            "Canonical issue ledger with affected commands, evidence, recommendations, and verification commands.",
+            true,
+            3,
+            "Use as the remediation work queue.",
+        ),
+        FileSpec::new(
+            "issues.md",
+            FileKind::IssueReport,
+            "Markdown rendering of the issue ledger.",
+            false,
+            4,
+            "Use when a human needs the same issue queue in report form.",
+        ),
+        FileSpec::new(
+            "command-index.json",
+            FileKind::CommandIndex,
+            "Command-centric lookup table with parameters, preconditions, output contracts, suitability, gaps, and evidence.",
+            true,
+            5,
+            "Use before choosing or invoking a command.",
+        ),
+        FileSpec::new(
+            "command-index.md",
+            FileKind::CommandIndexReport,
+            "Human-readable command inventory derived from command-index.json.",
+            false,
+            6,
+            "Use for quick command-surface review.",
+        ),
+        FileSpec::new(
+            "shape.json",
+            FileKind::Shape,
+            "Raw inferred command tree, flags, positionals, output contracts, gaps, confidence, and evidence pointers.",
+            true,
+            7,
+            "Use when command-index.json does not contain enough inference detail.",
+        ),
+        FileSpec::new(
+            "evidence.jsonl",
+            FileKind::Evidence,
+            "Append-only runtime event log.",
+            true,
+            8,
+            "Use to prove what CLIARE observed at runtime.",
+        ),
+        FileSpec::new(
+            "report.md",
+            FileKind::ScoreReport,
+            "Human-readable scorecard report.",
+            false,
+            9,
+            "Use when explaining the score to maintainers.",
+        ),
+        FileSpec::new(
+            "findings.sarif",
+            FileKind::Sarif,
+            "SARIF findings for code-scanning style consumers.",
+            false,
+            20,
+            "Use for CI/code-scanning integrations.",
+        ),
+        FileSpec::new(
+            "junit.xml",
+            FileKind::Junit,
+            "JUnit summary for CI systems.",
+            false,
+            21,
+            "Use for test-report integrations.",
+        ),
+        FileSpec::new(
+            "measure-cache.json",
+            FileKind::Cache,
+            "Fingerprint and profile cache manifest.",
+            false,
+            30,
+            "Use to understand why a run was reused or recomputed.",
+        ),
+        FileSpec::new(
+            "jobs/current",
+            FileKind::JobPointer,
+            "Pointer to the latest foreground or detached measurement job.",
+            false,
+            31,
+            "Use with cliare jobs status --out <dir>.",
+        ),
+        FileSpec::new(
+            "README.md",
+            FileKind::Guide,
+            "Artifact-directory guide generated by CLIARE.",
+            false,
+            40,
+            "Use for command snippets and artifact orientation.",
+        ),
+        FileSpec::new(
+            "AGENT_SKILL.md",
+            FileKind::AgentSkill,
+            "Agent workflow for artifact triage and evidence lookup.",
+            false,
+            41,
+            "Use to guide an agent reviewing this artifact directory.",
+        ),
+    ]
+}
+
+fn benchmark_specs() -> Vec<FileSpec> {
+    vec![
+        FileSpec::new(
+            "benchmark.json",
+            FileKind::BenchmarkReport,
+            "Aggregate benchmark corpus report.",
+            true,
+            1,
+            "Start here to understand corpus totals and target status.",
+        ),
+        FileSpec::new(
+            "benchmark.md",
+            FileKind::BenchmarkReport,
+            "Human-readable benchmark corpus report.",
+            true,
+            2,
+            "Use for benchmark review and sharing.",
+        ),
+        FileSpec::new(
+            "README.md",
+            FileKind::Guide,
+            "Benchmark artifact guide generated by CLIARE.",
+            false,
+            10,
+            "Use for corpus navigation.",
+        ),
+        FileSpec::new(
+            "AGENT_SKILL.md",
+            FileKind::AgentSkill,
+            "Agent workflow for benchmark artifact review.",
+            false,
+            11,
+            "Use to guide an agent reviewing this benchmark directory.",
+        ),
+    ]
+}
+
+fn context_suite_specs() -> Vec<FileSpec> {
+    vec![
+        FileSpec::new(
+            "context-suite.json",
+            FileKind::ContextSuite,
+            "Machine-readable comparison of persisted runtime contexts.",
+            true,
+            1,
+            "Start here to see which contexts exist and how scores differ.",
+        ),
+        FileSpec::new(
+            "context-compare.md",
+            FileKind::ContextCompare,
+            "Human-readable context comparison table.",
+            false,
+            2,
+            "Use for a quick review of context-specific scores and preconditions.",
+        ),
+        FileSpec::new(
+            "contexts",
+            FileKind::ContextsDirectory,
+            "Directory containing one complete measurement artifact bundle per runtime context.",
+            true,
+            3,
+            "Choose a context, then inspect its scorecard, persona report, command index, and evidence.",
+        ),
+    ]
+}
+
+fn common_specs() -> Vec<FileSpec> {
+    vec![
+        FileSpec::new(
+            "README.md",
+            FileKind::Guide,
+            "Directory guide if present.",
+            false,
+            20,
+            "Use for local context.",
+        ),
+        FileSpec::new(
+            "AGENT_SKILL.md",
+            FileKind::AgentSkill,
+            "Agent workflow if present.",
+            false,
+            21,
+            "Use for agent-specific instructions.",
+        ),
+    ]
+}

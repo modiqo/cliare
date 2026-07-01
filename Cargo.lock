@@ -163,12 +163,230 @@ name = "cliare"
 version = "0.1.7"
 dependencies = [
  "clap",
+ "cliare-app",
+ "cliare-cli",
+ "cliare-context",
+ "cliare-core",
+ "cliare-evidence",
+ "cliare-guidance",
+ "cliare-inference",
+ "cliare-inspect",
+ "cliare-issues",
+ "cliare-measure",
+ "cliare-policy",
+ "cliare-report",
+ "cliare-runtime",
+ "cliare-score",
+ "cliare-shape",
  "miette",
  "serde",
  "serde_json",
  "sha2",
  "thiserror",
  "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-app"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-cli",
+ "cliare-context",
+ "cliare-core",
+ "cliare-evidence",
+ "cliare-guidance",
+ "cliare-inference",
+ "cliare-inspect",
+ "cliare-issues",
+ "cliare-measure",
+ "cliare-policy",
+ "cliare-report",
+ "cliare-runtime",
+ "cliare-score",
+ "cliare-shape",
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-cli"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-context",
+ "cliare-issues",
+ "cliare-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cliare-context"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-core"
+version = "0.1.7"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-evidence"
+version = "0.1.7"
+dependencies = [
+ "cliare-core",
+ "cliare-runtime",
+ "serde",
+]
+
+[[package]]
+name = "cliare-guidance"
+version = "0.1.7"
+dependencies = [
+ "cliare-cli",
+ "cliare-core",
+ "cliare-report",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-inference"
+version = "0.1.7"
+dependencies = [
+ "cliare-core",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "cliare-inspect"
+version = "0.1.7"
+dependencies = [
+ "cliare-cli",
+ "cliare-context",
+ "cliare-core",
+ "cliare-measure",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-issues"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-measure"
+version = "0.1.7"
+dependencies = [
+ "cliare-cli",
+ "cliare-context",
+ "cliare-core",
+ "cliare-evidence",
+ "cliare-inference",
+ "cliare-policy",
+ "cliare-report",
+ "cliare-runtime",
+ "cliare-score",
+ "cliare-shape",
+ "serde",
+ "serde_json",
+ "sha2",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-policy"
+version = "0.1.7"
+dependencies = [
+ "cliare-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-report"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-cli",
+ "cliare-context",
+ "cliare-core",
+ "cliare-issues",
+ "cliare-policy",
+ "cliare-runtime",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-runtime"
+version = "0.1.7"
+dependencies = [
+ "clap",
+ "cliare-core",
+ "serde",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-score"
+version = "0.1.7"
+dependencies = [
+ "cliare-context",
+ "cliare-core",
+ "cliare-evidence",
+ "cliare-inference",
+ "cliare-policy",
+ "cliare-runtime",
+ "cliare-shape",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-shape"
+version = "0.1.7"
+dependencies = [
+ "cliare-core",
+ "cliare-evidence",
+ "cliare-inference",
+ "cliare-runtime",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

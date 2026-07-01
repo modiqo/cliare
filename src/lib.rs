@@ -1,42 +1,6 @@
-pub mod artifact_guide;
-pub mod artifacts;
-pub mod belief;
-pub mod benchmark;
-pub mod ci;
-pub mod claims;
-pub mod cli;
-pub mod command_spec;
-pub mod context;
-pub mod describe;
-pub mod diagnostic;
-pub mod error;
-pub mod evidence;
-pub mod fingerprint;
-pub mod guard;
-pub mod issue_disposition;
-pub mod issues;
-pub mod jobs;
-pub mod layout;
-mod layout_tokens;
-mod layout_usage;
-mod markdown;
-pub mod measure;
-pub mod observation;
-pub mod output;
-pub mod path_classification;
-pub mod planner;
-pub mod playbook;
-pub mod policy;
-pub mod precondition;
-pub mod process;
-pub mod report;
-mod report_evidence;
-mod report_format;
-mod report_markdown;
-mod report_model;
-pub mod sandbox;
-pub mod score;
-pub mod score_model;
-pub mod shape;
-pub mod skills;
-pub mod surface;
+pub use cliare_app::{
+    artifact_guide, artifacts, belief, benchmark, ci, claims, cli, command_spec, context, describe,
+    diagnostic, error, evidence, fingerprint, guard, issue_disposition, issues, jobs, layout,
+    measure, observation, output, path_classification, planner, playbook, policy, precondition,
+    process, report, sandbox, score, score_model, shape, skills, surface,
+};

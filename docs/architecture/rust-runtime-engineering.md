@@ -7,7 +7,18 @@
 
 ## Summary
 
-CLIARE is currently implemented as a single Rust crate with a Tokio-based CLI runtime. It is not a multi-crate workspace, not a generic graph engine, and not a distributed executor.
+CLIARE is being refactored from a single Rust crate into a small internal
+workspace with a Tokio-based CLI runtime. The current workspace slice extracts
+shared contracts into `cliare-core`, target/sandbox runtime support into
+`cliare-runtime`, runtime context handling into `cliare-context`, evidence
+records into `cliare-evidence`, inference support into `cliare-inference`,
+shape building into `cliare-shape`, policy evaluation into `cliare-policy`,
+scorecard computation into `cliare-score`, and report support utilities into
+`cliare-report`. CLI argument definitions live in `cliare-cli`, measurement
+commands in `cliare-measure`, guidance commands in `cliare-guidance`, and
+artifact inspection in `cliare-inspect`. `cliare-app` and the root `cliare`
+package are compatibility facades.
+It is not a generic graph engine and not a distributed executor.
 
 The current measurement path is:
 
@@ -72,19 +83,37 @@ Those libraries may become useful later, but they are not part of the current im
 
 ## Crate Layout
 
-The repository currently uses one crate with focused modules:
+The repository currently uses a hybrid layout while extraction is in progress:
 
-| Area | Modules |
-|------|---------|
-| CLI surface | `cli`, `command_spec`, `main` |
-| Measurement loop | `measure`, `planner`, `process`, `sandbox`, `fingerprint`, `evidence` |
-| Inference and shape | `layout`, `layout_tokens`, `layout_usage`, `claims`, `observation`, `shape`, `output`, `diagnostic`, `precondition` |
-| Scoring | `score`, `score_model`, `belief`, `policy` |
-| Reports and issues | `report`, `report_model`, `report_markdown`, `report_evidence`, `issues`, `issue_disposition`, `ci` |
-| Operations | `jobs`, `benchmark`, `context`, `describe`, `artifact_guide`, `skills`, `playbook` |
-| Shared contracts | `artifacts`, `error`, `markdown`, `path_classification` |
+| Crate | Area |
+|------|------|
+| `cliare-app` | Compatibility facade over semantic crates |
+| `cliare-cli` | CLI argument structs and command metadata |
+| `cliare-context` | Runtime context models, context-suite artifacts, and context comparison |
+| `cliare-core` | Artifact names, atomic writes, probe intent/status enums, and typed error contracts |
+| `cliare-runtime` | Target fingerprinting, sandbox runtime support, bounded process execution, and output capture |
+| `cliare-evidence` | Process-completed evidence records shared across evidence writing, claims, scoring, and shape inference |
+| `cliare-guidance` | Operational playbooks and agent skill installation |
+| `cliare-inference` | Help layout parsing, output classification, diagnostic/precondition classification, belief updates, and score-model loading |
+| `cliare-inspect` | Artifact inspection and describe command behavior |
+| `cliare-issues` | Issue disposition/review model |
+| `cliare-measure` | Measurement traversal, planner, jobs, benchmark, guard, CI artifacts, and evidence writing |
+| `cliare-shape` | Shape observations, claim inference, command-shape artifacts, and command-index artifacts |
+| `cliare-policy` | Policy-file evaluation and side-effect path classification |
+| `cliare-score` | Scorecard metrics, findings, score reports, and score artifact writing |
+| `cliare-report` | Full persona reports, issue ledgers, surface queries, artifact guides, Markdown/report formatting, and report evidence models |
+| `cliare` | Binary entry point plus public compatibility re-exports |
 
-This is factual for the current implementation. A future split into `cliare-core`, `cliare-sandbox`, or similar crates should be treated as a refactor decision, not as shipped architecture.
+The remaining root package source files are:
+
+| File | Role |
+|------|------|
+| `src/main.rs` | Parses CLI args and invokes command modules through public crate paths. |
+| `src/lib.rs` | Re-exports workspace crate modules under historical `cliare::...` paths. |
+
+Root `src/` no longer owns implementation modules. Compatibility is centralized
+in `src/lib.rs` while deeper crates continue to use narrower ownership
+boundaries.
 
 ---
 

@@ -1,0 +1,25 @@
+[package]
+name = "cliare-measure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Measurement orchestration, jobs, guard, benchmark, and CI artifacts for CLIARE"
+
+[dependencies]
+cliare-cli = { version = "0.1.7", path = "../cliare-cli" }
+cliare-context = { version = "0.1.7", path = "../cliare-context" }
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+cliare-evidence = { version = "0.1.7", path = "../cliare-evidence" }
+cliare-inference = { version = "0.1.7", path = "../cliare-inference" }
+cliare-policy = { version = "0.1.7", path = "../cliare-policy" }
+cliare-report = { version = "0.1.7", path = "../cliare-report" }
+cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
+cliare-score = { version = "0.1.7", path = "../cliare-score" }
+cliare-shape = { version = "0.1.7", path = "../cliare-shape" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+tokio.workspace = true

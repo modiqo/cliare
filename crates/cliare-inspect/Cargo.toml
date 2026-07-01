@@ -1,0 +1,18 @@
+[package]
+name = "cliare-inspect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Artifact inspection commands for CLIARE"
+
+[dependencies]
+cliare-cli = { version = "0.1.7", path = "../cliare-cli" }
+cliare-context = { version = "0.1.7", path = "../cliare-context" }
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+cliare-measure = { version = "0.1.7", path = "../cliare-measure" }
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tokio.workspace = true

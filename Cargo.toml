@@ -1,10 +1,48 @@
-[package]
-name = "cliare"
+[workspace]
+members = [
+    ".",
+    "crates/cliare-app",
+    "crates/cliare-cli",
+    "crates/cliare-context",
+    "crates/cliare-core",
+    "crates/cliare-evidence",
+    "crates/cliare-guidance",
+    "crates/cliare-inference",
+    "crates/cliare-inspect",
+    "crates/cliare-issues",
+    "crates/cliare-measure",
+    "crates/cliare-policy",
+    "crates/cliare-report",
+    "crates/cliare-runtime",
+    "crates/cliare-score",
+    "crates/cliare-shape",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.7"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
 repository = "https://github.com/modiqo/cliare"
+
+[workspace.dependencies]
+clap = { version = "4.5.40", features = ["derive"] }
+miette = { version = "7.6.0", features = ["fancy"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+thiserror = "2.0.12"
+time = { version = "0.3.41", features = ["formatting"] }
+tokio = { version = "1.45.1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "time"] }
+
+[package]
+name = "cliare"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 homepage = "https://github.com/modiqo/cliare"
 documentation = "https://github.com/modiqo/cliare#readme"
 description = "CLI agent-readiness measurement, command-shape inference, and CI scorecards"
@@ -25,11 +63,26 @@ exclude = [
 ]
 
 [dependencies]
-clap = { version = "4.5.40", features = ["derive"] }
-miette = { version = "7.6.0", features = ["fancy"] }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
-sha2 = "0.10.9"
-thiserror = "2.0.12"
-time = { version = "0.3.41", features = ["formatting"] }
-tokio = { version = "1.45.1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "time"] }
+clap.workspace = true
+cliare-app = { version = "0.1.7", path = "crates/cliare-app" }
+cliare-cli = { version = "0.1.7", path = "crates/cliare-cli" }
+cliare-context = { version = "0.1.7", path = "crates/cliare-context" }
+cliare-core = { version = "0.1.7", path = "crates/cliare-core" }
+cliare-evidence = { version = "0.1.7", path = "crates/cliare-evidence" }
+cliare-guidance = { version = "0.1.7", path = "crates/cliare-guidance" }
+cliare-inference = { version = "0.1.7", path = "crates/cliare-inference" }
+cliare-inspect = { version = "0.1.7", path = "crates/cliare-inspect" }
+cliare-issues = { version = "0.1.7", path = "crates/cliare-issues" }
+cliare-measure = { version = "0.1.7", path = "crates/cliare-measure" }
+cliare-policy = { version = "0.1.7", path = "crates/cliare-policy" }
+cliare-report = { version = "0.1.7", path = "crates/cliare-report" }
+cliare-runtime = { version = "0.1.7", path = "crates/cliare-runtime" }
+cliare-score = { version = "0.1.7", path = "crates/cliare-score" }
+cliare-shape = { version = "0.1.7", path = "crates/cliare-shape" }
+miette.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true

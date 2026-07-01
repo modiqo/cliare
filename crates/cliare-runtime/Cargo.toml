@@ -1,0 +1,15 @@
+[package]
+name = "cliare-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Target resolution and sandbox runtime modules for CLIARE"
+
+[dependencies]
+clap.workspace = true
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+serde.workspace = true
+sha2.workspace = true
+tokio.workspace = true

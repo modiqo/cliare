@@ -1,0 +1,16 @@
+[package]
+name = "cliare-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI argument surface and metadata for CLIARE"
+
+[dependencies]
+clap.workspace = true
+cliare-context = { version = "0.1.7", path = "../cliare-context" }
+cliare-issues = { version = "0.1.7", path = "../cliare-issues" }
+cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
+serde.workspace = true
+serde_json.workspace = true

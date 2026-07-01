@@ -71,7 +71,8 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | [System Architecture](architecture/system-architecture.md) | Components, data flow, storage, CLI commands, plugin boundary | Probe -> Evidence -> Inference -> Shape -> Score -> Report |
 | [Probe Sandbox Runtime](architecture/probe-sandbox-runtime.md) | How CLIARE safely exercises arbitrary binaries | Temp HOME, network policy, filesystem diffing, timeouts, profiles |
 | [Checkpointing and Resume](architecture/checkpointing-and-resume.md) | Cache reuse, detached jobs, progress logs, artifact lifecycle, and checkpoint behavior | Artifact cache, detached jobs, and internal probe-level resume are current; public replay/rescore is future work |
-| [Rust Runtime Engineering](architecture/rust-runtime-engineering.md) | Current Rust crate layout, bounded Tokio probing, sandbox/process execution, cache/jobs, and runtime invariants | Single-crate implementation with deterministic planner, typed errors, and bounded subprocess execution |
+| [Rust Runtime Engineering](architecture/rust-runtime-engineering.md) | Current Rust crate layout, bounded Tokio probing, sandbox/process execution, cache/jobs, and runtime invariants | Hybrid workspace with deterministic planner, typed errors, and bounded subprocess execution |
+| [Crate Boundaries](architecture/crate-boundaries.md) | Internal workspace boundaries, dependency direction, compatibility shims, and large-file split rules | Crate extraction is internal; the `cliare` CLI and artifact contracts remain the stable external surface |
 | [Operational Contracts](architecture/operational-contracts.md) | Current cache, runtime context, guard, policy, sandbox, dependency, score-model, and reproducibility contracts | Artifact cache, guard, policy, and contexts are current; certification and replay are future work |
 
 ### Model
@@ -93,6 +94,15 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | [Hostile-Binary Containment Command Playbook](operations/hostile-binary-containment-command-playbook.md) | Concrete commands for validating future containment backends and classifying observed actions | Contain before classifying; current isolated mode is not hostile-binary containment |
 | [CLI Benchmark Corpus Tracker](operations/cli-benchmark-corpus-tracker.md) | Current benchmark manifests, low-pretraining launch corpus, vendor candidates, and backlog coverage | Manifests are source of truth; expected bands are QA signals, not calibrated truth labels |
 | [Calibration Workflow TODO](operations/calibration-workflow-todo.md) | Future implementation tracker for proposed `calibrate init`, `calibrate check`, and `calibrate evaluate` commands | Truth sets and metrics come before fitting or `cliare-score-v1` certification |
+
+### Research
+
+| Document | Purpose | Key Decisions |
+|---|---|---|
+| [Agent CLI Research Packet](research/README.md) | Research packet index for CLIARE's maintainer-feedback and agent-shape use cases | CLIARE should expose both maintainer readiness and harness shape confidence |
+| [Agent CLI Citations And Evidence](research/agent-cli-citations.md) | Primary-source inventory of terminal-agent, software-agent, tool/API-agent, and computer-use papers | Runtime evidence, interface schemas, recovery, and safety shape should drive CLIARE evolution |
+| [Agent CLI Evaluation Plan](research/agent-cli-evaluation-plan.md) | Proposed evaluation protocol for developer feedback and harness shape usefulness | Evaluate shape access through A/B harness runs, shape ground truth, confidence calibration, and maintainer interventions |
+| [Agent CLI Scoring Roadmap](research/agent-cli-scoring-roadmap.md) | Proposed scoring extensions beyond current deterministic v0 scorecard | Add separate maintainer-readiness and shape-confidence views before certified calibration |
 
 ### Guides
 

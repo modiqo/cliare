@@ -1,0 +1,14 @@
+[package]
+name = "cliare-inference"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Inference support modules for CLIARE"
+
+[dependencies]
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
