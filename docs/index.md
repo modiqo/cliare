@@ -80,6 +80,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 | Document | Purpose | Key Decisions |
 |---|---|---|
 | [Evidence and Command Shape Spec](model/evidence-and-command-shape-spec.md) | Evidence log schema and normalized command-shape IR | Every inferred fact carries provenance and confidence |
+| [Shape Quality Evaluation](model/shape-quality-evaluation.md) | Current fixture truth-set evaluator for `shape.json` accuracy and provenance | `cliare eval shape-quality` emits `shape-quality.json` and `shape-quality.md` |
 | [Computational Scoring Model](model/computational-scoring-model.md) | Probabilistic scoring model, Bayesian updates, and calibration theory | Posterior expected utility, proper scoring rules, calibration |
 | [Scoring and Improvement Tracking](model/scoring-and-improvement-tracking.md) | Subscores, regressions, monotonic improvements, baselines | Separate known-surface, capability-adjusted, and whole-surface scores |
 | [Generic Inference Processor](model/generic-inference-processor.md) | Current framework-agnostic inference path: layout extraction, confidence-scored claims, deterministic confirmation probes, and shape/index emission | CLIARE on CLIARE uses the generic processor; Clap is not an inference assumption |

@@ -30,6 +30,7 @@ fn skills_install_accepts_agent_scope_and_dry_run() {
         | Command::Jobs(_)
         | Command::Guard(_)
         | Command::Benchmark(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Describe(_)

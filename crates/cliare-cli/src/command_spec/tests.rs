@@ -165,6 +165,39 @@ fn metadata_spec_contains_surface_commands() {
 }
 
 #[test]
+fn metadata_spec_contains_eval_shape_quality_command() {
+    let metadata = metadata();
+    let eval = metadata
+        .command_spec
+        .root
+        .subcommands
+        .iter()
+        .find(|command| command.name == "eval")
+        .expect("eval command is present");
+    let shape_quality = eval
+        .subcommands
+        .iter()
+        .find(|command| command.name == "shape-quality")
+        .expect("eval shape-quality command is present");
+
+    assert_eq!(
+        shape_quality.usage,
+        "Usage: cliare eval shape-quality --shape <FILE> --truth <FILE> --out <DIR>"
+    );
+    assert!(shape_quality.args.iter().any(|arg| {
+        arg.long.as_deref() == Some("shape") && matches!(arg.kind, ArgKind::Option)
+    }));
+    assert!(shape_quality.args.iter().any(|arg| {
+        arg.long.as_deref() == Some("truth") && matches!(arg.kind, ArgKind::Option)
+    }));
+    assert!(
+        shape_quality.args.iter().any(|arg| {
+            arg.long.as_deref() == Some("out") && matches!(arg.kind, ArgKind::Option)
+        })
+    );
+}
+
+#[test]
 fn metadata_spec_contains_playbook_roles() {
     let metadata = metadata();
     let playbook = metadata

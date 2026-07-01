@@ -17,6 +17,7 @@ fn benchmark_uses_local_corpus_defaults() {
         Command::Measure(_)
         | Command::Jobs(_)
         | Command::Guard(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Describe(_)

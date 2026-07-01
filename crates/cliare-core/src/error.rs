@@ -367,6 +367,34 @@ pub enum CliareError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to create eval artifact directory {path}")]
+    CreateEvalDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to read eval artifact {path}")]
+    ReadEvalArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("failed to parse eval artifact {path}")]
+    ParseEvalArtifact {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("unsupported eval schema {schema_version}")]
+    UnsupportedEvalSchema { schema_version: String },
+    #[error("failed to serialize eval artifact")]
+    SerializeEvalArtifact(#[source] serde_json::Error),
+    #[error("failed to write eval artifact {path}")]
+    WriteEvalArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to serialize runtime context")]
     SerializeRuntimeContext(#[source] serde_json::Error),
     #[error("failed to write runtime context {path}")]

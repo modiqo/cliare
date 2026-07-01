@@ -19,6 +19,7 @@ fn metadata_exposes_parseable_output_mode() {
         | Command::Jobs(_)
         | Command::Guard(_)
         | Command::Benchmark(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Describe(_)

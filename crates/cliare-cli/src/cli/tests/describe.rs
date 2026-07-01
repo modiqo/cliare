@@ -25,6 +25,7 @@ fn describe_accepts_folder_format_and_write_options() {
         | Command::Jobs(_)
         | Command::Guard(_)
         | Command::Benchmark(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Skills(_)

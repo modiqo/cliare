@@ -318,9 +318,11 @@ Before promoting a model from experimental to certified:
 
 ## Near-Term Implementation Path
 
-1. Add a shape-quality evaluator for fixture CLIs with known truth.
+1. Add a shape-quality evaluator for fixture CLIs with known truth. Initial
+   implementation exists as `cliare eval shape-quality`.
 2. Add harness-trace schema for shape consultation and command selection.
 3. Add a small A/B harness runner using one stable local agent harness.
 4. Add `shape_confidence` and `maintainer_readiness` views to scorecard output.
+   Initial v0 views are present in scorecard output.
 5. Expand the benchmark corpus with fixture/context/safety tags.
 6. Produce validation and holdout reports before changing public scoring claims.

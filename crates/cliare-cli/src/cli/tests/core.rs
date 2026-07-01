@@ -10,6 +10,7 @@ fn clap_surface_exposes_measure_and_global_version() {
     assert!(help.contains("jobs"));
     assert!(help.contains("guard"));
     assert!(help.contains("benchmark"));
+    assert!(help.contains("eval"));
     assert!(help.contains("report"));
     assert!(help.contains("describe"));
     assert!(help.contains("skills"));

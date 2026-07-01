@@ -54,6 +54,8 @@ builds on them:
   defines the current runtime evidence to shape pipeline.
 - [Computational Scoring Model](../model/computational-scoring-model.md)
   defines the current v0 scorecard and calibration boundary.
+- [Shape Quality Evaluation](../model/shape-quality-evaluation.md)
+  defines the current fixture truth-set evaluator for `shape.json`.
 - [QA, Benchmarking, And Calibration](../operations/qa-benchmarking-and-calibration.md)
   defines the current benchmark runner and the distinction between operational
   benchmark telemetry and future statistical calibration.

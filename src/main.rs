@@ -32,6 +32,13 @@ async fn main() -> miette::Result<()> {
                 Err(miette::miette!("benchmark failed calibration checks"))
             }
         }
+        Command::Eval(args) => match args.command {
+            cliare::cli::EvalCommand::ShapeQuality(args) => {
+                let summary = cliare::eval::shape_quality(args).await.into_diagnostic()?;
+                print!("{}", summary.terminal_summary());
+                Ok(())
+            }
+        },
         Command::Report(args) => {
             let summary = cliare::report::report(args).await.into_diagnostic()?;
             print!("{}", summary.terminal_summary());

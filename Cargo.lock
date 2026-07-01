@@ -167,6 +167,7 @@ dependencies = [
  "cliare-cli",
  "cliare-context",
  "cliare-core",
+ "cliare-eval",
  "cliare-evidence",
  "cliare-guidance",
  "cliare-inference",
@@ -195,6 +196,7 @@ dependencies = [
  "cliare-cli",
  "cliare-context",
  "cliare-core",
+ "cliare-eval",
  "cliare-evidence",
  "cliare-guidance",
  "cliare-inference",
@@ -244,6 +246,17 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
+ "tokio",
+]
+
+[[package]]
+name = "cliare-eval"
+version = "0.1.7"
+dependencies = [
+ "cliare-cli",
+ "cliare-core",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

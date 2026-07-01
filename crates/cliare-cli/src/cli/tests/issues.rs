@@ -33,6 +33,7 @@ fn issues_mark_accepts_status_and_reason() {
         | Command::Jobs(_)
         | Command::Guard(_)
         | Command::Benchmark(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Describe(_)

@@ -1,6 +1,7 @@
 mod benchmark;
 mod core;
 mod describe;
+mod eval;
 mod issues;
 mod jobs;
 mod measure;

@@ -26,6 +26,10 @@ pub mod error {
     pub use cliare_core::error::*;
 }
 
+pub mod eval {
+    pub use cliare_eval::shape_quality::*;
+}
+
 pub mod fingerprint {
     pub use cliare_runtime::fingerprint::*;
 }

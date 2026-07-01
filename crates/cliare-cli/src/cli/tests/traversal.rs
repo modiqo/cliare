@@ -61,6 +61,7 @@ fn assert_budget(
         Command::Guard(_)
         | Command::Jobs(_)
         | Command::Benchmark(_)
+        | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
         | Command::Describe(_)

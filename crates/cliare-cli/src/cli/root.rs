@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand};
 use cliare_context::ContextArgs;
 
 use super::{
-    BenchmarkArgs, DescribeArgs, GuardArgs, IssuesArgs, JobsArgs, MeasureArgs, MetadataArgs,
-    PlaybookArgs, ReportArgs, SkillsArgs, SurfaceArgs,
+    BenchmarkArgs, DescribeArgs, EvalArgs, GuardArgs, IssuesArgs, JobsArgs, MeasureArgs,
+    MetadataArgs, PlaybookArgs, ReportArgs, SkillsArgs, SurfaceArgs,
 };
 
 #[derive(Debug, Parser)]
@@ -30,6 +30,8 @@ pub enum Command {
     Guard(GuardArgs),
     /// Run a benchmark corpus and produce calibration reports.
     Benchmark(BenchmarkArgs),
+    /// Evaluate shape artifacts against truth sets and harness traces.
+    Eval(EvalArgs),
     /// Compare measurements across runtime contexts.
     Context(ContextArgs),
     /// Generate a persona-specific outcome packet from measurement artifacts.

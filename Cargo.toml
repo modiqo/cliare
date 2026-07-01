@@ -5,6 +5,7 @@ members = [
     "crates/cliare-cli",
     "crates/cliare-context",
     "crates/cliare-core",
+    "crates/cliare-eval",
     "crates/cliare-evidence",
     "crates/cliare-guidance",
     "crates/cliare-inference",
@@ -68,6 +69,7 @@ cliare-app = { version = "0.1.7", path = "crates/cliare-app" }
 cliare-cli = { version = "0.1.7", path = "crates/cliare-cli" }
 cliare-context = { version = "0.1.7", path = "crates/cliare-context" }
 cliare-core = { version = "0.1.7", path = "crates/cliare-core" }
+cliare-eval = { version = "0.1.7", path = "crates/cliare-eval" }
 cliare-evidence = { version = "0.1.7", path = "crates/cliare-evidence" }
 cliare-guidance = { version = "0.1.7", path = "crates/cliare-guidance" }
 cliare-inference = { version = "0.1.7", path = "crates/cliare-inference" }

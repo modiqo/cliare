@@ -1,5 +1,6 @@
 mod benchmark;
 mod describe;
+mod eval;
 mod guard;
 mod issues;
 mod jobs;
@@ -16,6 +17,7 @@ mod traversal;
 
 pub use benchmark::BenchmarkArgs;
 pub use describe::{DescribeArgs, DescribeFormat};
+pub use eval::{EvalArgs, EvalCommand, ShapeQualityArgs};
 pub use guard::GuardArgs;
 pub use issues::{IssuesArgs, IssuesCommand, IssuesListArgs, IssuesListFormat, IssuesMarkArgs};
 pub use jobs::{JobsArgs, JobsCommand, JobsStatusArgs};

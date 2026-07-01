@@ -1,0 +1,15 @@
+[package]
+name = "cliare-eval"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Evaluation artifacts and truth-set scoring for CLIARE"
+
+[dependencies]
+cliare-cli = { version = "0.1.7", path = "../cliare-cli" }
+cliare-core = { version = "0.1.7", path = "../cliare-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
