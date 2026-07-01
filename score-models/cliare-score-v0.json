@@ -49,6 +49,16 @@
     "recovery_score_minimum": 80.0,
     "extraction_limited_min_help_probes": 2
   },
+  "views": {
+    "shape_confidence": {
+      "claim_confidence_weight": 0.25,
+      "runtime_confirmation_weight": 0.2,
+      "grammar_completeness_weight": 0.15,
+      "output_contract_weight": 0.15,
+      "precondition_clarity_weight": 0.1,
+      "safety_observation_weight": 0.15
+    }
+  },
   "claim_priors": {
     "command_exists": 0.08,
     "flag_exists": 0.12,

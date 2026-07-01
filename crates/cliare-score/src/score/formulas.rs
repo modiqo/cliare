@@ -5,7 +5,7 @@ use cliare_inference::score_model::ScoreModelSpec;
 use super::Dimension;
 use super::metrics::Metrics;
 use super::model::{DimensionScore, DimensionStatus, ScoreStatus, ScoreSummary};
-use super::util::{ratio, round_score, round_weight};
+use super::util::{average, ratio, round_score, round_weight};
 
 pub(super) fn subscores(
     metrics: &Metrics,
@@ -96,6 +96,16 @@ pub(super) fn safety_dimension_score(metrics: &Metrics, model: &ScoreModelSpec) 
     }
 }
 
+pub(super) fn score_summary(
+    subscores: &BTreeMap<Dimension, DimensionScore>,
+    model: &ScoreModelSpec,
+    metrics: &Metrics,
+) -> ScoreSummary {
+    let mut score = total_score(subscores, model);
+    score.shape_confidence = round_score(shape_confidence_score(metrics, model));
+    score
+}
+
 pub(super) fn total_score(
     subscores: &BTreeMap<Dimension, DimensionScore>,
     model: &ScoreModelSpec,
@@ -120,11 +130,93 @@ pub(super) fn total_score(
 
     ScoreSummary {
         total: round_score(total),
+        maintainer_readiness: round_score(total),
+        shape_confidence: round_score(total),
         measured_weight: round_weight(measured_weight),
         max_weight: round_weight(max_weight),
         model: model.id.clone(),
         status: ScoreStatus::ExperimentalPartial,
     }
+}
+
+pub(super) fn shape_confidence_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {
+    if metrics.coverage.commands_discovered == 0 {
+        return 0.0;
+    }
+
+    let weights = &model.views.shape_confidence;
+    100.0
+        * (weights.claim_confidence_weight * claim_confidence(metrics)
+            + weights.runtime_confirmation_weight * metrics.command_recognition_rate()
+            + weights.grammar_completeness_weight * grammar_completeness(metrics)
+            + weights.output_contract_weight * output_contract_confidence(metrics)
+            + weights.precondition_clarity_weight * precondition_clarity(metrics)
+            + weights.safety_observation_weight * safety_observation_confidence(metrics))
+}
+
+fn claim_confidence(metrics: &Metrics) -> f64 {
+    if metrics.coverage.flags_discovered == 0 {
+        metrics.coverage.avg_command_confidence
+    } else {
+        average(
+            [
+                metrics.coverage.avg_command_confidence,
+                metrics.coverage.avg_flag_confidence,
+            ]
+            .into_iter(),
+        )
+    }
+}
+
+fn grammar_completeness(metrics: &Metrics) -> f64 {
+    if metrics.coverage.commands_runtime_confirmed == 0 {
+        return 0.0;
+    }
+
+    let flag_grammar = if metrics.coverage.flags_discovered == 0 {
+        1.0
+    } else {
+        metrics.flag_grammar_rate()
+    };
+    average([1.0 - metrics.grammar_gap_rate(), flag_grammar].into_iter())
+}
+
+fn output_contract_confidence(metrics: &Metrics) -> f64 {
+    if metrics.machine_readable_output_contracts == 0 {
+        return 0.0;
+    }
+
+    ratio(
+        metrics.output_mode_parse_successes,
+        metrics.machine_readable_output_contracts,
+    )
+}
+
+fn precondition_clarity(metrics: &Metrics) -> f64 {
+    if metrics.coverage.precondition_blocked_probes == 0 {
+        1.0
+    } else {
+        metrics.coverage.precondition_recovery_rate
+    }
+}
+
+fn safety_observation_confidence(metrics: &Metrics) -> f64 {
+    if !metrics.side_effect_observation_supported() || metrics.coverage.side_effect_scan_truncated {
+        return 0.0;
+    }
+    if metrics.coverage.probes_completed == 0 {
+        return 1.0;
+    }
+
+    let changed_probe_rate = ratio(
+        metrics.side_effect_probe_count,
+        metrics.coverage.probes_completed,
+    );
+    let credential_rate = ratio(
+        metrics.credential_like_side_effects,
+        metrics.coverage.probes_completed,
+    );
+    (1.0 - changed_probe_rate - credential_rate).clamp(0.0, 1.0)
 }
 
 pub(super) fn grammar_score(metrics: &Metrics, model: &ScoreModelSpec) -> f64 {

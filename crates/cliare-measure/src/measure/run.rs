@@ -348,6 +348,8 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
             snapshot_max_hash_bytes: score_artifacts.snapshot_max_hash_bytes,
             hostile_binary_containment: score_artifacts.hostile_binary_containment,
             score_total: score_artifacts.total,
+            score_maintainer_readiness: score_artifacts.maintainer_readiness,
+            score_shape_confidence: score_artifacts.shape_confidence,
             score_measured_weight: score_artifacts.measured_weight,
             score_max_weight: score_artifacts.max_weight,
             score_model: score_artifacts.model.to_owned(),

@@ -24,6 +24,8 @@ pub async fn write_score_artifacts(
         scorecard_path,
         report_path,
         total: scorecard.score.total,
+        maintainer_readiness: scorecard.score.maintainer_readiness,
+        shape_confidence: scorecard.score.shape_confidence,
         measured_weight: scorecard.score.measured_weight,
         max_weight: scorecard.score.max_weight,
         model: scorecard.score.model.clone(),

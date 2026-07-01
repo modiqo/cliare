@@ -246,6 +246,8 @@ mod tests {
                 snapshot_max_hash_bytes: 64 * 1024 * 1024,
                 hostile_binary_containment: false,
                 score_total,
+                score_maintainer_readiness: score_total,
+                score_shape_confidence: score_total,
                 score_measured_weight: 0.9,
                 score_max_weight: 1.0,
                 score_model: "cliare-score-v0".to_owned(),

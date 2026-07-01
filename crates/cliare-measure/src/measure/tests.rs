@@ -217,6 +217,8 @@ fn terminal_summary_lists_score_and_artifacts() {
             snapshot_max_hash_bytes: 64 * 1024 * 1024,
             hostile_binary_containment: false,
             score_total: 82.4,
+            score_maintainer_readiness: 82.4,
+            score_shape_confidence: 76.0,
             score_measured_weight: 0.9,
             score_max_weight: 1.0,
             score_model: "cliare-score-v0".to_owned(),
@@ -276,6 +278,9 @@ fn terminal_summary_lists_score_and_artifacts() {
 
     assert!(text.contains("CLIARE measure complete"));
     assert!(text.contains("score: 82/100"));
+    assert!(
+        text.contains("score views: maintainer readiness 82/100, harness shape confidence 76/100")
+    );
     assert!(text.contains("cache: miss"));
     assert!(text.contains("job_id: measure-test"));
     assert!(text.contains("progress log: .cliare/jobs/measure-test.log"));

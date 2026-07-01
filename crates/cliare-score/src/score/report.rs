@@ -28,6 +28,14 @@ pub(super) fn render(scorecard: &Scorecard) -> String {
         score_status_label(&scorecard.score.status)
     ));
     report.push_str(&format!(
+        "- Maintainer readiness: `{:.0}` / 100\n",
+        scorecard.score.maintainer_readiness
+    ));
+    report.push_str(&format!(
+        "- Harness shape confidence: `{:.0}` / 100\n",
+        scorecard.score.shape_confidence
+    ));
+    report.push_str(&format!(
         "- Measured weight: `{:.1}` of `{:.1}`\n",
         scorecard.score.measured_weight, scorecard.score.max_weight
     ));

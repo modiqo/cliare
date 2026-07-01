@@ -5,7 +5,7 @@ use cliare_shape::observation::ShapeObservation;
 
 use super::SCHEMA_VERSION;
 use super::findings::findings;
-use super::formulas::{subscores, total_score};
+use super::formulas::{score_summary, subscores};
 use super::labels::{normalization_label, score_status_label};
 use super::metrics::Metrics;
 use super::model::{ScoreModel, ScoreRunContext, Scorecard};
@@ -24,7 +24,7 @@ pub fn scorecard(
         Metrics::from_claims_and_observations(&claims, &binary_name, observations, run_context);
 
     let subscores = subscores(&metrics, model_spec);
-    let score = total_score(&subscores, model_spec);
+    let score = score_summary(&subscores, model_spec, &metrics);
     let score_status = score_status_label(&score.status).to_owned();
     let findings = findings(&metrics, model_spec);
 

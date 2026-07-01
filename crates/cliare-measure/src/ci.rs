@@ -246,6 +246,8 @@ async fn write_sarif(path: &Path, scorecard: &CiScorecard) -> Result<()> {
                 "results": results,
                 "properties": {
                     "score": scorecard.score.total,
+                    "maintainer_readiness": scorecard.score.maintainer_readiness,
+                    "shape_confidence": scorecard.score.shape_confidence,
                     "measured_weight": scorecard.score.measured_weight,
                     "max_weight": scorecard.score.max_weight,
                     "model": scorecard.score.model,
@@ -471,6 +473,10 @@ struct CiTarget {
 #[derive(Debug, Deserialize)]
 struct CiScore {
     total: f64,
+    #[serde(default)]
+    maintainer_readiness: f64,
+    #[serde(default)]
+    shape_confidence: f64,
     measured_weight: f64,
     max_weight: f64,
     model: String,

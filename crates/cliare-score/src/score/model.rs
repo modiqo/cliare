@@ -25,6 +25,8 @@ pub struct Scorecard {
 #[derive(Debug, Serialize)]
 pub struct ScoreSummary {
     pub(super) total: f64,
+    pub(super) maintainer_readiness: f64,
+    pub(super) shape_confidence: f64,
     pub(super) measured_weight: f64,
     pub(super) max_weight: f64,
     pub(super) model: String,
@@ -157,6 +159,8 @@ pub struct ScoreArtifactSummary {
     pub scorecard_path: PathBuf,
     pub report_path: PathBuf,
     pub total: f64,
+    pub maintainer_readiness: f64,
+    pub shape_confidence: f64,
     pub measured_weight: f64,
     pub max_weight: f64,
     pub model: String,

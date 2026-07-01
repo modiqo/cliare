@@ -54,6 +54,10 @@ pub struct MeasurementFacts {
     #[serde(default)]
     pub hostile_binary_containment: bool,
     pub score_total: f64,
+    #[serde(default)]
+    pub score_maintainer_readiness: f64,
+    #[serde(default)]
+    pub score_shape_confidence: f64,
     pub score_measured_weight: f64,
     pub score_max_weight: f64,
     pub score_model: String,
@@ -165,6 +169,10 @@ impl MeasurementSummary {
                 self.score_measured_weight,
                 self.score_max_weight,
                 self.score_model
+            ),
+            format!(
+                "score views: maintainer readiness {:.0}/100, harness shape confidence {:.0}/100",
+                self.score_maintainer_readiness, self.score_shape_confidence
             ),
             format!("cache: {}", if self.cache_hit { "hit" } else { "miss" }),
         ];

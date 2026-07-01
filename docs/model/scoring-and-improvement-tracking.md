@@ -143,6 +143,8 @@ Current score summary shape:
 ```json
 {
   "total": 84,
+  "maintainer_readiness": 84,
+  "shape_confidence": 71,
   "measured_weight": 1.0,
   "max_weight": 1.0,
   "model": "cliare-score-v0",

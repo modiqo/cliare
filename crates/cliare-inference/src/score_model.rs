@@ -16,6 +16,7 @@ pub struct ScoreModelSpec {
     pub dimension_weights: DimensionWeights,
     pub scoring: ScoringParameters,
     pub thresholds: FindingThresholds,
+    pub views: ViewScoring,
     pub claim_priors: ClaimPriors,
     pub evidence_weights: EvidenceWeights,
     pub calibration: CalibrationPlan,
@@ -113,6 +114,21 @@ pub struct FindingThresholds {
     pub grammar_gap_rate: f64,
     pub recovery_score_minimum: f64,
     pub extraction_limited_min_help_probes: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ViewScoring {
+    pub shape_confidence: ShapeConfidenceScoring,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ShapeConfidenceScoring {
+    pub claim_confidence_weight: f64,
+    pub runtime_confirmation_weight: f64,
+    pub grammar_completeness_weight: f64,
+    pub output_contract_weight: f64,
+    pub precondition_clarity_weight: f64,
+    pub safety_observation_weight: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -233,6 +249,7 @@ impl ScoreModelSpec {
         }
         self.dimension_weights.validate()?;
         self.scoring.validate()?;
+        self.views.validate()?;
         self.evidence_weights.validate()?;
         if self.calibration.required_splits.len() < 3
             || !self
@@ -293,6 +310,23 @@ impl DimensionWeights {
             return Err(format!("dimension weights must sum to 1.0, got {sum}"));
         }
         Ok(())
+    }
+}
+
+impl ViewScoring {
+    fn validate(&self) -> Result<(), String> {
+        validate_score_components(
+            "views.shape_confidence",
+            &[
+                self.shape_confidence.claim_confidence_weight,
+                self.shape_confidence.runtime_confirmation_weight,
+                self.shape_confidence.grammar_completeness_weight,
+                self.shape_confidence.output_contract_weight,
+                self.shape_confidence.precondition_clarity_weight,
+                self.shape_confidence.safety_observation_weight,
+            ],
+            1.0,
+        )
     }
 }
 
@@ -468,6 +502,7 @@ mod tests {
         assert_eq!(model.id, "cliare-score-v0");
         assert_eq!(model.precision.score_decimals, 0);
         assert_eq!(model.weight(ScoreDimension::Discovery), 0.35);
+        assert_eq!(model.views.shape_confidence.claim_confidence_weight, 0.25);
         assert_eq!(ScoreModelSpec::bundled_sha256().len(), 64);
     }
 
@@ -491,6 +526,19 @@ mod tests {
     fn model_hash_covers_inference_weights() {
         let changed = super::BUNDLED_SCORE_MODEL
             .replace("\"runtime_help_match\": 4.0", "\"runtime_help_match\": 3.9");
+
+        assert_ne!(
+            super::sha256_hex(super::BUNDLED_SCORE_MODEL.as_bytes()),
+            super::sha256_hex(changed.as_bytes())
+        );
+    }
+
+    #[test]
+    fn model_hash_covers_shape_confidence_weights() {
+        let changed = super::BUNDLED_SCORE_MODEL.replace(
+            "\"claim_confidence_weight\": 0.25",
+            "\"claim_confidence_weight\": 0.2",
+        );
 
         assert_ne!(
             super::sha256_hex(super::BUNDLED_SCORE_MODEL.as_bytes()),

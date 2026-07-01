@@ -45,6 +45,11 @@ fn runtime_confirmation_improves_discovery_score() {
         dimension_score(&strong_score, Dimension::Discovery)
             > dimension_score(&weak_score, Dimension::Discovery)
     );
+    assert!(strong_score.score.shape_confidence > weak_score.score.shape_confidence);
+    assert_eq!(
+        strong_score.score.maintainer_readiness,
+        strong_score.score.total
+    );
 }
 
 #[test]
@@ -263,6 +268,8 @@ fn report_renders_scorecard_summary_and_unmeasured_dimensions() {
     let report = report::render(&scorecard);
 
     assert!(report.contains("# CLIARE Report"));
+    assert!(report.contains("- Maintainer readiness:"));
+    assert!(report.contains("- Harness shape confidence:"));
     assert!(report.contains("| output | 0 | 0.05 | measured |"));
     assert!(report.contains("experimental partial"));
     assert!(report.contains("- Output contracts discovered: `0`"));
@@ -427,6 +434,8 @@ fn partial_total_is_normalized_by_declared_weight() {
     let score = total_score(&subscores, ScoreModelSpec::bundled());
 
     assert_eq!(score.total, 35.0);
+    assert_eq!(score.maintainer_readiness, 35.0);
+    assert_eq!(score.shape_confidence, 35.0);
     assert!(score.total <= 100.0);
     assert_eq!(score.measured_weight, 0.35);
     assert_eq!(score.max_weight, 1.0);

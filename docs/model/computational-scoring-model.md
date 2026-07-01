@@ -88,6 +88,9 @@ Every scorecard embeds the model id and hash:
 ```json
 {
   "score": {
+    "total": 84,
+    "maintainer_readiness": 84,
+    "shape_confidence": 71,
     "model": "cliare-score-v0",
     "status": "experimental_partial"
   },
@@ -217,6 +220,14 @@ declared_weight
 
 The score display precision is whole points.
 
+The current score summary includes three whole-point views:
+
+| Field | Meaning |
+|---|---|
+| `total` | Compatibility headline score computed from the weighted v0 dimensions. |
+| `maintainer_readiness` | Current maintainer-facing readiness view. In v0 this is intentionally equal to `total`; future calibrated models may separate it from the compatibility total. |
+| `shape_confidence` | Experimental harness-facing view estimating how much an agent can rely on the emitted shape before additional probing. |
+
 ---
 
 ## Current v0 Total Score
@@ -245,6 +256,55 @@ The current dimension weights are:
 | Safety | `0.05` |
 
 These weights intentionally emphasize whether CLIARE can discover and confirm the command surface before making stronger claims about output and safety. A later calibrated model may rebalance them.
+
+---
+
+## Current v0 Shape Confidence View
+
+`shape_confidence` is an experimental view derived from existing score coverage
+and claim metrics. It is not yet calibrated against harness A/B task success.
+It is designed as the first implementation step toward a harness-facing
+confidence signal.
+
+The current view is:
+
+```text
+S_shape = 100 * (
+  w_claim * claim_confidence
++ w_runtime * command_recognition_rate
++ w_grammar * grammar_completeness
++ w_output * output_contract_confidence
++ w_precondition * precondition_clarity
++ w_safety * safety_observation_confidence
+)
+```
+
+The weights live in `score-models/cliare-score-v0.json` under
+`views.shape_confidence`:
+
+| Component | Weight |
+|---|---:|
+| `claim_confidence` | `0.25` |
+| `runtime_confirmation` | `0.20` |
+| `grammar_completeness` | `0.15` |
+| `output_contract` | `0.15` |
+| `precondition_clarity` | `0.10` |
+| `safety_observation` | `0.15` |
+
+Current component definitions:
+
+| Component | Definition |
+|---|---|
+| `claim_confidence` | Average command confidence, or average of command and flag confidence when flags are discovered. |
+| `command_recognition_rate` | Runtime-confirmed plus precondition-blocked commands divided by discovered commands. |
+| `grammar_completeness` | Average of confirmed-command grammar completeness and known flag grammar. |
+| `output_contract_confidence` | Parse successes divided by discovered machine-readable output contracts. |
+| `precondition_clarity` | `1.0` when no probes are precondition-blocked; otherwise actionable precondition diagnostics divided by precondition-blocked probes. |
+| `safety_observation_confidence` | `0.0` when side-effect observation is unsupported or truncated; otherwise one minus changed-probe and credential-like side-effect rates, clamped to `0..=1`. |
+
+This view deliberately stays conservative. Missing machine-readable output
+contracts contribute no output-contract confidence. Host-mode safety observation
+is treated as unmeasured for shape confidence rather than as proof of safety.
 
 ---
 
