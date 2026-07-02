@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo pkgid -p cliare | sed 's/.*@//')"
+          version="$(cargo pkgid -p cliare | sed 's/.*[#@]//')"
           tag="${GITHUB_REF_NAME#v}"
           if [[ "$tag" != "$version" ]]; then
             echo "Tag v${tag} does not match Cargo.toml version ${version}."
