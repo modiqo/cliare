@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Antic&amp;display=swap" rel="stylesheet">
     <link rel="alternate" type="text/plain" href="./llms.txt" title="CLIARE llms.txt">
-    <link rel="stylesheet" href="./assets/styles.css?v=20260702-codeblocks">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260702-commandstack">
   </head>
   <body>
     <header class="site-header">
@@ -223,20 +223,18 @@
             <h2 id="install-title">Start with the release installer or Cargo.</h2>
           </div>
         </div>
-        <div class="code-grid">
-          <div>
+        <div class="command-stack">
+          <div class="command-block">
             <h3>Latest release binary</h3>
             <pre><code>curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
 cliare metadata --format text</code></pre>
           </div>
-          <div>
+          <div class="command-block">
             <h3>Crates.io</h3>
             <pre><code>cargo install cliare
 cliare metadata --format text</code></pre>
           </div>
-        </div>
-        <div class="code-grid">
-          <div>
+          <div class="command-block">
             <h3>Measure a CLI</h3>
             <pre><code>cliare measure mycli \
   --out .cliare/mycli \
@@ -245,7 +243,7 @@ cliare metadata --format text</code></pre>
 
 cliare summary --out .cliare/mycli</code></pre>
           </div>
-          <div>
+          <div class="command-block">
             <h3>Prepare a harness shape</h3>
             <pre><code>cliare describe .cliare/mycli --write
 cliare report harness --out .cliare/mycli --write

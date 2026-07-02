@@ -74,7 +74,8 @@ pre code {
   color: inherit;
   padding: 0;
   font-size: inherit;
-  white-space: pre;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .sr-only {
@@ -388,6 +389,16 @@ h3 {
 
 .code-grid + .code-grid {
   margin-top: 1rem;
+}
+
+.command-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.command-block {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .artifact-grid,
