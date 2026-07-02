@@ -205,6 +205,7 @@ fn terminal_summary_lists_score_and_artifacts() {
         persona_report_count: 7,
         readme_path: PathBuf::from(".cliare/README.md"),
         agent_skill_path: PathBuf::from(".cliare/AGENT_SKILL.md"),
+        condition_dictionary_path: PathBuf::from(".cliare/condition-dictionary.csv"),
         facts: super::MeasurementFacts {
             probes_completed: 7,
             sandbox_profile: "isolated".to_owned(),
@@ -325,6 +326,7 @@ fn terminal_summary_lists_score_and_artifacts() {
     assert!(text.contains("  persona reports: 7 markdown/json pairs"));
     assert!(text.contains("  readme: .cliare/README.md"));
     assert!(text.contains("  agent guide: .cliare/AGENT_SKILL.md"));
+    assert!(text.contains("  condition dictionary: .cliare/condition-dictionary.csv"));
     assert!(text.contains("  runtime context: .cliare/runtime-context.json"));
 
     let bytes = serde_json::to_vec(&summary.facts).expect("serializes measurement facts");

@@ -70,7 +70,7 @@ fn invalid_flag_rejection_improves_recovery_score() {
             "e_000005",
             ProbeIntent::InvalidFlag,
             vec!["measure".to_owned()],
-            "error: unexpected argument",
+            "error: unexpected argument '--__cliare_unknown_cliare_measure_flag__' found\n\nUsage: cliare measure [OPTIONS] <TARGET>\n\nFor more information, try '--help'.\n",
             Some(2),
         ),
     ];
@@ -78,6 +78,8 @@ fn invalid_flag_rejection_improves_recovery_score() {
     let scorecard = scorecard(target, &observations, ScoreRunContext::default());
 
     assert_eq!(dimension_score(&scorecard, Dimension::Recovery), 100.0);
+    assert_eq!(scorecard.coverage.precondition_blocked_probes, 0);
+    assert_eq!(scorecard.coverage.commands_precondition_blocked, 0);
 }
 
 #[test]

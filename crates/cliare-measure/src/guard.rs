@@ -234,6 +234,7 @@ mod tests {
             persona_report_count: 7,
             readme_path: PathBuf::from(".cliare/README.md"),
             agent_skill_path: PathBuf::from(".cliare/AGENT_SKILL.md"),
+            condition_dictionary_path: PathBuf::from(".cliare/condition-dictionary.csv"),
             facts: crate::measure::MeasurementFacts {
                 probes_completed: 7,
                 sandbox_profile: "isolated".to_owned(),

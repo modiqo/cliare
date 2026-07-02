@@ -33,6 +33,7 @@ A normal measurement writes the core artifacts and all persona packets:
   shape.json
   command-index.json
   command-index.md
+  condition-dictionary.csv
   scorecard.json
   report.md
   summary.md

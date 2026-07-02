@@ -224,6 +224,7 @@ CLIARE writes a compact artifact directory suitable for CI upload:
 | `issues.md` | Markdown review queue. |
 | `command-index.json` | Agent-facing command catalog. |
 | `command-index.md` | Human-readable command catalog. |
+| `condition-dictionary.csv` | CSV decoder for report labels, condition meanings, examples, and first actions. |
 | `shape.json` | Evidence-derived command shape model. |
 | `evidence.jsonl` | Runtime evidence log. |
 | `report.md` | Human-readable scorecard report. |

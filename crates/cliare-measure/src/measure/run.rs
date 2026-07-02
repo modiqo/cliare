@@ -336,6 +336,7 @@ pub async fn measure(args: MeasureArgs) -> Result<MeasurementSummary> {
         persona_report_count,
         readme_path: paths.readme,
         agent_skill_path: paths.agent_skill,
+        condition_dictionary_path: paths.condition_dictionary,
         facts: MeasurementFacts {
             probes_completed: traversal.probes_completed,
             sandbox_profile: score_artifacts.sandbox_profile.to_owned(),

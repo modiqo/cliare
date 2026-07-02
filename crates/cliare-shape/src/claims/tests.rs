@@ -90,7 +90,7 @@ fn claims_record_negative_diagnostic_probes() {
             "e_000009",
             ProbeIntent::InvalidFlag,
             vec!["measure".to_owned()],
-            "error: unexpected argument",
+            "error: unexpected argument '--__cliare_unknown_cliare_measure_flag__' found\n\nUsage: cliare measure [OPTIONS] <TARGET>\n\nFor more information, try '--help'.\n",
             Some(2),
         ),
     ];
@@ -104,6 +104,7 @@ fn claims_record_negative_diagnostic_probes() {
     assert!(measure.invalid_child_rejected());
     assert!(measure.invalid_flag_rejected());
     assert!(measure.has_child_candidates());
+    assert!(!measure.precondition_blocked());
 }
 
 #[test]

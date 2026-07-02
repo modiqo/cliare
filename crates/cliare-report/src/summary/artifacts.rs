@@ -2,16 +2,19 @@ use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use cliare_core::artifacts::{COMMAND_INDEX_JSON, ISSUES_JSON, SCORECARD_JSON};
+use cliare_core::artifacts::{COMMAND_INDEX_JSON, EVIDENCE_JSONL, ISSUES_JSON, SCORECARD_JSON};
 use cliare_core::error::{CliareError, Result};
 use cliare_runtime::fingerprint::TargetFingerprint;
 use serde::Deserialize;
 use tokio::fs;
 
+use crate::report_evidence::EvidenceSummary;
+
 #[derive(Debug)]
 pub(super) struct SummaryArtifacts {
     pub(super) scorecard: ScorecardArtifact,
     pub(super) command_index: CommandIndexArtifact,
+    pub(super) evidence: EvidenceSummary,
     pub(super) issues: Vec<IssueArtifact>,
 }
 
@@ -20,6 +23,7 @@ impl SummaryArtifacts {
         let scorecard = read_json::<ScorecardArtifact>(&artifact_dir.join(SCORECARD_JSON)).await?;
         let command_index =
             read_json::<CommandIndexArtifact>(&artifact_dir.join(COMMAND_INDEX_JSON)).await?;
+        let evidence = EvidenceSummary::read(&artifact_dir.join(EVIDENCE_JSONL)).await?;
         let issues = read_optional_json::<IssueLedgerArtifact>(&artifact_dir.join(ISSUES_JSON))
             .await?
             .map(|ledger| ledger.issues)
@@ -28,6 +32,7 @@ impl SummaryArtifacts {
         Ok(Self {
             scorecard,
             command_index,
+            evidence,
             issues,
         })
     }
@@ -193,6 +198,14 @@ pub(super) struct IssueArtifact {
     pub(super) recommendation: String,
     #[serde(default)]
     pub(super) affected_commands: Vec<IssueCommandArtifact>,
+    #[serde(default)]
+    pub(super) evidence: Vec<IssueEvidenceArtifact>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct IssueEvidenceArtifact {
+    pub(super) kind: String,
+    pub(super) reference: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -223,6 +236,7 @@ pub(super) fn artifact_paths(artifact_dir: &Path) -> SummaryArtifactPaths {
         artifact_dir: artifact_dir.to_path_buf(),
         scorecard: artifact_dir.join(SCORECARD_JSON),
         command_index: artifact_dir.join(COMMAND_INDEX_JSON),
+        evidence: artifact_dir.join(EVIDENCE_JSONL),
         issues: artifact_dir.join(ISSUES_JSON),
     }
 }
@@ -232,5 +246,6 @@ pub(super) struct SummaryArtifactPaths {
     pub(super) artifact_dir: PathBuf,
     pub(super) scorecard: PathBuf,
     pub(super) command_index: PathBuf,
+    pub(super) evidence: PathBuf,
     pub(super) issues: PathBuf,
 }

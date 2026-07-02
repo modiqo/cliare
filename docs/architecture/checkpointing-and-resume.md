@@ -142,6 +142,7 @@ The current cache is only reused when these files exist:
 | `shape.json` | Inferred command shape |
 | `command-index.json` | Machine-readable command index |
 | `command-index.md` | Human-readable command index |
+| `condition-dictionary.csv` | CSV decoder for report labels and condition meanings |
 | `scorecard.json` | Scorecard and scoring facts |
 | `report.md` | Measurement report |
 | `summary.md` | CI-oriented summary |

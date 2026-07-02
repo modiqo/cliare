@@ -30,6 +30,7 @@ evidence.jsonl
 shape.json
 command-index.json
 command-index.md
+condition-dictionary.csv
 scorecard.json
 report.md
 summary.md

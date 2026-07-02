@@ -100,6 +100,7 @@ Primary artifacts:
 | `shape.json` | Evidence-derived command shape model. |
 | `command-index.json` | Harness-oriented command map for agent routing. |
 | `command-index.md` | Markdown rendering of the command index. |
+| `condition-dictionary.csv` | CSV decoder for report labels, conditions, examples, and first actions. |
 | `evidence.jsonl` | Runtime evidence log. |
 | `summary.md` | CI summary emitted by measurement and guard flows. |
 | `findings.sarif` | SARIF rendering of scorecard findings. |

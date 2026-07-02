@@ -51,6 +51,12 @@ pub(super) fn render_artifact_navigation(text: &mut String, packet: &PersonaOutc
     .expect("writing to string cannot fail");
     writeln!(
         text,
+        "| `{}` | CSV decoder for report labels, conditions, command states, preconditions, output statuses, gaps, and navigation metrics. |",
+        packet.source_artifacts.condition_dictionary.display()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
         "| `{}` | Inferred command catalog, flags, gaps, and output contracts. |",
         packet.source_artifacts.shape.display()
     )

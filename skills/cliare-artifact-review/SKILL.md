@@ -1,13 +1,13 @@
 ---
 name: cliare-artifact-review
-description: Use when reviewing a CLIARE measurement artifact directory, explaining score changes, triaging issues, finding evidence, or proposing CLI remediation work from artifact-map.json, scorecard.json, issues.json, command-index.json, shape.json, and evidence.jsonl.
+description: Use when reviewing a CLIARE measurement artifact directory, explaining score changes, triaging issues, finding evidence, or proposing CLI remediation work from artifact-map.json, scorecard.json, issues.json, command-index.json, condition-dictionary.csv, shape.json, and evidence.jsonl.
 ---
 
 # CLIARE Artifact Review
 
 ## What This Is
 
-This skill is for reviewing one CLIARE measurement directory. It helps an agent connect the artifact map, scorecard, reviewable issues, persona reports, command index, raw command shape, and runtime evidence without overstating the data.
+This skill is for reviewing one CLIARE measurement directory. It helps an agent connect the artifact map, scorecard, reviewable issues, persona reports, command index, condition dictionary, raw command shape, and runtime evidence without overstating the data.
 
 Use it when a maintainer, harness author, platform engineer, security reviewer, researcher, or release owner asks what a CLIARE run means and what should be fixed next.
 
@@ -47,43 +47,49 @@ jq '{kind:.artifact_kind,health:.health,navigation:.navigation,missing_required:
 jq '{score:.score.total,status:.score.status,model:.score.model,coverage:{commands_discovered:.coverage.commands_discovered,commands_runtime_confirmed:.coverage.commands_runtime_confirmed,traversal_complete:.coverage.traversal_complete,budget_exhausted:.coverage.budget_exhausted,observed_max_depth:.coverage.observed_max_depth,max_depth:.coverage.max_depth,probes_completed:.coverage.probes_completed,max_probes:.coverage.max_probes}}' <artifact-dir>/scorecard.json
 ```
 
-4. Generate the issue ledger and persona packet if they are missing:
+4. Use `condition-dictionary.csv` whenever a report label is unclear:
+
+```sh
+rg -n '^"(issue_confidence|precondition_kind|shape_gap|agent_suitability)"' <artifact-dir>/condition-dictionary.csv
+```
+
+5. Generate the issue ledger and persona packet if they are missing:
 
 ```sh
 cliare report maintainer --out <artifact-dir> --write
 ```
 
-5. Start with the persona table, not a raw dump. Read the matching persona Markdown first, then use JSON only for drill-down:
+6. Start with the persona table, not a raw dump. Read the matching persona Markdown first, then use JSON only for drill-down:
 
 ```sh
 jq '{persona:.persona,question:.primary_question,score:.summary.score,top_issues:[.top_issues[] | {id,severity,category,confidence,title,affected_commands:(.affected_commands|length),evidence:(.evidence|length),recommendation,verification:.verification.command}]}' <artifact-dir>/persona-maintainer.json
 ```
 
-6. Use `issues.json` as the canonical review queue:
+7. Use `issues.json` as the canonical review queue:
 
 ```sh
 jq '.summary, [.issues[] | {id,severity,category,confidence,title,affected:(.affected_commands|length)}]' <artifact-dir>/issues.json
 ```
 
-7. Deep dive one issue only after the user chooses a row:
+8. Deep dive one issue only after the user chooses a row:
 
 ```sh
 jq --arg id "issue.output_mode_unprobed" '.issues[] | select(.id==$id) | {what:{id,title,impact,why_it_matters},severity,category,confidence,where:{affected_commands:.affected_commands[0:10],evidence:.evidence[0:5]},how:{recommendation,verification}}' <artifact-dir>/issues.json
 ```
 
-8. Use `command-index.json` when a developer or harness needs command-level details:
+9. Use `command-index.json` when a developer or harness needs command-level details:
 
 ```sh
 jq --arg path "adapter new" '.commands[] | select(.path == ($path | split(" "))) | {command,summary,runtime_state,agent_suitability,suitability_reasons,parameters,preconditions,output_contracts,gaps,evidence}' <artifact-dir>/command-index.json
 ```
 
-9. Use `shape.json` only when raw inference details are needed:
+10. Use `shape.json` only when raw inference details are needed:
 
 ```sh
 jq '.gaps[] | {kind,command_path,reason,evidence}' <artifact-dir>/shape.json
 ```
 
-10. Resolve evidence references before making runtime claims. Strip suffixes after the first colon:
+11. Resolve evidence references before making runtime claims. Strip suffixes after the first colon:
 
 ```sh
 ref="e_000257:output mode layout row 17"
@@ -158,6 +164,7 @@ Recommended answer shape for a large list:
 
 ## Interpretation Rules
 
+- Prefer `condition-dictionary.csv` for exact report-label meanings and examples before inventing an explanation.
 - `observed` means the behavior was directly measured.
 - `blocked` means runtime state prevented confirmation; identify the precondition and decide whether help/catalog behavior should bypass it.
 - `needs_fixture` means the CLI may be correct, but CLIARE needs safe operands or fixture data to validate the advertised contract.

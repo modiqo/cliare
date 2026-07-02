@@ -333,6 +333,7 @@ A normal measurement directory looks like:
   shape.json
   command-index.json
   command-index.md
+  condition-dictionary.csv
   scorecard.json
   report.md
   summary.md

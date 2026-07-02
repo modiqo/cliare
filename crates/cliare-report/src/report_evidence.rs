@@ -8,6 +8,8 @@ use tokio::fs;
 use cliare_core::error::{CliareError, Result};
 
 const EVIDENCE_SAMPLE_LIMIT: usize = 50;
+const PROCESS_OUTPUT_EXCERPT_MAX_LINES: usize = 4;
+const PROCESS_OUTPUT_EXCERPT_MAX_CHARS: usize = 480;
 
 #[derive(Debug, Default)]
 pub(crate) struct EvidenceSummary {
@@ -92,6 +94,8 @@ impl EvidenceSummary {
                     argv.clone()
                 },
                 status: status.clone(),
+                stdout_excerpt: process_output_excerpt(&payload["stdout"]["text"]),
+                stderr_excerpt: process_output_excerpt(&payload["stderr"]["text"]),
             },
         );
         if matches!(status_state, Some("timed_out" | "spawn_failed")) {
@@ -149,6 +153,8 @@ pub(crate) struct ProcessEvidence {
     pub(crate) path: Vec<String>,
     pub(crate) argv: Vec<String>,
     pub(crate) status: String,
+    pub(crate) stdout_excerpt: Option<String>,
+    pub(crate) stderr_excerpt: Option<String>,
 }
 
 impl ProcessEvidence {
@@ -234,6 +240,36 @@ fn string_array(value: &Value) -> Vec<String> {
         .flatten()
         .filter_map(|item| item.as_str().map(str::to_owned))
         .collect()
+}
+
+fn process_output_excerpt(value: &Value) -> Option<String> {
+    let text = value.as_str()?;
+    let lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(PROCESS_OUTPUT_EXCERPT_MAX_LINES)
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(truncate_chars(
+        &lines.join(" / "),
+        PROCESS_OUTPUT_EXCERPT_MAX_CHARS,
+    ))
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut output = String::new();
+    for (index, ch) in value.chars().enumerate() {
+        if index >= max_chars {
+            output.push_str("...");
+            return output;
+        }
+        output.push(ch);
+    }
+    output
 }
 
 fn status_label(status: &Value) -> String {

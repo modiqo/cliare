@@ -79,6 +79,7 @@ The score is not the root of trust. Every point traces back to evidence and infe
 
 | Document | Purpose | Key Decisions |
 |---|---|---|
+| [Report Condition Dictionary](reference/report-condition-dictionary.csv) | CSV decoder for report labels, command states, preconditions, gaps, output statuses, and navigation metrics | Generated artifacts also include `condition-dictionary.csv` beside reports |
 | [Evidence and Command Shape Spec](model/evidence-and-command-shape-spec.md) | Evidence log schema and normalized command-shape IR | Every inferred fact carries provenance and confidence |
 | [Shape Quality Evaluation](model/shape-quality-evaluation.md) | Current fixture truth-set evaluator for `shape.json` accuracy and provenance | `cliare eval shape-quality` emits `shape-quality.json` and `shape-quality.md` |
 | [Computational Scoring Model](model/computational-scoring-model.md) | Probabilistic scoring model, Bayesian updates, and calibration theory | Posterior expected utility, proper scoring rules, calibration |
@@ -179,6 +180,7 @@ User CI / local machine
 | Command Index           |
 | command-index.json      |
 | command-index.md        |
+| condition-dictionary.csv|
 | agent-facing lookup     |
 +-----------+-------------+
             |
@@ -215,6 +217,7 @@ CLIARE should produce durable artifacts that separate evidence, inference, comma
   shape.json
   command-index.json
   command-index.md
+  condition-dictionary.csv
   scorecard.json
   report.md
 ```

@@ -6,7 +6,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::fs;
 
-use crate::artifacts::{CI_SUMMARY_MD, JUNIT_XML, SARIF_JSON, SCORECARD_JSON, write_atomic};
+use crate::artifacts::{
+    CI_SUMMARY_MD, CONDITION_DICTIONARY_CSV, JUNIT_XML, SARIF_JSON, SCORECARD_JSON, write_atomic,
+};
 use crate::error::{CliareError, Result};
 use crate::markdown::MarkdownBuffer;
 use crate::policy::PolicyEvaluation;
@@ -168,10 +170,19 @@ async fn write_ci_summary(
     }
 
     text.blank_line();
+    text.line(format_args!("## Reference"));
+    text.blank_line();
+    text.line(format_args!(
+        "- `{}` decodes issue confidence, command suitability, preconditions, output statuses, shape gaps, traversal reasons, and agent-navigation metrics.",
+        CONDITION_DICTIONARY_CSV
+    ));
+
+    text.blank_line();
     text.line(format_args!("## Artifacts"));
     text.blank_line();
     text.line(format_args!(
-        "- `scorecard.json`\n- `shape.json`\n- `command-index.json`\n- `command-index.md`\n- `evidence.jsonl`\n- `report.md`\n- `issues.json`\n- `persona-*.md`\n- `findings.sarif`\n- `junit.xml`"
+        "- `scorecard.json`\n- `shape.json`\n- `command-index.json`\n- `command-index.md`\n- `{}`\n- `evidence.jsonl`\n- `report.md`\n- `issues.json`\n- `persona-*.md`\n- `findings.sarif`\n- `junit.xml`",
+        CONDITION_DICTIONARY_CSV
     ));
 
     let text = text.into_string();

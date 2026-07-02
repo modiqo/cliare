@@ -31,6 +31,10 @@ pub fn analyze_process(
 }
 
 fn classify_precondition(document: &DiagnosticDocument) -> Option<PreconditionCandidate> {
+    if document.parser_rejection {
+        return None;
+    }
+
     let tokens = &document.tokens;
     let recovery = &document.recovery;
 

@@ -62,6 +62,7 @@ pub enum RecoveryActionFamily {
 pub(super) struct DiagnosticDocument {
     pub(super) tokens: TokenFeatures,
     pub(super) recovery: RecoveryAnalysis,
+    pub(super) parser_rejection: bool,
 }
 
 impl DiagnosticDocument {
@@ -77,8 +78,33 @@ impl DiagnosticDocument {
         Self {
             tokens: TokenFeatures::from_text(&text),
             recovery: RecoveryAnalysis::from_text(&text),
+            parser_rejection: is_parser_rejection(&text),
         }
     }
+}
+
+fn is_parser_rejection(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    [
+        "unexpected argument",
+        "unknown argument",
+        "unrecognized argument",
+        "unexpected option",
+        "unknown option",
+        "unrecognized option",
+        "unexpected flag",
+        "unknown flag",
+        "unrecognized flag",
+        "unknown command",
+        "unrecognized command",
+        "unknown subcommand",
+        "unrecognized subcommand",
+        "invalid command",
+        "invalid subcommand",
+        "no such command",
+    ]
+    .iter()
+    .any(|phrase| normalized.contains(phrase))
 }
 
 #[derive(Debug, Default)]

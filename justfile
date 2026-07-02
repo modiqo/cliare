@@ -114,7 +114,8 @@ package-list:
 cliare-on-cliare run="cliare" profile="quick":
     cargo build --locked --bin cliare
     target/debug/cliare measure target/debug/cliare --out .cliare/{{ run }} --profile {{ profile }} --refresh
-    target/debug/cliare summary --out .cliare/{{ run }}
+    target/debug/cliare summary --out .cliare/{{ run }} > .cliare/{{ run }}/summary.md
+    cat .cliare/{{ run }}/summary.md
 
 # Local CI equivalent before pushing a branch.
 preflight: fmt-check check clippy test package-list cliare-on-cliare

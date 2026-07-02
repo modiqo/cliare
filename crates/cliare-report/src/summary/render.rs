@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use cliare_core::artifacts::CONDITION_DICTIONARY_CSV;
+
 use crate::report_format::escape_markdown;
 
 use super::model::{FindingBrief, MeasurementSummaryPacket, contract_label};
@@ -33,6 +35,7 @@ pub(super) fn render_markdown(packet: &MeasurementSummaryPacket) -> String {
     writeln!(text).expect("writing to string cannot fail");
 
     render_interpretation(&mut text, packet);
+    render_reference(&mut text, packet);
     render_evidence_snapshot(&mut text, packet);
     render_agent_navigation(&mut text, packet);
     render_findings(&mut text, packet);
@@ -40,6 +43,23 @@ pub(super) fn render_markdown(packet: &MeasurementSummaryPacket) -> String {
     render_caveats(&mut text, packet);
 
     text
+}
+
+fn render_reference(text: &mut String, packet: &MeasurementSummaryPacket) {
+    writeln!(text, "## Reference").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Condition dictionary: `{}`",
+        packet.artifact_dir.join(CONDITION_DICTIONARY_CSV).display()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Use it to decode issue confidence, severity, command suitability, runtime states, preconditions, shape gaps, output statuses, traversal stop reasons, and agent-navigation metrics."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
 }
 
 fn render_interpretation(text: &mut String, packet: &MeasurementSummaryPacket) {
@@ -244,7 +264,32 @@ fn render_finding(text: &mut String, index: usize, finding: &FindingBrief) {
             }
         }
     }
+    render_evidence_excerpts(text, finding);
     writeln!(text).expect("writing to string cannot fail");
+}
+
+fn render_evidence_excerpts(text: &mut String, finding: &FindingBrief) {
+    if finding.evidence_excerpts.is_empty() {
+        return;
+    }
+
+    writeln!(text, "- Evidence excerpts:").expect("writing to string cannot fail");
+    for excerpt in &finding.evidence_excerpts {
+        writeln!(
+            text,
+            "  - `{}` -> `{}` `{}` (`{}`): {}",
+            inline_code(&excerpt.command),
+            inline_code(&excerpt.status),
+            inline_code(&excerpt.stream),
+            inline_code(&excerpt.reference),
+            escape_markdown(&excerpt.text)
+        )
+        .expect("writing to string cannot fail");
+    }
+}
+
+fn inline_code(value: &str) -> String {
+    escape_markdown(value).replace('`', "'")
 }
 
 fn render_next_actions(text: &mut String, packet: &MeasurementSummaryPacket) {
@@ -267,7 +312,7 @@ fn render_caveats(text: &mut String, packet: &MeasurementSummaryPacket) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::model::{FindingExample, OutputContractBrief};
+    use super::super::model::{EvidenceExcerptBrief, FindingExample, OutputContractBrief};
     use super::*;
 
     #[test]
@@ -296,6 +341,13 @@ mod tests {
                     suggested_validation: None,
                 }],
             }],
+            evidence_excerpts: vec![EvidenceExcerptBrief {
+                reference: "e_000120:process".to_owned(),
+                command: "tool inspect --json".to_owned(),
+                status: "exited:1".to_owned(),
+                stream: "stderr".to_owned(),
+                text: "Error: invalid JSON response".to_owned(),
+            }],
         };
         let mut text = String::new();
 
@@ -307,5 +359,8 @@ mod tests {
         assert!(text.contains("- Suggested remedy: Return valid JSON for --json."));
         assert!(text.contains("- Command associations:"));
         assert!(text.contains("`tool inspect`: `runtime_confirmed`"));
+        assert!(text.contains("- Evidence excerpts:"));
+        assert!(text.contains("`tool inspect --json` -> `exited:1` `stderr` (`e_000120:process`)"));
+        assert!(text.contains("Error: invalid JSON response"));
     }
 }

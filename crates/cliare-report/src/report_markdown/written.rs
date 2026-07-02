@@ -66,6 +66,12 @@ pub(crate) fn render_written_summary(
             artifacts.agent_skill_path.display()
         )
         .expect("writing to string cannot fail");
+        writeln!(
+            &mut text,
+            "condition dictionary: {}",
+            artifacts.condition_dictionary_path.display()
+        )
+        .expect("writing to string cannot fail");
     }
     text
 }

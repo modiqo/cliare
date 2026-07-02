@@ -142,6 +142,7 @@ pub(crate) struct SourceArtifacts {
     pub(crate) shape: PathBuf,
     pub(crate) command_index: PathBuf,
     pub(crate) command_index_markdown: PathBuf,
+    pub(crate) condition_dictionary: PathBuf,
     pub(crate) scorecard: PathBuf,
 }
 
@@ -154,6 +155,7 @@ impl SourceArtifacts {
             shape: paths.shape,
             command_index: paths.command_index_json,
             command_index_markdown: paths.command_index_markdown,
+            condition_dictionary: paths.condition_dictionary,
             scorecard: paths.scorecard,
         }
     }

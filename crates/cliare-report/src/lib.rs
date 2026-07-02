@@ -1,4 +1,5 @@
 pub mod artifact_guide;
+pub mod condition_dictionary;
 pub mod issue_disposition;
 pub mod issues;
 pub mod markdown;

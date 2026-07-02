@@ -109,6 +109,30 @@ fn keeps_plain_usage_errors_unclassified() {
 
     assert_eq!(analysis.precondition, None);
     assert_eq!(analysis.recovery.quality, RecoveryQuality::None);
+
+    let analysis = analyze_process(
+        &ProcessStatus::Exited { code: Some(2) },
+        None,
+        Some(
+            "error: unexpected argument '--__cliare_unknown_cliare_guard_flag__' found\n\n  tip: to pass '--__cliare_unknown_cliare_guard_flag__' as a value, use '-- --__cliare_unknown_cliare_guard_flag__'\n\nUsage: cliare guard [OPTIONS] --baseline <FILE> <TARGET>\n\nFor more information, try '--help'.\n",
+        ),
+    );
+
+    assert_eq!(analysis.precondition, None);
+    assert_eq!(analysis.recovery.quality, RecoveryQuality::Mentioned);
+}
+
+#[test]
+fn keeps_invalid_subcommand_diagnostics_unclassified() {
+    let analysis = analyze_process(
+        &ProcessStatus::Exited { code: Some(2) },
+        None,
+        Some(
+            "error: unrecognized subcommand 'frobnicate'\n\nUsage: cliare context <COMMAND>\n\nFor more information, try '--help'.\n",
+        ),
+    );
+
+    assert_eq!(analysis.precondition, None);
 }
 
 #[test]

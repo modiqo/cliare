@@ -9,6 +9,7 @@ pub const AGENT_SKILL_MD: &str = "AGENT_SKILL.md";
 pub const CI_SUMMARY_MD: &str = "summary.md";
 pub const COMMAND_INDEX_JSON: &str = "command-index.json";
 pub const COMMAND_INDEX_MD: &str = "command-index.md";
+pub const CONDITION_DICTIONARY_CSV: &str = "condition-dictionary.csv";
 pub const CONTEXT_COMPARE_MD: &str = "context-compare.md";
 pub const CONTEXT_SUITE_JSON: &str = "context-suite.json";
 pub const EVIDENCE_JSONL: &str = "evidence.jsonl";
@@ -28,6 +29,7 @@ pub const REQUIRED_MEASUREMENT_FILES: &[&str] = &[
     SHAPE_JSON,
     COMMAND_INDEX_JSON,
     COMMAND_INDEX_MD,
+    CONDITION_DICTIONARY_CSV,
     SCORECARD_JSON,
     REPORT_MD,
     CI_SUMMARY_MD,
@@ -41,6 +43,7 @@ pub struct MeasurementArtifactPaths {
     pub shape: PathBuf,
     pub command_index_json: PathBuf,
     pub command_index_markdown: PathBuf,
+    pub condition_dictionary: PathBuf,
     pub scorecard: PathBuf,
     pub report: PathBuf,
     pub ci_summary: PathBuf,
@@ -60,6 +63,7 @@ impl MeasurementArtifactPaths {
             shape: dir.join(SHAPE_JSON),
             command_index_json: dir.join(COMMAND_INDEX_JSON),
             command_index_markdown: dir.join(COMMAND_INDEX_MD),
+            condition_dictionary: dir.join(CONDITION_DICTIONARY_CSV),
             scorecard: dir.join(SCORECARD_JSON),
             report: dir.join(REPORT_MD),
             ci_summary: dir.join(CI_SUMMARY_MD),

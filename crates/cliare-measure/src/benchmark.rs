@@ -33,6 +33,7 @@ pub struct BenchmarkSummary {
     pub markdown_path: PathBuf,
     pub readme_path: PathBuf,
     pub agent_skill_path: PathBuf,
+    pub condition_dictionary_path: PathBuf,
     pub targets_total: usize,
     pub measured: usize,
     pub skipped: usize,
@@ -75,6 +76,10 @@ impl BenchmarkSummary {
             format!("  markdown: {}", self.markdown_path.display()),
             format!("  readme: {}", self.readme_path.display()),
             format!("  agent guide: {}", self.agent_skill_path.display()),
+            format!(
+                "  condition dictionary: {}",
+                self.condition_dictionary_path.display()
+            ),
         ];
 
         format!(
@@ -144,6 +149,7 @@ pub async fn benchmark(args: BenchmarkArgs) -> Result<BenchmarkSummary> {
         markdown_path,
         readme_path: guide_artifacts.readme_path,
         agent_skill_path: guide_artifacts.agent_skill_path,
+        condition_dictionary_path: guide_artifacts.condition_dictionary_path,
         targets_total: report.totals.targets,
         measured: report.totals.measured,
         skipped: report.totals.skipped,

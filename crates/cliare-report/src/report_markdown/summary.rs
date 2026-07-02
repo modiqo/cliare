@@ -19,6 +19,11 @@ pub(super) fn render_plain_english_guide(text: &mut String) {
         "Use this section to decode the report before opening JSON artifacts. CLIARE reports evidence for agent navigation capabilities; it does not assume that a CLI is acceptable for automation just because an agent could explore it by trial and error."
     )
     .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "For a machine-readable decoder of labels and conditions, open `condition-dictionary.csv` in this artifact directory."
+    )
+    .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
     writeln!(text, "### Agent Evidence Perspective").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");

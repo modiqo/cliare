@@ -182,6 +182,7 @@ Benchmark directory:
   benchmark.md
   README.md
   AGENT_SKILL.md
+  condition-dictionary.csv
   <target-id>/
     scorecard.json
     command-index.json

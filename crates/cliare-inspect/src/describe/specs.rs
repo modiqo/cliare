@@ -77,11 +77,19 @@ fn measurement_specs() -> Vec<FileSpec> {
             "Use for quick command-surface review.",
         ),
         FileSpec::new(
+            "condition-dictionary.csv",
+            FileKind::ConditionDictionary,
+            "CSV dictionary for report labels, conditions, command states, preconditions, gaps, output statuses, and navigation metrics.",
+            false,
+            7,
+            "Use to decode terms before interpreting summaries, issues, command index entries, or scorecard fields.",
+        ),
+        FileSpec::new(
             "shape.json",
             FileKind::Shape,
             "Raw inferred command tree, flags, positionals, output contracts, gaps, confidence, and evidence pointers.",
             true,
-            7,
+            8,
             "Use when command-index.json does not contain enough inference detail.",
         ),
         FileSpec::new(
@@ -89,7 +97,7 @@ fn measurement_specs() -> Vec<FileSpec> {
             FileKind::Evidence,
             "Append-only runtime event log.",
             true,
-            8,
+            9,
             "Use to prove what CLIARE observed at runtime.",
         ),
         FileSpec::new(
@@ -97,7 +105,7 @@ fn measurement_specs() -> Vec<FileSpec> {
             FileKind::ScoreReport,
             "Human-readable scorecard report.",
             false,
-            9,
+            10,
             "Use when explaining the score to maintainers.",
         ),
         FileSpec::new(
@@ -184,6 +192,14 @@ fn benchmark_specs() -> Vec<FileSpec> {
             false,
             11,
             "Use to guide an agent reviewing this benchmark directory.",
+        ),
+        FileSpec::new(
+            "condition-dictionary.csv",
+            FileKind::ConditionDictionary,
+            "CSV dictionary for CLIARE report labels and condition meanings.",
+            false,
+            12,
+            "Use before interpreting benchmark target findings or drilling into measurement artifacts.",
         ),
     ]
 }

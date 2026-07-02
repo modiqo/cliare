@@ -6,7 +6,10 @@ use serde::Serialize;
 use super::artifacts::{
     IssueArtifact, IssueCommandArtifact, OutputContractArtifact, SummaryArtifacts, artifact_paths,
 };
-use crate::report_format::{command_path_label, output_mode_label};
+use crate::report_evidence::ProcessEvidence;
+use crate::report_format::{command_path_label, output_mode_label, shell_arg};
+
+const FINDING_EVIDENCE_EXCERPT_LIMIT: usize = 2;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MeasurementSummaryPacket {
@@ -59,7 +62,12 @@ impl MeasurementSummaryPacket {
         let agent_navigation_status = artifacts.scorecard.agent_navigation.status.clone();
         let agent_navigation =
             agent_navigation_briefs(&artifacts.scorecard.agent_navigation.dimensions);
-        let top_findings = finding_briefs(&artifacts.issues, max_findings, max_examples);
+        let top_findings = finding_briefs(
+            &artifacts.issues,
+            max_findings,
+            max_examples,
+            &artifacts.evidence.processes,
+        );
         let caveats = caveats(&artifacts, &agent_navigation);
         let interpretation = interpretation(&artifacts, &agent_navigation, &top_findings);
         let next_actions = next_actions(&top_findings, &artifacts);
@@ -245,6 +253,16 @@ pub struct FindingBrief {
     pub suggested_remedy: String,
     pub affected_count: usize,
     pub associated_commands: Vec<FindingExample>,
+    pub evidence_excerpts: Vec<EvidenceExcerptBrief>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EvidenceExcerptBrief {
+    pub reference: String,
+    pub command: String,
+    pub status: String,
+    pub stream: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -285,6 +303,7 @@ pub struct SourceArtifactBrief {
     pub artifact_dir: PathBuf,
     pub scorecard: PathBuf,
     pub command_index: PathBuf,
+    pub evidence: PathBuf,
     pub issues: PathBuf,
 }
 
@@ -295,6 +314,7 @@ impl SourceArtifactBrief {
             artifact_dir: paths.artifact_dir,
             scorecard: paths.scorecard,
             command_index: paths.command_index,
+            evidence: paths.evidence,
             issues: paths.issues,
         }
     }
@@ -321,6 +341,7 @@ fn finding_briefs(
     issues: &[IssueArtifact],
     max_findings: usize,
     max_examples: usize,
+    processes: &BTreeMap<String, ProcessEvidence>,
 ) -> Vec<FindingBrief> {
     issues
         .iter()
@@ -336,8 +357,85 @@ fn finding_briefs(
             suggested_remedy: issue.recommendation.clone(),
             affected_count: issue.affected_commands.len(),
             associated_commands: issue_examples(&issue.affected_commands, max_examples),
+            evidence_excerpts: issue_evidence_excerpts(issue, processes),
         })
         .collect()
+}
+
+fn issue_evidence_excerpts(
+    issue: &IssueArtifact,
+    processes: &BTreeMap<String, ProcessEvidence>,
+) -> Vec<EvidenceExcerptBrief> {
+    let mut seen = BTreeSet::new();
+    let mut excerpts = Vec::new();
+
+    for evidence in &issue.evidence {
+        if evidence.kind != "process" {
+            continue;
+        }
+        let Some(event_id) = evidence_event_id(&evidence.reference) else {
+            continue;
+        };
+        if !seen.insert(event_id.to_owned()) {
+            continue;
+        }
+        let Some(process) = processes.get(event_id) else {
+            continue;
+        };
+        let Some((stream, text)) = process_output_excerpt(process) else {
+            continue;
+        };
+
+        excerpts.push(EvidenceExcerptBrief {
+            reference: evidence.reference.clone(),
+            command: command_invocation_label(&process.argv),
+            status: process.status.clone(),
+            stream: stream.to_owned(),
+            text: text.to_owned(),
+        });
+        if excerpts.len() >= FINDING_EVIDENCE_EXCERPT_LIMIT {
+            break;
+        }
+    }
+
+    excerpts
+}
+
+fn evidence_event_id(reference: &str) -> Option<&str> {
+    let event_id = reference
+        .split_once(':')
+        .map_or(reference, |(event_id, _)| event_id);
+    (!event_id.is_empty()).then_some(event_id)
+}
+
+fn process_output_excerpt(process: &ProcessEvidence) -> Option<(&'static str, &str)> {
+    process
+        .stderr_excerpt
+        .as_deref()
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| ("stderr", text))
+        .or_else(|| {
+            process
+                .stdout_excerpt
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+                .map(|text| ("stdout", text))
+        })
+}
+
+fn command_invocation_label(argv: &[String]) -> String {
+    let Some((binary, args)) = argv.split_first() else {
+        return "<none>".to_owned();
+    };
+    let binary = Path::new(binary)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(binary);
+    std::iter::once(binary)
+        .chain(args.iter().map(String::as_str))
+        .map(shell_arg)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn issue_examples(commands: &[IssueCommandArtifact], max_examples: usize) -> Vec<FindingExample> {

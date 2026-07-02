@@ -28,6 +28,7 @@ pub struct MeasurementSummary {
     pub persona_report_count: usize,
     pub readme_path: PathBuf,
     pub agent_skill_path: PathBuf,
+    pub condition_dictionary_path: PathBuf,
     pub facts: MeasurementFacts,
     pub cache_hit: bool,
     pub runtime_context: RuntimeContext,
@@ -148,6 +149,7 @@ impl MeasurementSummary {
     pub fn set_artifact_guides(&mut self, guides: ArtifactGuideSummary) {
         self.readme_path = guides.readme_path;
         self.agent_skill_path = guides.agent_skill_path;
+        self.condition_dictionary_path = guides.condition_dictionary_path;
     }
 
     pub fn set_persona_artifacts(&mut self, artifacts: PersonaArtifactSummary) {
@@ -326,6 +328,10 @@ impl MeasurementSummary {
             ),
             format!("  readme: {}", self.readme_path.display()),
             format!("  agent guide: {}", self.agent_skill_path.display()),
+            format!(
+                "  condition dictionary: {}",
+                self.condition_dictionary_path.display()
+            ),
         ]);
         if let Some(path) = &self.runtime_context_path {
             lines.push(format!("  runtime context: {}", path.display()));

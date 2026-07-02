@@ -165,6 +165,7 @@ A measurement writes one artifact directory:
 .cliare/<target-cli>/
   command-index.json      # agent-facing command catalog
   command-index.md        # human-readable command catalog
+  condition-dictionary.csv # CSV decoder for report labels and conditions
   AGENT_SKILL.md          # generated guidance agents can read
   scorecard.json          # readiness score, subscores, coverage, findings
   issues.json             # reviewable issue ledger
@@ -189,11 +190,12 @@ Start with the one-command summary:
 cliare summary --out .cliare/mycli
 ```
 
-`cliare summary` reads `scorecard.json`, `issues.json`, and `command-index.json` and prints one concise assessment. Each finding includes:
+`cliare summary` reads `scorecard.json`, `issues.json`, `command-index.json`, and `evidence.jsonl` and prints one concise assessment. Each finding includes:
 
 - Assessment: what CLIARE found.
 - Meaning: why it matters for agent or harness use.
 - Associated commands: the command paths attached to the finding.
+- Evidence excerpts: bounded stdout/stderr snippets from the process evidence that supports the finding.
 - Suggested remedy: the CLI change or review action to take next.
 
 Use JSON when another tool or harness needs the same interpretation without scraping Markdown:

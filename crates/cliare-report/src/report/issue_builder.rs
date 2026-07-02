@@ -343,7 +343,7 @@ fn issue_impact(category: ActionCategory, confidence: IssueConfidence) -> &'stat
             "Agents need stable machine-readable output for routing, state inspection, and recovery."
         }
         (ActionCategory::Discovery, IssueConfidence::Blocked) => {
-            "Clean CI and agent harnesses may be unable to distinguish command existence from configured account state."
+            "Clean CI and agent harnesses may be unable to distinguish command existence from missing credentials, local context, fixtures, or runtime dependencies."
         }
         (ActionCategory::Discovery, _) => {
             "Agents may miss commands or route to commands that are not actually available at runtime."

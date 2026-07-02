@@ -150,6 +150,7 @@ impl MeasurementCacheManifest {
             persona_report_count: report::Persona::all().len(),
             readme_path: paths.readme,
             agent_skill_path: paths.agent_skill,
+            condition_dictionary_path: paths.condition_dictionary,
             facts: self.summary,
             cache_hit: true,
             runtime_context: self.profile.runtime_context,
