@@ -476,6 +476,16 @@ h3 {
   margin: 0.4rem 0;
 }
 
+.formula.math-display {
+  overflow-x: auto;
+  color: var(--ink);
+}
+
+.formula .mjx-container {
+  margin: 0.25rem 0 !important;
+  min-width: max-content;
+}
+
 .callout-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

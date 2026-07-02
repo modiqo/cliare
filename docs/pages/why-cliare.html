@@ -12,7 +12,24 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Antic&amp;display=swap" rel="stylesheet">
     <link rel="alternate" type="text/plain" href="./llms.txt" title="CLIARE llms.txt">
-    <link rel="stylesheet" href="./assets/styles.css?v=20260702-site">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260702-mathjax">
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["\\(", "\\)"]],
+          displayMath: [["\\[", "\\]"]],
+          processEscapes: true
+        },
+        options: {
+          skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"]
+        }
+      };
+    </script>
+    <script
+      id="MathJax-script"
+      async
+      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"
+    ></script>
   </head>
   <body>
     <header class="site-header">
@@ -165,9 +182,12 @@
               deltas. CLIARE records those observations in
               <code>evidence.jsonl</code>.
             </p>
-            <div class="formula">
-              <p><code>M(argv, stdin, env, cwd, fs_state)</code></p>
-              <p><code>-&gt; exit, stdout, stderr, fs_delta, duration</code></p>
+            <div class="formula math-display" aria-label="Runtime model formula">
+              \[
+                M(\mathrm{argv}, \mathrm{stdin}, \mathrm{env}, \mathrm{cwd}, \mathrm{fs\_state})
+                \rightarrow
+                (\mathrm{exit}, \mathrm{stdout}, \mathrm{stderr}, \Delta_{\mathrm{fs}}, \mathrm{duration})
+              \]
             </div>
             <p>
               From that evidence, CLIARE infers claims about commands, flags,
@@ -217,9 +237,14 @@
                 </div>
               </div>
             </div>
-            <div class="formula">
-              <p><code>logit(P(claim | E)) = logit(prior) + sum(evidence_weight)</code></p>
-              <p><code>P = 1 / (1 + exp(-log_odds))</code></p>
+            <div class="formula math-display" aria-label="Claim confidence update formula">
+              \[
+                \operatorname{logit}(P(C \mid E)) =
+                \operatorname{logit}(p_0) + \sum_i w_i
+              \]
+              \[
+                P(C \mid E) = \frac{1}{1 + e^{-\ell}}
+              \]
             </div>
             <p>
               The shipped v0 model lives in
@@ -260,8 +285,11 @@
               The current status is <code>experimental_partial</code>. The long
               term target is a calibrated expected-utility score:
             </p>
-            <div class="formula">
-              <p><code>CLIARE Score = 100 * E[U(agent, task, cli) | runtime evidence]</code></p>
+            <div class="formula math-display" aria-label="Long-term CLIARE score formula">
+              \[
+                \mathrm{CLIARE\ Score} =
+                100 \cdot \mathbb{E}[U(\mathrm{agent}, \mathrm{task}, \mathrm{cli}) \mid E]
+              \]
             </div>
           </section>
 
@@ -383,6 +411,6 @@
         </nav>
       </div>
     </footer>
-    <script src="./assets/site.js?v=20260702-site" defer></script>
+    <script src="./assets/site.js?v=20260702-mathjax" defer></script>
   </body>
 </html>
