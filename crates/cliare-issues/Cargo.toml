@@ -9,7 +9,7 @@ description = "Issue review and disposition models for CLIARE"
 
 [dependencies]
 clap.workspace = true
-cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-core = { version = "0.1.9", path = "../cliare-core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

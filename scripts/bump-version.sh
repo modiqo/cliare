@@ -29,7 +29,17 @@ if [[ ! -f Cargo.toml ]]; then
   exit 2
 fi
 
-current_version="$(sed -n '0,/^version = "\([^"]*\)"/s//\1/p' Cargo.toml)"
+current_version="$(
+  awk '
+    /^\[workspace.package\]$/ { in_workspace_package = 1; next }
+    /^\[/ { in_workspace_package = 0 }
+    in_workspace_package && /^version = "/ {
+      gsub(/"/, "", $3)
+      print $3
+      exit
+    }
+  ' Cargo.toml
+)"
 if [[ -z "$current_version" ]]; then
   echo "could not find current workspace version in Cargo.toml" >&2
   exit 1
@@ -46,9 +56,12 @@ while IFS= read -r -d '' manifest; do
   perl -0pi -e "s/version = \"\Q${current_version}\E\"/version = \"${new_version}\"/g" "$manifest"
 done < <(find . -path './target' -prune -o -name Cargo.toml -print0)
 
-perl -0pi -e "s/v\Q${current_version}\E/v${new_version}/g; s/current crate version is `\Q${current_version}\E`/current crate version is `${new_version}`/g" RELEASE.md README.md
+OLD_VERSION="$current_version" NEW_VERSION="$new_version" perl -0pi -e '
+  s/v\Q$ENV{OLD_VERSION}\E/v$ENV{NEW_VERSION}/g;
+  s/current crate version is `\Q$ENV{OLD_VERSION}\E`/current crate version is `$ENV{NEW_VERSION}`/g;
+' RELEASE.md README.md
 
-cargo metadata --locked --format-version 1 > /dev/null
+cargo metadata --offline --format-version 1 > /dev/null
 
 echo "Updated manifests and Cargo.lock to $new_version"
 echo "Next: update CHANGELOG.md, run \`just justdev\`, commit, tag v$new_version, and push the tag."

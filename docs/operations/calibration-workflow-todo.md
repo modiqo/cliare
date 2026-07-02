@@ -37,7 +37,7 @@ schema: cliare.score-model.v1
 The score model is now a typed, bundled artifact at:
 
 ```text
-score-models/cliare-score-v0.json
+crates/cliare-inference/score-models/cliare-score-v0.json
 ```
 
 The Rust implementation validates that artifact through:

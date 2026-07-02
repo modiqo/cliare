@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const BUNDLED_SCORE_MODEL: &str = include_str!("../../../score-models/cliare-score-v0.json");
+const BUNDLED_SCORE_MODEL: &str = include_str!("../score-models/cliare-score-v0.json");
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScoreModelSpec {

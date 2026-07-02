@@ -4,8 +4,20 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-02
+
+Crates.io packaging reissue.
+
+- Fixes the bundled score-model package layout so `cliare-inference` compiles from its crates.io tarball.
+- Fixes the version-bump helper for workspace manifests and offline lockfile refresh.
+- Reissues the release as `0.1.9` after the `0.1.8` crates.io workflow partially published internal workspace crates.
+
+## [0.1.8] - 2026-07-02
+
 Repository release rigor.
 
+- Adds evidence-backed summary reports with assessment, meaning, command associations, evidence excerpts, and suggested remedies.
+- Adds a condition dictionary artifact so report labels can be decoded in plain English.
 - Adds `just justdev` as the local preflight gate for formatting, checking, linting, tests, package file-set checks, and quick CLIARE-on-CLIARE dogfooding.
 - Adds CI that runs the local preflight gate and native workspace builds on Linux, macOS, and Windows.
 - Extends binary release assets to include Windows x86_64.

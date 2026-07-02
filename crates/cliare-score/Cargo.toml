@@ -8,13 +8,13 @@ repository.workspace = true
 description = "Scorecard and finding computation for CLIARE"
 
 [dependencies]
-cliare-context = { version = "0.1.8", path = "../cliare-context" }
-cliare-core = { version = "0.1.8", path = "../cliare-core" }
-cliare-evidence = { version = "0.1.8", path = "../cliare-evidence" }
-cliare-inference = { version = "0.1.8", path = "../cliare-inference" }
-cliare-policy = { version = "0.1.8", path = "../cliare-policy" }
-cliare-runtime = { version = "0.1.8", path = "../cliare-runtime" }
-cliare-shape = { version = "0.1.8", path = "../cliare-shape" }
+cliare-context = { version = "0.1.9", path = "../cliare-context" }
+cliare-core = { version = "0.1.9", path = "../cliare-core" }
+cliare-evidence = { version = "0.1.9", path = "../cliare-evidence" }
+cliare-inference = { version = "0.1.9", path = "../cliare-inference" }
+cliare-policy = { version = "0.1.9", path = "../cliare-policy" }
+cliare-runtime = { version = "0.1.9", path = "../cliare-runtime" }
+cliare-shape = { version = "0.1.9", path = "../cliare-shape" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

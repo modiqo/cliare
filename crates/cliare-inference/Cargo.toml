@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Inference support modules for CLIARE"
 
 [dependencies]
-cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-core = { version = "0.1.9", path = "../cliare-core" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

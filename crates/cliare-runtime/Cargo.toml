@@ -9,7 +9,7 @@ description = "Target resolution and sandbox runtime modules for CLIARE"
 
 [dependencies]
 clap.workspace = true
-cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-core = { version = "0.1.9", path = "../cliare-core" }
 serde.workspace = true
 sha2.workspace = true
 tokio.workspace = true

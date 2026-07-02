@@ -11,7 +11,7 @@ CLIARE's scoring model has two layers:
 
 1. **Current v0 implementation**
    - A deterministic scorecard generated from runtime evidence.
-   - A bundled typed model artifact: [`score-models/cliare-score-v0.json`](../../score-models/cliare-score-v0.json).
+   - A bundled typed model artifact: [`crates/cliare-inference/score-models/cliare-score-v0.json`](../../crates/cliare-inference/score-models/cliare-score-v0.json).
    - Log-odds claim inference for commands, flags, and output contracts.
    - Explicit dimension scores, coverage metrics, findings, and model provenance.
    - Status: `experimental_partial`.
@@ -51,7 +51,7 @@ The current v0 score is not yet that full posterior expected utility. It is an a
 | Output-mode and precondition classification | [`src/output.rs`](../../src/output.rs), [`src/precondition.rs`](../../src/precondition.rs), [`src/diagnostic.rs`](../../src/diagnostic.rs) |
 | Shape and command-index artifacts | [`src/shape.rs`](../../src/shape.rs) |
 | Scorecard, dimension weights, findings, and report rendering | [`src/score.rs`](../../src/score.rs) |
-| Typed score-model spec, validation, and model hash | [`src/score_model.rs`](../../src/score_model.rs), [`score-models/cliare-score-v0.json`](../../score-models/cliare-score-v0.json) |
+| Typed score-model spec, validation, and model hash | [`crates/cliare-inference/src/score_model.rs`](../../crates/cliare-inference/src/score_model.rs), [`crates/cliare-inference/score-models/cliare-score-v0.json`](../../crates/cliare-inference/score-models/cliare-score-v0.json) |
 | Guard policies and CI failure semantics | [`src/guard.rs`](../../src/guard.rs), [`src/policy.rs`](../../src/policy.rs) |
 | Persona reports and reviewable issue ledger | [`src/report.rs`](../../src/report.rs), [`src/issues.rs`](../../src/issues.rs) |
 | Benchmark corpus execution | [`src/benchmark.rs`](../../src/benchmark.rs) |
@@ -63,7 +63,7 @@ The current v0 score is not yet that full posterior expected utility. It is an a
 The current model is a bundled JSON artifact, not a set of hidden constants:
 
 ```text
-score-models/cliare-score-v0.json
+crates/cliare-inference/score-models/cliare-score-v0.json
 ```
 
 The artifact declares:
@@ -279,7 +279,7 @@ S_shape = 100 * (
 )
 ```
 
-The weights live in `score-models/cliare-score-v0.json` under
+The weights live in `crates/cliare-inference/score-models/cliare-score-v0.json` under
 `views.shape_confidence`:
 
 | Component | Weight |
