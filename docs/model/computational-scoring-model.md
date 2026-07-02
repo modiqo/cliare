@@ -308,6 +308,98 @@ is treated as unmeasured for shape confidence rather than as proof of safety.
 
 ---
 
+## Current v0 Agent Navigation Evidence View
+
+`agent_navigation` is a scorecard section for developer-facing interpretation.
+It answers a narrower question than the headline score:
+
+```text
+Which agent navigation capabilities have measured evidence in this run?
+```
+
+This section is intentionally not a claim that an agent can navigate arbitrary
+CLI design. Agents can attempt exploratory trial and error, but CLIARE only
+credits navigation capabilities when the released binary produced evidence that
+an agent harness can rely on.
+
+Current source:
+
+| Artifact | Source |
+|---|---|
+| Metric computation | [`crates/cliare-score/src/score/navigation.rs`](../../crates/cliare-score/src/score/navigation.rs) |
+| Typed scorecard fields | [`crates/cliare-score/src/score/model.rs`](../../crates/cliare-score/src/score/model.rs) |
+| Markdown score report | [`crates/cliare-score/src/score/report.rs`](../../crates/cliare-score/src/score/report.rs) |
+| Persona report projection | [`crates/cliare-report/src/report_markdown/summary.rs`](../../crates/cliare-report/src/report_markdown/summary.rs) |
+
+The section status is currently:
+
+```text
+experimental
+```
+
+It is emitted in `scorecard.json` as:
+
+```json
+{
+  "agent_navigation": {
+    "status": "experimental",
+    "dimensions": {
+      "canonical_help_coverage": {
+        "score": 100,
+        "numerator": 1,
+        "denominator": 1,
+        "status": "measured",
+        "rationale": "...",
+        "evidence": ["e_000005"],
+        "limitations": ["..."]
+      }
+    },
+    "limitations": ["..."]
+  }
+}
+```
+
+Each metric has:
+
+| Field | Meaning |
+|---|---|
+| `score` | Whole-point score when measured. `null` means no honest score is available. |
+| `numerator` | Count of evidence-backed successes for the metric. |
+| `denominator` | Count of observed opportunities for the metric. |
+| `status` | `measured`, `no_evidence`, or `not_measured`. |
+| `rationale` | Human-readable numerator/denominator definition. |
+| `evidence` | Bounded list of evidence ids supporting the metric. |
+| `limitations` | Metric-specific caveats that should travel with the score. |
+
+Metric definitions:
+
+| Capability | Definition | Why It Matters To Agents |
+|---|---|---|
+| `canonical_help_coverage` | Commands with path-matching direct `<command> --help` or `-h` evidence divided by discovered commands. `help <command path>` compatibility does not count as canonical direct help. | Agents can ask for command-specific syntax without learning framework-specific aliases first. |
+| `usage_coverage` | Discovered commands with usage syntax divided by discovered commands. | Agents can infer invocation shape and required operands from a stable grammar line. |
+| `subcommand_table_clarity` | Help-like root or command-group outputs with extracted command candidates divided by relevant group-help observations. | Agents can traverse command groups from structured text instead of guessing children. |
+| `positional_operand_coverage` | Runtime-recognized commands with usage syntax divided by runtime-recognized commands. | Agents can identify required operands before attempting execution. |
+| `output_contract_parse_coverage` | Machine-readable output contracts with successful parse probes divided by discovered machine-readable output contracts. | Agents can consume command results deterministically instead of scraping prose. |
+| `invalid_input_recovery` | Invalid-input probes receive half credit for nonzero rejection and half credit for actionable recovery text. | Agents learn from mistakes only when errors are explicit and corrective. |
+| `discovery_side_effect_safety` | Completed probes without persistent sandbox side effects, penalized for credential-like side-effect paths. Host mode is `not_measured`. | Agents and harnesses can inspect CLI shape without mutating durable state. |
+| `precondition_clarity` | Precondition-blocked probes with actionable diagnostics divided by precondition-blocked probes. | Agents can distinguish missing auth, fixture, local context, network, or runtime dependencies from command absence. |
+| `example_validity` | Currently `not_measured`. | CLIARE does not yet parse and validate examples safely enough to score them. |
+
+Important interpretation boundaries:
+
+- The denominator is bounded by traversal. Undiscovered commands are not counted
+  unless CLIARE has evidence or an external truth set is added in a future model.
+- `no_evidence` means the run had no measured opportunity for that capability.
+  It is different from a measured score of `0`.
+- `not_measured` means the current runtime mode or implementation cannot support
+  an honest measurement. Host-mode side-effect safety and example validity are
+  current examples.
+- The agent-navigation metrics are not a replacement for `shape_confidence`.
+  `shape_confidence` remains the numeric harness-facing summary; `agent_navigation`
+  explains the specific navigation capabilities behind that posture.
+
+---
+
 ## Current v0 Dimension Formulas
 
 This section is normative for the current implementation.

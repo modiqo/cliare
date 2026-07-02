@@ -101,6 +101,151 @@ Manpage-like output is handled conservatively. For non-root command help, CLIARE
 
 ---
 
+## Semi-Structured CLI Text Interpretation
+
+Real CLI surfaces vary widely. Some tools expose Clap, Cobra, Click, argparse, oclif, or custom parser output. Some tools expose generated manpages. Some tools expose plugin commands that change with auth, installation state, config, or the current working directory. Some tools do not support `--help` on every path, but still print a useful command menu when a group command is invoked directly. CLIARE treats those surfaces as runtime evidence with different confidence, not as one required format.
+
+The current extractor can operate on semi-structured text when the output has at least some of these conventions:
+
+| Surface pattern | Current interpretation |
+|---|---|
+| `USAGE` or `Usage:` lines | Strong command-scope and positional-argument signal when the usage path matches the current probe path. |
+| Aligned command tables | Candidate command paths and summaries from compact first-column invocation cells and second-column descriptions. |
+| Option rows | Candidate flags, aliases, value names, and summaries from dash-prefixed tokens and nearby row text. |
+| Examples | Weak output-mode and invocation evidence, especially when examples advertise JSON, YAML, table, or plain-text modes. |
+| Missing-argument diagnostics | Runtime evidence that the command path was recognized, with possible operand hints. Current scoring treats invalid probes mainly as diagnostics; richer operand extraction from these messages is future work. |
+| Direct group output without `--help` | Useful evidence when collected as a help-like observation. Current traversal does not yet schedule bare group invocations as a first-class confirmation probe for every discovered group. |
+| Manpage or pager-like output | Parsed conservatively. CLIARE avoids deep child extraction from non-root formatted manpage output to reduce prose false positives. |
+| Free prose with no rows, usage, options, or diagnostics | Usually not enough for command-shape extraction. It may remain evidence text, but it should not become a high-confidence command shape by itself. |
+
+This means CLIARE does not need machine-readable output to build a useful command index. It can build a provisional map from structured plain text. Machine-readable output still matters for output-contract confidence because agents need parseable task results, not only command discovery.
+
+### Nested Row Example
+
+Consider a help row from a command group:
+
+```text
+auth scheme add <id> <scheme>  Enable an adapter auth scheme (bearer/api-key/basic/oauth2)
+```
+
+If this row appears while probing:
+
+```text
+rote adapter --help
+```
+
+the current layout extractor reads the first aligned column as an invocation cell:
+
+```text
+auth scheme add <id> <scheme>
+```
+
+It then walks tokens from left to right:
+
+```text
+auth -> command token
+scheme -> command token
+add -> command token
+<id> -> argument-like token, stop command-path extraction
+<scheme> -> not part of the command path after stop
+```
+
+The extracted relative command path is:
+
+```text
+auth scheme add
+```
+
+Because the current probe scope is `adapter`, CLIARE emits the candidate command path:
+
+```text
+adapter auth scheme add
+```
+
+The second aligned column becomes the command summary:
+
+```text
+Enable an adapter auth scheme (bearer/api-key/basic/oauth2)
+```
+
+At this point the claim is a candidate, not a confirmed contract. A harness should treat it as discoverable but not automatically route through it until deeper evidence confirms it.
+
+### Argument Extraction Boundary
+
+Current positional-argument extraction is stronger when operands appear in a matching usage syntax:
+
+```text
+USAGE
+  rote adapter auth scheme add <id> <scheme>
+```
+
+That matching usage line can attach required positionals such as `id` and `scheme` to the command. A command-table row that includes operands currently helps identify where the command path stops, but does not attach those operands as full positional claims with the same confidence as a matching usage line.
+
+For the row:
+
+```text
+auth scheme add <id> <scheme>
+```
+
+current output should be understood as:
+
+```text
+path: adapter auth scheme add
+summary: Enable an adapter auth scheme (bearer/api-key/basic/oauth2)
+positionals: unknown unless confirmed by matching usage or diagnostics
+runtime_state: candidate until a probe confirms the path
+```
+
+The planned improvement is to preserve row operands as provisional positional claims and then upgrade or reject them through matching usage, direct help-like output, or missing-argument diagnostics.
+
+### Deep Traversal Boundary
+
+When a deep candidate path is discovered from a row, the planner can schedule confirmation probes for the discovered path:
+
+```text
+rote adapter auth scheme add --help
+rote help adapter auth scheme add
+```
+
+The current planner does not yet aggressively synthesize intermediate group confirmations from every deep row. From:
+
+```text
+adapter auth scheme add
+```
+
+a better traversal frontier would prioritize:
+
+```text
+rote adapter auth
+rote adapter auth scheme
+rote adapter auth scheme add
+```
+
+That matters for CLIs where group commands print structured text directly, even when `--help` is absent or incomplete. In those cases, direct group output should count as medium-to-high discoverability evidence when it is help-like and path-matched. Canonical `--help` should still provide an additional confidence boost because it is a portable contract that most agent harnesses know to try.
+
+### Harness Interpretation
+
+From the agent perspective, CLIARE's current artifact states should be read as:
+
+| Evidence state | Harness interpretation |
+|---|---|
+| Layout-only candidate | The command was seen in structured text, but should be verified before automatic use. |
+| Direct help-like group output | The group is discoverable and navigable. It can guide exploration even without `--help`. |
+| Runtime-confirmed help | The command path is recognized and its surface is reliable enough for routing decisions, subject to gaps. |
+| Missing-argument diagnostic | The leaf command likely exists and rejected an incomplete invocation. Use the diagnostic to infer required operands or fixture needs. |
+| Machine-readable output probed and parsed | The command has a result contract an agent can consume directly. |
+| Output advertised but unprobed | Treat as a promise needing validation before automatic parsing. |
+
+The core product boundary is therefore:
+
+```text
+structured text can produce a map
+runtime confirmation decides how much to trust the map
+parseable output contracts decide whether agents can consume results safely
+```
+
+---
+
 ## Claims And Confidence
 
 `ClaimSet::from_observations` rebuilds the current claim set from observed probe results. Claims are not stored in a separate graph database and are not currently replayed through a standalone evidence-replay command.
@@ -185,6 +330,9 @@ The current generic inference processor does not implement:
 - external documentation crawling
 - an LLM parser in the core path
 - embedding-based command matching
+- first-class bare group invocation probes for every discovered command group
+- provisional positional claims from command-table row operands
+- deep-prefix synthesis for every nested command row
 - a database-backed claim graph
 - formally calibrated probability distributions for every emitted field
 
@@ -199,6 +347,9 @@ Possible future extensions:
 - add optional shell-completion probes as evidence when they can be run safely
 - add an evidence replay/rescore command for regression analysis
 - add fixture packs so maintainers can validate commands that require safe operands
+- add direct help-like group probes for discovered command prefixes
+- preserve command-table operands as provisional positionals before runtime confirmation
+- prioritize intermediate prefixes for nested command rows before spending budget on lower-value leaves
 - improve calibration with curated CLI corpora and proper scoring rules
 - add optional framework-specific weak priors that emit generic claims and never bypass runtime validation
 

@@ -50,7 +50,7 @@ This directory is a self-contained record of one CLIARE measurement. If `artifac
 
 | File | Purpose |
 |---|---|
-| `scorecard.json` | Score, subscores, findings, coverage pressure, precondition counts, output-contract counts, and side-effect counts. |
+| `scorecard.json` | Score, subscores, agent-navigation evidence, findings, coverage pressure, precondition counts, output-contract counts, and side-effect counts. |
 | `report.md` | Human-readable scorecard generated during measurement. |
 | `summary.md` | CI summary suitable for job summaries and pull request checks. |
 | `shape.json` | Inferred command tree, flags, output contracts, and shape gaps. |
@@ -89,6 +89,10 @@ cliare describe . --write
 
 ```sh
 jq '{score:.score.total,status:.score.status,model:.score.model,measured_weight:.score.measured_weight,max_weight:.score.max_weight}' scorecard.json
+```
+
+```sh
+jq '.agent_navigation | {status,limitations,dimensions}' scorecard.json
 ```
 
 ```sh

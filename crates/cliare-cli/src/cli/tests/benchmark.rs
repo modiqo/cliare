@@ -20,6 +20,7 @@ fn benchmark_uses_local_corpus_defaults() {
         | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
+        | Command::Summary(_)
         | Command::Describe(_)
         | Command::Skills(_)
         | Command::Issues(_)

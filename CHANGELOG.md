@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+Repository release rigor.
+
+- Adds `just justdev` as the local preflight gate for formatting, checking, linting, tests, package file-set checks, and quick CLIARE-on-CLIARE dogfooding.
+- Adds CI that runs the local preflight gate and native workspace builds on Linux, macOS, and Windows.
+- Extends binary release assets to include Windows x86_64.
+- Hardens crates.io release automation for the multi-crate workspace with dependency-ordered publishing.
+- Adds a version-bump script for coordinated workspace manifest, documentation, and lockfile updates.
+
 ## [0.1.6] - 2026-06-17
 
 Report readability and workflow guidance.

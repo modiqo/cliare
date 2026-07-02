@@ -4,7 +4,7 @@ use cliare_context::ContextArgs;
 
 use super::{
     BenchmarkArgs, DescribeArgs, EvalArgs, GuardArgs, IssuesArgs, JobsArgs, MeasureArgs,
-    MetadataArgs, PlaybookArgs, ReportArgs, SkillsArgs, SurfaceArgs,
+    MetadataArgs, PlaybookArgs, ReportArgs, SkillsArgs, SummaryArgs, SurfaceArgs,
 };
 
 #[derive(Debug, Parser)]
@@ -36,6 +36,8 @@ pub enum Command {
     Context(ContextArgs),
     /// Generate a persona-specific outcome packet from measurement artifacts.
     Report(ReportArgs),
+    /// Summarize measurement artifacts into one interpretable findings brief.
+    Summary(SummaryArgs),
     /// Describe a CLIARE artifact directory for humans and agents.
     Describe(DescribeArgs),
     /// Install CLIARE artifact-review skills for coding agents.

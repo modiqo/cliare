@@ -7,4 +7,5 @@ mod report_evidence;
 pub mod report_format;
 mod report_markdown;
 mod report_model;
+pub mod summary;
 pub mod surface;

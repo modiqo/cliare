@@ -268,6 +268,8 @@ struct ScorecardArtifact {
     target: TargetFingerprint,
     score: ScoreSummaryArtifact,
     subscores: BTreeMap<String, SubscoreArtifact>,
+    #[serde(default)]
+    agent_navigation: AgentNavigationArtifact,
     coverage: CoverageArtifact,
     findings: Vec<FindingArtifact>,
 }
@@ -287,6 +289,38 @@ struct SubscoreArtifact {
     weight: f64,
     status: String,
     rationale: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AgentNavigationArtifact {
+    status: String,
+    #[serde(default)]
+    dimensions: BTreeMap<String, AgentNavigationMetricArtifact>,
+    #[serde(default)]
+    limitations: Vec<String>,
+}
+
+impl Default for AgentNavigationArtifact {
+    fn default() -> Self {
+        Self {
+            status: "not_available".to_owned(),
+            dimensions: BTreeMap::new(),
+            limitations: vec!["Scorecard did not include agent navigation metrics.".to_owned()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AgentNavigationMetricArtifact {
+    score: Option<f64>,
+    numerator: usize,
+    denominator: usize,
+    status: String,
+    rationale: String,
+    #[serde(default)]
+    evidence: Vec<String>,
+    #[serde(default)]
+    limitations: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

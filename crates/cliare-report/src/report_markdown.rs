@@ -29,7 +29,8 @@ use guidance::{persona_issue_action, render_persona_command_guidance, render_run
 use navigation::render_artifact_navigation;
 use samples::{issue_disposition_label, render_reviewed_decisions};
 use summary::{
-    render_notes, render_persona_decision, render_persona_score_summary, render_plain_english_guide,
+    render_agent_navigation_evidence, render_notes, render_persona_decision,
+    render_persona_score_summary, render_plain_english_guide,
 };
 
 pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
@@ -48,11 +49,13 @@ pub(crate) fn render_markdown(packet: &PersonaOutcomePacket) -> String {
         render_persona_command_guidance(&mut text, packet);
         render_run_recommendations(&mut text, packet);
         render_plain_english_guide(&mut text);
+        render_agent_navigation_evidence(&mut text, packet);
         render_persona_score_summary(&mut text, packet);
         render_artifact_navigation(&mut text, packet);
         render_notes(&mut text, packet);
     } else {
         render_plain_english_guide(&mut text);
+        render_agent_navigation_evidence(&mut text, packet);
         render_ci_action_brief(&mut text, packet);
         render_persona_score_summary(&mut text, packet);
         render_persona_findings(&mut text, packet);

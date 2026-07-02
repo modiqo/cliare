@@ -1,6 +1,6 @@
 # Release Process
 
-This repository is prepared for binary and crates.io releases. The current crate version is `0.1.6`.
+This repository is prepared for binary and crates.io releases. The current crate version is `0.1.7`.
 
 ## Channels
 
@@ -15,10 +15,12 @@ The tag workflow `.github/workflows/release-binaries.yml` builds release archive
 - `aarch64-unknown-linux-gnu`
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
 
 It creates or updates the GitHub release for the tag and uploads:
 
 - `cliare-<target>.tar.gz`
+- `cliare-x86_64-pc-windows-msvc.zip`
 - `install.sh`
 - `SHA256SUMS`
 
@@ -32,13 +34,17 @@ The installer supports:
 
 ```sh
 CLIARE_INSTALL_DIR=/usr/local/bin
-CLIARE_VERSION=v0.1.6
+CLIARE_VERSION=v0.1.7
 CLIARE_REPO=modiqo/cliare
 ```
 
+The shell installer supports macOS and Linux. Windows users should download the
+`cliare-x86_64-pc-windows-msvc.zip` release asset, verify it against
+`SHA256SUMS`, and place `cliare.exe` on `PATH`.
+
 ## crates.io Automation
 
-The tag workflow `.github/workflows/release-crates.yml` publishes to crates.io when a `vX.Y.Z` tag is pushed and the tag version matches `Cargo.toml`.
+The tag workflow `.github/workflows/release-crates.yml` publishes all workspace crates to crates.io in dependency order when a `vX.Y.Z` tag is pushed and the tag version matches `Cargo.toml`.
 
 Before tagging:
 
@@ -52,46 +58,45 @@ Before tagging:
 Run from a clean working tree:
 
 ```sh
-CARGO_HTTP_MULTIPLEXING=false cargo fmt --all -- --check
-CARGO_HTTP_MULTIPLEXING=false env RUSTC_WRAPPER= cargo clippy --workspace --all-targets --all-features -- -D warnings
-CARGO_HTTP_MULTIPLEXING=false cargo test --workspace --all-features
-CARGO_HTTP_MULTIPLEXING=false cargo package --list
-CARGO_HTTP_MULTIPLEXING=false cargo package
-CARGO_HTTP_MULTIPLEXING=false cargo publish --dry-run
+just justdev
 ```
 
-Verify the machine-readable command contract:
+`just justdev` runs formatting, type checking, clippy with warnings denied, the
+workspace test suite, package file-set checks for every crate, and a quick
+CLIARE-on-CLIARE measurement.
+
+Verify the machine-readable command contract when touching CLI shape:
 
 ```sh
 cargo run -- metadata --format json
 ```
 
-Measure CLIARE itself before tagging:
+Run a deeper CLIARE-on-CLIARE pass before tagging:
 
 ```sh
-cargo run -- measure cliare --out .cliare/cliare --profile standard --refresh
-cargo run -- issues list --out .cliare/cliare --format human
+just cliare-on-cliare cliare standard
 ```
 
 ## Version And Tag
 
-1. Update `Cargo.toml` and `Cargo.lock` if the version changes.
+1. Run `scripts/bump-version.sh <new-version>`.
 2. Update `CHANGELOG.md` with the final release date and notable changes.
-3. Commit with a Conventional Commit message.
-4. Tag the release:
+3. Run `just justdev`.
+4. Commit with a Conventional Commit message.
+5. Tag the release:
 
 ```sh
-git tag -a v0.1.6 -m "v0.1.6"
+git tag -a v0.1.7 -m "v0.1.7"
 git push origin main
-git push origin v0.1.6
+git push origin v0.1.7
 ```
 
 ## crates.io
 
-Publish only after `cargo publish --dry-run` succeeds:
+Publishing is normally handled by `.github/workflows/release-crates.yml` after a version tag is pushed. To dry-run one package locally after its dependencies already exist on crates.io:
 
 ```sh
-cargo publish
+just publish-dry-run cliare
 ```
 
 Post-publish install check:

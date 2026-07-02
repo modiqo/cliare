@@ -113,6 +113,17 @@ runs:
             ;;
         esac
 
+    - name: Write CLIARE Summary
+      shell: bash
+      env:
+        CLIARE_OUT: ${{ inputs.out }}
+        CLIARE_COMMAND: ${{ inputs.cliare-command }}
+      run: |
+        set -euo pipefail
+
+        "$CLIARE_COMMAND" summary --out "$CLIARE_OUT" > "$CLIARE_OUT/summary.md"
+        "$CLIARE_COMMAND" summary --out "$CLIARE_OUT" --format json > "$CLIARE_OUT/summary.json"
+
     - name: Publish Step Summary
       shell: bash
       env:

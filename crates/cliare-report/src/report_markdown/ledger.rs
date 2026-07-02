@@ -80,8 +80,16 @@ fn render_issue_markdown(text: &mut String, issue: &Issue, heading_level: usize)
         .expect("writing to string cannot fail");
     writeln!(text, "- Confidence: `{}`", issue.confidence.label())
         .expect("writing to string cannot fail");
-    writeln!(text, "- Meaning: {}", escape_markdown(issue_meaning(issue)))
+    writeln!(text, "- Assessment: {}", escape_markdown(&issue.title))
         .expect("writing to string cannot fail");
+    writeln!(text, "- Meaning: {}", escape_markdown(&issue.impact))
+        .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Evidence interpretation: {}",
+        escape_markdown(issue_meaning(issue))
+    )
+    .expect("writing to string cannot fail");
     if let Some(disposition) = &issue.disposition {
         writeln!(
             text,
@@ -93,23 +101,21 @@ fn render_issue_markdown(text: &mut String, issue: &Issue, heading_level: usize)
     }
     writeln!(
         text,
-        "- Affected commands: `{}`",
+        "- Associated commands: `{}`",
         issue.affected_commands.len()
     )
     .expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
-    writeln!(text, "**Impact:** {}", escape_markdown(&issue.impact))
-        .expect("writing to string cannot fail");
     writeln!(
         text,
-        "**Why it matters:** {}",
-        escape_markdown(&issue.why_it_matters)
+        "**Suggested remedy:** {}",
+        escape_markdown(&issue.recommendation)
     )
     .expect("writing to string cannot fail");
     writeln!(
         text,
-        "**Recommended fix:** {}",
-        escape_markdown(&issue.recommendation)
+        "**Why it matters:** {}",
+        escape_markdown(&issue.why_it_matters)
     )
     .expect("writing to string cannot fail");
     writeln!(

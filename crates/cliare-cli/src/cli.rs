@@ -10,6 +10,7 @@ mod playbook;
 mod report;
 mod root;
 mod skills;
+mod summary;
 mod surface;
 #[cfg(test)]
 mod tests;
@@ -30,6 +31,7 @@ pub use skills::{
     SkillAgent, SkillInstallScope, SkillsArgs, SkillsCommand, SkillsInstallArgs, SkillsListArgs,
     SkillsListFormat,
 };
+pub use summary::{SummaryArgs, SummaryFormat};
 pub use surface::{
     SurfaceArgs, SurfaceCommand, SurfaceExplainArgs, SurfaceFormat, SurfaceListArgs,
     SurfaceOutputRequirement, SurfaceQueryArgs, SurfaceReadiness,

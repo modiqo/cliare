@@ -9,6 +9,7 @@ mod metadata;
 mod playbook;
 mod report;
 mod skills;
+mod summary;
 mod support;
 mod surface;
 mod traversal;

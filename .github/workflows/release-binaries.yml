@@ -32,6 +32,8 @@ jobs:
             target: x86_64-apple-darwin
           - os: macos-14
             target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v6
@@ -44,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cliare") | .version')"
+          version="$(cargo pkgid -p cliare | sed 's/.*@//')"
           tag="${GITHUB_REF_NAME#v}"
           if [[ "$tag" != "$version" ]]; then
             echo "Tag v${tag} does not match Cargo.toml version ${version}."
@@ -54,7 +56,8 @@ jobs:
       - name: Build release binary
         run: cargo build --locked --release --target "${{ matrix.target }}" --bin cliare
 
-      - name: Package archive
+      - name: Package Unix archive
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -64,10 +67,23 @@ jobs:
           cp README.md LICENSE "dist/${package}/"
           tar -czf "dist/${package}.tar.gz" -C "dist/${package}" .
 
+      - name: Package Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = "cliare-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path "dist/$package" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/cliare.exe" "dist/$package/cliare.exe"
+          Copy-Item README.md "dist/$package/README.md"
+          Copy-Item LICENSE "dist/$package/LICENSE"
+          Compress-Archive -Path "dist/$package/*" -DestinationPath "dist/$package.zip" -Force
+
       - uses: actions/upload-artifact@v4
         with:
           name: cliare-${{ matrix.target }}
-          path: dist/cliare-${{ matrix.target }}.tar.gz
+          path: |
+            dist/cliare-${{ matrix.target }}.tar.gz
+            dist/cliare-${{ matrix.target }}.zip
           if-no-files-found: error
 
   publish:
@@ -89,7 +105,7 @@ jobs:
           set -euo pipefail
           cp install.sh dist/install.sh
           cd dist
-          sha256sum cliare-*.tar.gz install.sh > SHA256SUMS
+          sha256sum cliare-*.tar.gz cliare-*.zip install.sh > SHA256SUMS
 
       - name: Create or update GitHub release
         env:

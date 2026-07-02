@@ -12,7 +12,7 @@ Agents increasingly use terminals as their operating surface, but most CLIs were
 - Which paths require auth, a project directory, fixtures, network access, or a local daemon?
 - Which "safe" discovery commands quietly write files?
 
-CLIARE answers those questions by measuring the released CLI binary as a black box. It probes runtime behavior under bounded controls, records evidence, infers the command surface, detects side effects, and emits command indexes, issue ledgers, scorecards, persona reports, CI artifacts, and agent skills.
+CLIARE answers those questions by measuring the released CLI binary as a black box. It probes runtime behavior under bounded controls, records evidence, infers the command surface, detects side effects, and emits command indexes, issue ledgers, scorecards, one-command summaries, persona reports, CI artifacts, and agent skills.
 
 CLIARE stands for **CLI Agent Readiness Evaluation**.
 
@@ -48,7 +48,7 @@ cliare measure mycli --out .cliare/mycli --profile standard --refresh
 Without an evidence-backed command index, an agent harness has to rediscover the surface repeatedly: run help, try a flag, hit a missing operand, back up, and try again. That loop costs tokens, latency, and reliability.
 
 ```sh
-cliare issues list --out .cliare/mycli --format human
+cliare summary --out .cliare/mycli
 ```
 
 ### 4. CLIARE probes the CLI like an agent would
@@ -74,6 +74,7 @@ cliare measure mycli \
 For maintainers, CLIARE turns agent-readiness gaps into a concrete queue: missing help, confusing diagnostics, parseable-output gaps, unsafe discovery side effects, precondition blockers, and command-shape drift.
 
 ```sh
+cliare summary --out .cliare/mycli
 cliare report maintainer --out .cliare/mycli --format markdown
 cliare issues list --out .cliare/mycli --format markdown
 cliare playbook maintainer --target mycli
@@ -87,6 +88,7 @@ For agent harnesses, CLIARE builds the map: an evidence-backed command index tha
 
 ```sh
 cliare describe .cliare/mycli --write
+cliare summary --out .cliare/mycli --format json
 cliare report harness --out .cliare/mycli --write
 cliare playbook harness --target mycli
 ```
@@ -106,6 +108,7 @@ The harness can then load:
 Skills are useful, but they are not command indexes. A skill can teach intent, workflow, and policy. A command index tells the harness what the CLI actually supports right now. Agents need both: instruction for judgment, evidence for navigation.
 
 ```sh
+cliare summary --out .cliare/mycli
 cliare report harness --out .cliare/mycli --format markdown
 cliare report security --out .cliare/mycli --format markdown
 cliare issues list --out .cliare/mycli --format human
@@ -119,7 +122,7 @@ CLIARE helps maintainers keep CLIs aligned, helps security reviewers catch undoc
 
 CLIARE turns vague "is this CLI agent-friendly?" feedback into a concrete implementation queue.
 
-It shows where agents will struggle with command discovery, help coverage, diagnostics, output contracts, preconditions, and unsafe discovery behavior. Instead of guessing what to improve, maintainers get evidence-backed issues, affected commands, recommendations, and verification commands.
+It shows where agents will struggle with command discovery, help coverage, diagnostics, output contracts, preconditions, and unsafe discovery behavior. Instead of guessing what to improve, maintainers get evidence-backed assessments, their meaning for agents and harnesses, associated commands, suggested remedies, and verification commands.
 
 Benefits:
 
@@ -178,6 +181,40 @@ A measurement writes one artifact directory:
 
 The key artifact is `command-index.json`. It records command paths, argv forms, summaries, confidence, runtime state, agent suitability, flags, positionals, preconditions, output contracts, gaps, and evidence references.
 
+## Reading a Measurement
+
+Start with the one-command summary:
+
+```sh
+cliare summary --out .cliare/mycli
+```
+
+`cliare summary` reads `scorecard.json`, `issues.json`, and `command-index.json` and prints one concise assessment. Each finding includes:
+
+- Assessment: what CLIARE found.
+- Meaning: why it matters for agent or harness use.
+- Associated commands: the command paths attached to the finding.
+- Suggested remedy: the CLI change or review action to take next.
+
+Use JSON when another tool or harness needs the same interpretation without scraping Markdown:
+
+```sh
+cliare summary --out .cliare/mycli --format json
+```
+
+Then drill down with the role-specific commands:
+
+| Command | Use When |
+|---|---|
+| `cliare summary --out .cliare/mycli` | You want the shortest human-readable assessment of the run. |
+| `cliare report maintainer --out .cliare/mycli` | You maintain the CLI and need a prioritized implementation queue. |
+| `cliare report harness --out .cliare/mycli --write` | You are preparing command-index and harness artifacts for agents. |
+| `cliare report security --out .cliare/mycli` | You need side-effect, auth, host, and approval context. |
+| `cliare issues list --out .cliare/mycli` | You need the full issue ledger or maintainer dispositions. |
+| `cliare surface query ... --out .cliare/mycli` | A harness needs a compact intent-to-command routing answer. |
+| `cliare surface explain ... --out .cliare/mycli` | A harness or reviewer needs one command's readiness, operands, and output contract. |
+| `cliare surface list --out .cliare/mycli` | You need a filtered list of measured command paths. |
+
 ## Install
 
 Install from crates.io:
@@ -232,6 +269,14 @@ List available recipes:
 just --list
 ```
 
+Run the local preflight gate before pushing:
+
+```sh
+just justdev
+```
+
+`just justdev` runs formatting, workspace checks, clippy with warnings denied, tests, package file-set checks, and a quick CLIARE-on-CLIARE measurement.
+
 Measure a large local CLI surface in the background:
 
 ```sh
@@ -274,8 +319,9 @@ Use this when you maintain a CLI and want a fix list.
 
 ```sh
 cliare measure mycli --out .cliare/mycli --profile standard --refresh
-cliare issues list --out .cliare/mycli --format markdown
+cliare summary --out .cliare/mycli
 cliare report maintainer --out .cliare/mycli --format markdown
+cliare issues list --out .cliare/mycli --format markdown
 ```
 
 For launch or release-quality review:
@@ -311,6 +357,7 @@ Use this when you need to know what a CLI does during safe discovery.
 
 ```sh
 cliare measure mycli --out .cliare/mycli --profile standard --refresh
+cliare summary --out .cliare/mycli
 cliare report security --out .cliare/mycli --format markdown
 cliare issues list --out .cliare/mycli --format markdown
 ```
@@ -328,6 +375,7 @@ cliare measure mycli \
   --profile deep \
   --refresh
 
+cliare summary --out .cliare/mycli --context authenticated
 cliare report security --out .cliare/mycli --context authenticated --format markdown
 ```
 
@@ -343,6 +391,7 @@ Use this when you want agents to understand a CLI before they invoke it.
 
 ```sh
 cliare measure mycli --out .cliare/mycli --profile deep --refresh
+cliare summary --out .cliare/mycli --format json
 cliare describe .cliare/mycli --write
 cliare report harness --out .cliare/mycli --write
 ```

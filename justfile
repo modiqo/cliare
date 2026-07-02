@@ -3,6 +3,8 @@ set positional-arguments
 # Override with `just cliare_bin=target/debug/cliare ...` when dogfooding a local build.
 cliare_bin := "cliare"
 
+packages := "cliare-core cliare-runtime cliare-policy cliare-issues cliare-inference cliare-evidence cliare-shape cliare-context cliare-cli cliare-score cliare-report cliare-eval cliare-guidance cliare-measure cliare-inspect cliare-app cliare"
+
 # Default traversal budget for large CLI surfaces.
 profile := "deep"
 max_depth := "12"
@@ -24,8 +26,7 @@ cheatsheet:
       "Example: <run-name> = cliare-self writes .cliare/cliare-self." \
       "" \
       "1. Local dogfood check" \
-      "   just build" \
-      "   just cliare_bin=target/debug/cliare measure-quick target/debug/cliare cliare" \
+      "   just justdev" \
       "   just review cliare" \
       "" \
       "2. Standard maintainer review" \
@@ -69,7 +70,11 @@ cheatsheet:
       "Lookup commands" \
       "   just recipes        Full raw recipe index" \
       "   just --summary      Compact recipe names" \
-      "   just --show <name>   Show the exact command for one recipe"
+      "   just --show <name>   Show the exact command for one recipe" \
+      "" \
+      "Release gates" \
+      "   just preflight        Local CI equivalent before pushing" \
+      "   just publish-dry-run  crates.io dry run for one package"
 
 # Print the ordered CLIARE workflow cheatsheet.
 help:
@@ -82,6 +87,46 @@ recipes:
 # Build this repository's CLIARE binary for local dogfooding.
 build:
     cargo build --locked --bin cliare
+
+# Formatting must be stable before a branch leaves the machine.
+fmt-check:
+    cargo fmt --all -- --check
+
+# Type-check the full workspace.
+check:
+    cargo check --locked --workspace --all-targets --all-features
+
+# Treat lint warnings as failures.
+clippy:
+    env RUSTC_WRAPPER= cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+# Run the workspace test suite.
+test:
+    cargo test --locked --workspace --all-features
+
+# Verify every crate package file set without requiring registry state.
+package-list:
+    for package in {{ packages }}; do \
+      cargo package --locked --list -p "$package" --allow-dirty > /dev/null; \
+    done
+
+# Build and measure CLIARE with CLIARE.
+cliare-on-cliare run="cliare" profile="quick":
+    cargo build --locked --bin cliare
+    target/debug/cliare measure target/debug/cliare --out .cliare/{{ run }} --profile {{ profile }} --refresh
+    target/debug/cliare summary --out .cliare/{{ run }}
+
+# Local CI equivalent before pushing a branch.
+preflight: fmt-check check clippy test package-list cliare-on-cliare
+    @printf '%s\n' "preflight passed"
+
+# Short alias for the local development preflight gate.
+justdev: preflight
+    @printf '%s\n' "justdev passed"
+
+# Dry-run crates.io publish for one package after dependencies exist on crates.io.
+publish-dry-run package="cliare":
+    cargo publish --locked -p {{ package }} --dry-run
 
 # Print CLIARE's machine-readable command contract.
 metadata format="json":

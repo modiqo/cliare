@@ -201,15 +201,40 @@ pub(super) fn render_persona_finding(
 pub(super) fn render_finding_body(text: &mut String, persona: Persona, issue: &Issue) {
     writeln!(
         text,
-        "- Issue: `{}` (`{}`, `{}`, `{}`)",
+        "- Assessment: `{}` {} (`{}`, `{}`, `{}`)",
         escape_markdown(&issue.id),
+        escape_markdown(&issue.title),
         issue.severity.label(),
         issue.category.label(),
         issue.confidence.label()
     )
     .expect("writing to string cannot fail");
-    writeln!(text, "- Meaning: {}", escape_markdown(issue_meaning(issue)))
+    writeln!(text, "- Meaning: {}", escape_markdown(&issue.impact))
         .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Evidence interpretation: {}",
+        escape_markdown(issue_meaning(issue))
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Associated commands: `{}` affected.",
+        issue.affected_commands.len()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Suggested remedy: {}",
+        escape_markdown(&issue.recommendation)
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Role action: {}",
+        escape_markdown(persona_issue_action(persona, issue))
+    )
+    .expect("writing to string cannot fail");
     if persona == Persona::Maintainer {
         writeln!(
             text,
@@ -233,18 +258,6 @@ pub(super) fn render_finding_body(text: &mut String, persona: Persona, issue: &I
         )
         .expect("writing to string cannot fail");
     }
-    writeln!(
-        text,
-        "- Role action: {}",
-        escape_markdown(persona_issue_action(persona, issue))
-    )
-    .expect("writing to string cannot fail");
-    writeln!(
-        text,
-        "- Recommended change: {}",
-        escape_markdown(&issue.recommendation)
-    )
-    .expect("writing to string cannot fail");
     writeln!(
         text,
         "- Verification: `{}`",
@@ -293,17 +306,31 @@ pub(super) fn render_maintainer_finding_body(
     artifact_dir: &Path,
     issue: &Issue,
 ) {
-    writeln!(text, "- Issue: {}", escape_markdown(&issue.title))
-        .expect("writing to string cannot fail");
     writeln!(
         text,
-        "- Agent outcome: {}",
+        "- Assessment: `{}` {} (`{}`, `{}`, `{}`)",
+        escape_markdown(&issue.id),
+        escape_markdown(&issue.title),
+        issue.severity.label(),
+        issue.category.label(),
+        issue.confidence.label()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Meaning: {}",
         escape_markdown(&maintainer_agent_outcome(issue))
     )
     .expect("writing to string cannot fail");
     writeln!(
         text,
-        "- Fix: {}",
+        "- Associated commands: `{}` affected.",
+        issue.affected_commands.len()
+    )
+    .expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "- Suggested remedy: {}",
         escape_markdown(&maintainer_fix_text(issue))
     )
     .expect("writing to string cannot fail");

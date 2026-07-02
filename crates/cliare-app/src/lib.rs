@@ -138,6 +138,10 @@ pub mod skills {
     pub use cliare_guidance::skills::*;
 }
 
+pub mod summary {
+    pub use cliare_report::summary::*;
+}
+
 pub mod surface {
     pub use cliare_report::surface::*;
 }

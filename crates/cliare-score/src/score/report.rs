@@ -1,6 +1,7 @@
 use super::labels::{
-    dimension_label, dimension_status_label, escape_table_cell, score_label, score_status_label,
-    severity_label, traversal_stop_reason_label,
+    agent_navigation_capability_label, agent_navigation_metric_status_label, dimension_label,
+    dimension_status_label, escape_table_cell, score_label, score_status_label, severity_label,
+    traversal_stop_reason_label,
 };
 use super::model::Scorecard;
 
@@ -109,6 +110,38 @@ pub(super) fn render(scorecard: &Scorecard) -> String {
             subscore.weight,
             dimension_status_label(&subscore.status),
             escape_table_cell(&subscore.rationale)
+        ));
+    }
+    report.push('\n');
+
+    report.push_str("## Agent Navigation Evidence\n\n");
+    report.push_str("This section reports evidence for agent navigation capabilities. It does not assume a CLI is automation-ready just because an agent could explore it by trial and error.\n\n");
+    report.push_str(&format!(
+        "- Status: `{}`\n",
+        scorecard.agent_navigation.status
+    ));
+    if scorecard.agent_navigation.limitations.is_empty() {
+        report.push_str("- Limitations: `none`\n\n");
+    } else {
+        report.push_str("- Limitations:\n");
+        for limitation in &scorecard.agent_navigation.limitations {
+            report.push_str(&format!("  - {}\n", escape_table_cell(limitation)));
+        }
+        report.push('\n');
+    }
+    report.push_str("| Capability | Score | Numerator | Denominator | Status | Rationale | Evidence | Limitations |\n");
+    report.push_str("| --- | ---: | ---: | ---: | --- | --- | --- | --- |\n");
+    for (capability, metric) in &scorecard.agent_navigation.dimensions {
+        report.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            agent_navigation_capability_label(*capability),
+            score_label(metric.score),
+            metric.numerator,
+            metric.denominator,
+            agent_navigation_metric_status_label(metric.status),
+            escape_table_cell(&metric.rationale),
+            escape_table_cell(&list_or_none(&metric.evidence)),
+            escape_table_cell(&list_or_none(&metric.limitations))
         ));
     }
     report.push('\n');
@@ -335,4 +368,12 @@ pub(super) fn render(scorecard: &Scorecard) -> String {
     }
 
     report
+}
+
+fn list_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_owned()
+    } else {
+        values.join(", ")
+    }
 }

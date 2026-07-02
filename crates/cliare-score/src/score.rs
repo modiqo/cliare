@@ -7,6 +7,7 @@ mod formulas;
 mod labels;
 mod metrics;
 mod model;
+mod navigation;
 mod report;
 mod util;
 
@@ -16,6 +17,7 @@ mod tests;
 pub use artifacts::write_score_artifacts;
 pub use calculator::scorecard;
 pub use model::{
+    AgentNavigation, AgentNavigationCapability, AgentNavigationMetric, AgentNavigationMetricStatus,
     Coverage, DimensionScore, DimensionStatus, Finding, SandboxScoreContext, ScoreArtifactSummary,
     ScoreModel, ScoreRunContext, ScoreStatus, ScoreSummary, Scorecard, Severity,
     TraversalStopReason,

@@ -102,14 +102,26 @@ jobs:
             cp ".github/cliare-on-cliare/issue-dispositions.json" "$out/issue-dispositions.json"
           fi
 
+          ./target/debug/cliare summary --out "$out" --max-findings 6 --max-examples 5 > "$out/summary.md"
+          ./target/debug/cliare summary --out "$out" --format json --max-findings 6 --max-examples 5 > "$out/summary.json"
           ./target/debug/cliare issues list --out "$out" --format json > "$out/issues-list.json"
           ./target/debug/cliare report maintainer --out "$out" --write >/dev/null
           ./target/debug/cliare report harness --out "$out" --write >/dev/null
           ./target/debug/cliare report maintainer --out "$out" --format markdown > "$out/persona-maintainer-ci.md"
 
+          cat "$out/summary.md"
+          echo
+          echo "---"
+          echo
           cat "$out/persona-maintainer-ci.md"
           if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
             {
+              echo
+              echo "## CLIARE Summary"
+              echo
+              cat "$out/summary.md"
+              echo
+              echo "---"
               echo
               echo "## CLIARE Maintainer Report"
               echo

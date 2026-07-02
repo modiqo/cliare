@@ -9,6 +9,7 @@ use super::formulas::{score_summary, subscores};
 use super::labels::{normalization_label, score_status_label};
 use super::metrics::Metrics;
 use super::model::{ScoreModel, ScoreRunContext, Scorecard};
+use super::navigation::agent_navigation;
 use super::util::target_binary_name;
 
 pub fn scorecard(
@@ -27,6 +28,7 @@ pub fn scorecard(
     let score = score_summary(&subscores, model_spec, &metrics);
     let score_status = score_status_label(&score.status).to_owned();
     let findings = findings(&metrics, model_spec);
+    let agent_navigation = agent_navigation(&claims, &binary_name, observations, &metrics);
 
     Scorecard {
         schema_version: SCHEMA_VERSION,
@@ -34,6 +36,7 @@ pub fn scorecard(
         runtime_context,
         score,
         subscores,
+        agent_navigation,
         coverage: metrics.coverage,
         findings,
         model: ScoreModel {

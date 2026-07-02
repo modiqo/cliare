@@ -44,6 +44,11 @@ async fn main() -> miette::Result<()> {
             print!("{}", summary.terminal_summary());
             Ok(())
         }
+        Command::Summary(args) => {
+            let summary = cliare::summary::summary(args).await.into_diagnostic()?;
+            print!("{}", summary.terminal_summary());
+            Ok(())
+        }
         Command::Describe(args) => {
             let summary = cliare::describe::describe(args).await.into_diagnostic()?;
             print!("{}", summary.terminal_summary());

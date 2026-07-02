@@ -17,6 +17,7 @@ pub struct Scorecard {
     pub(super) runtime_context: RuntimeContext,
     pub(super) score: ScoreSummary,
     pub(super) subscores: BTreeMap<Dimension, DimensionScore>,
+    pub(super) agent_navigation: AgentNavigation,
     pub(super) coverage: Coverage,
     pub(super) findings: Vec<Finding>,
     pub(super) model: ScoreModel,
@@ -51,6 +52,46 @@ pub struct DimensionScore {
 #[serde(rename_all = "snake_case")]
 pub enum DimensionStatus {
     Measured,
+    NotMeasured,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentNavigation {
+    pub(super) status: &'static str,
+    pub(super) dimensions: BTreeMap<AgentNavigationCapability, AgentNavigationMetric>,
+    pub(super) limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentNavigationCapability {
+    CanonicalHelpCoverage,
+    UsageCoverage,
+    SubcommandTableClarity,
+    PositionalOperandCoverage,
+    OutputContractParseCoverage,
+    InvalidInputRecovery,
+    DiscoverySideEffectSafety,
+    PreconditionClarity,
+    ExampleValidity,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentNavigationMetric {
+    pub(super) score: Option<f64>,
+    pub(super) numerator: usize,
+    pub(super) denominator: usize,
+    pub(super) status: AgentNavigationMetricStatus,
+    pub(super) rationale: String,
+    pub(super) evidence: Vec<String>,
+    pub(super) limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentNavigationMetricStatus {
+    Measured,
+    NoEvidence,
     NotMeasured,
 }
 

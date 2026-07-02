@@ -26,6 +26,7 @@ fn jobs_status_accepts_output_directory() {
         | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
+        | Command::Summary(_)
         | Command::Describe(_)
         | Command::Skills(_)
         | Command::Issues(_)

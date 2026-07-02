@@ -2,7 +2,10 @@ use cliare_inference::score_model::Normalization;
 use cliare_runtime::sandbox::EnvPolicy;
 
 use super::Dimension;
-use super::model::{DimensionStatus, ScoreStatus, Severity, TraversalStopReason};
+use super::model::{
+    AgentNavigationCapability, AgentNavigationMetricStatus, DimensionStatus, ScoreStatus, Severity,
+    TraversalStopReason,
+};
 
 pub(super) fn score_label(score: Option<f64>) -> String {
     score.map_or_else(|| "not measured".to_owned(), |score| format!("{score:.0}"))
@@ -35,6 +38,32 @@ pub(super) fn dimension_status_label(status: &DimensionStatus) -> &'static str {
     match status {
         DimensionStatus::Measured => "measured",
         DimensionStatus::NotMeasured => "not measured",
+    }
+}
+
+pub(super) fn agent_navigation_capability_label(
+    capability: AgentNavigationCapability,
+) -> &'static str {
+    match capability {
+        AgentNavigationCapability::CanonicalHelpCoverage => "canonical_help_coverage",
+        AgentNavigationCapability::UsageCoverage => "usage_coverage",
+        AgentNavigationCapability::SubcommandTableClarity => "subcommand_table_clarity",
+        AgentNavigationCapability::PositionalOperandCoverage => "positional_operand_coverage",
+        AgentNavigationCapability::OutputContractParseCoverage => "output_contract_parse_coverage",
+        AgentNavigationCapability::InvalidInputRecovery => "invalid_input_recovery",
+        AgentNavigationCapability::DiscoverySideEffectSafety => "discovery_side_effect_safety",
+        AgentNavigationCapability::PreconditionClarity => "precondition_clarity",
+        AgentNavigationCapability::ExampleValidity => "example_validity",
+    }
+}
+
+pub(super) fn agent_navigation_metric_status_label(
+    status: AgentNavigationMetricStatus,
+) -> &'static str {
+    match status {
+        AgentNavigationMetricStatus::Measured => "measured",
+        AgentNavigationMetricStatus::NoEvidence => "no_evidence",
+        AgentNavigationMetricStatus::NotMeasured => "not_measured",
     }
 }
 

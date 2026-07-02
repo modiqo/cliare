@@ -31,6 +31,7 @@ pub(super) struct Metrics {
     pub(super) credential_like_side_effects: usize,
     pub(super) invalid_probe_count: usize,
     pub(super) invalid_probe_rejections: usize,
+    pub(super) invalid_probe_actionable: usize,
     pub(super) extraction: ExtractionMetrics,
 }
 
@@ -197,6 +198,7 @@ impl Metrics {
             credential_like_side_effects: process_metrics.credential_like_side_effects,
             invalid_probe_count: process_metrics.invalid_probe_count,
             invalid_probe_rejections: process_metrics.invalid_probe_rejections,
+            invalid_probe_actionable: process_metrics.invalid_probe_actionable,
             extraction,
         }
     }
@@ -280,6 +282,7 @@ struct ProcessMetrics {
     pub(super) actionable_precondition: usize,
     pub(super) invalid_probe_count: usize,
     pub(super) invalid_probe_rejections: usize,
+    pub(super) invalid_probe_actionable: usize,
 }
 
 #[derive(Debug, Default)]
@@ -384,6 +387,9 @@ impl ProcessMetrics {
                 if exited_nonzero(&observation.process.status) {
                     metrics.invalid_probe_rejections += 1;
                 }
+                if diagnostic.recovery.quality == RecoveryQuality::Actionable {
+                    metrics.invalid_probe_actionable += 1;
+                }
             }
         }
 
@@ -391,7 +397,7 @@ impl ProcessMetrics {
     }
 }
 
-fn process_text(process: &ProcessCompleted) -> Option<&str> {
+pub(super) fn process_text(process: &ProcessCompleted) -> Option<&str> {
     process
         .stdout
         .text

@@ -6,10 +6,22 @@ use super::findings::{
 };
 use super::guidance::{persona_issue_action, use_when_text};
 use super::samples::command_section_heading;
+use super::summary::render_plain_english_guide;
 use crate::report_model::{
     ActionCategory, ActionSeverity, AgentReadinessArea, Issue, IssueCommand, IssueConfidence,
     IssueVerification, Persona,
 };
+
+#[test]
+fn plain_english_guide_frames_agent_navigation_as_evidence() {
+    let mut guide = String::new();
+    render_plain_english_guide(&mut guide);
+
+    assert!(guide.contains("CLIARE reports evidence for agent navigation capabilities"));
+    assert!(guide.contains("just because an agent could explore it by trial and error"));
+    assert!(guide.contains("| Discovery | Runtime-confirmed help"));
+    assert!(guide.contains("| Safety | Help, version, diagnostic"));
+}
 
 #[test]
 fn inferred_runtime_confirmed_issues_are_commands_to_verify() {
@@ -72,7 +84,13 @@ fn persona_issue_markdown_is_table_row_with_drilldown() {
     render_persona_finding(&mut detail, Persona::Harness, &issue, 1);
     assert!(detail.contains("<details>"));
     assert!(detail.contains("<summary>P1: Test issue (`issue.test`)</summary>"));
-    assert!(detail.contains("- Meaning: CLIARE directly saw this runtime behavior"));
+    assert!(detail.contains("- Assessment: `issue.test` Test issue"));
+    assert!(detail.contains("- Meaning: impact"));
+    assert!(
+        detail.contains("- Evidence interpretation: CLIARE directly saw this runtime behavior")
+    );
+    assert!(detail.contains("- Associated commands: `1` affected."));
+    assert!(detail.contains("- Suggested remedy: recommendation"));
     assert!(detail.contains("</details>"));
 }
 
@@ -99,8 +117,10 @@ fn maintainer_issue_markdown_uses_agent_readiness_area() {
     let mut detail = String::new();
     render_maintainer_finding(&mut detail, Path::new(".cliare/test"), &issue);
     assert!(detail.contains("<summary>Output Contracts: Test issue (`issue.test`)</summary>"));
-    assert!(detail.contains("- Agent outcome: Agents cannot safely read command results"));
-    assert!(detail.contains("- Fix: Add a safe validation path"));
+    assert!(detail.contains("- Assessment: `issue.test` Test issue"));
+    assert!(detail.contains("- Meaning: Agents cannot safely read command results"));
+    assert!(detail.contains("- Associated commands: `1` affected."));
+    assert!(detail.contains("- Suggested remedy: Add a safe validation path"));
     assert!(detail.contains("- If acceptable: record a disposition"));
     assert!(detail.contains("- Area: Output Contracts"));
     assert!(!detail.contains("P1"));

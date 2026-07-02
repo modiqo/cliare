@@ -16,9 +16,54 @@ pub(super) fn render_plain_english_guide(text: &mut String) {
     writeln!(text).expect("writing to string cannot fail");
     writeln!(
         text,
-        "Use this section to decode the report before opening JSON artifacts. The tables below say what each label means and what a reviewer should do next."
+        "Use this section to decode the report before opening JSON artifacts. CLIARE reports evidence for agent navigation capabilities; it does not assume that a CLI is acceptable for automation just because an agent could explore it by trial and error."
     )
     .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "### Agent Evidence Perspective").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "| Capability | Evidence an agent can rely on | Developer implication |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text, "|---|---|---|").expect("writing to string cannot fail");
+    for (capability, evidence, implication) in [
+        (
+            "Discovery",
+            "Runtime-confirmed help, direct help-like output, or clear structured command rows.",
+            "Make command groups and leaves discoverable without requiring account state or guesswork.",
+        ),
+        (
+            "Grammar",
+            "Stable usage lines, explicit operands, flag value names, and actionable missing-argument diagnostics.",
+            "Give agents enough shape to construct calls instead of learning by invalid attempts.",
+        ),
+        (
+            "Output",
+            "Advertised machine-readable modes that were safely probed and parsed.",
+            "Provide parseable output contracts for command results an agent must consume.",
+        ),
+        (
+            "Recovery",
+            "Nonzero invalid-input exits with diagnostics that identify the missing flag, operand, precondition, or next step.",
+            "Make failures repairable; opaque errors turn agent use into repeated exploration.",
+        ),
+        (
+            "Safety",
+            "Help, version, diagnostic, and safe output probes with no unexpected persistent side effects.",
+            "Keep discovery paths read-only or document and control expected writes.",
+        ),
+    ] {
+        writeln!(
+            text,
+            "| {} | {} | {} |",
+            escape_markdown(capability),
+            escape_markdown(evidence),
+            escape_markdown(implication)
+        )
+        .expect("writing to string cannot fail");
+    }
     writeln!(text).expect("writing to string cannot fail");
     writeln!(text, "| Report label | Plain meaning | First action |")
         .expect("writing to string cannot fail");
@@ -168,6 +213,61 @@ pub(super) fn render_persona_score_summary(text: &mut String, packet: &PersonaOu
     writeln!(text).expect("writing to string cannot fail");
 }
 
+pub(super) fn render_agent_navigation_evidence(text: &mut String, packet: &PersonaOutcomePacket) {
+    writeln!(text, "## Agent Navigation Evidence").expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(
+        text,
+        "These metrics describe which navigation capabilities are backed by measured evidence for this run."
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text).expect("writing to string cannot fail");
+    writeln!(text, "- Status: `{}`", packet.agent_navigation.status)
+        .expect("writing to string cannot fail");
+    if !packet.agent_navigation.limitations.is_empty() {
+        writeln!(
+            text,
+            "- Limitations: {}",
+            escape_markdown(&packet.agent_navigation.limitations.join("; "))
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+
+    if packet.agent_navigation.dimensions.is_empty() {
+        writeln!(
+            text,
+            "This artifact does not include agent navigation metrics."
+        )
+        .expect("writing to string cannot fail");
+        writeln!(text).expect("writing to string cannot fail");
+        return;
+    }
+
+    writeln!(
+        text,
+        "| Capability | Score | Evidence ratio | Status | What it means | Evidence | Limits |"
+    )
+    .expect("writing to string cannot fail");
+    writeln!(text, "|---|---:|---:|---|---|---|---|").expect("writing to string cannot fail");
+    for (capability, metric) in &packet.agent_navigation.dimensions {
+        writeln!(
+            text,
+            "| `{}` | {} | `{}/{}` | `{}` | {} | {} | {} |",
+            capability,
+            metric_score_label(metric.score),
+            metric.numerator,
+            metric.denominator,
+            metric.status,
+            escape_markdown(&metric.rationale),
+            escape_markdown(&list_or_none(&metric.evidence)),
+            escape_markdown(&list_or_none(&metric.limitations))
+        )
+        .expect("writing to string cannot fail");
+    }
+    writeln!(text).expect("writing to string cannot fail");
+}
+
 pub(super) fn render_notes(text: &mut String, packet: &PersonaOutcomePacket) {
     writeln!(text, "## Notes").expect("writing to string cannot fail");
     writeln!(text).expect("writing to string cannot fail");
@@ -191,10 +291,10 @@ fn persona_decision(packet: &PersonaOutcomePacket) -> String {
     match packet.persona {
         Persona::Maintainer => {
             if packet.top_issues.is_empty() {
-                "No maintainer-prioritized fixes are currently blocking the measured posture. Keep the issue ledger in CI and watch for drift.".to_owned()
+                "No maintainer-prioritized fixes are currently blocking the measured posture. Keep the issue ledger in CI and watch for drift; this means the measured evidence supports current agent navigation, not that every hidden surface is proven acceptable.".to_owned()
             } else {
                 format!(
-                    "Fix the top CLI contract gaps before treating this surface as stable for agents. This report prioritizes {} issue(s), including {} high-severity item(s) and {} fixture-required output contract item(s).",
+                    "Fix the top CLI contract gaps before treating this surface as evidence-backed for agents. Agents may still explore weak surfaces, but automatic use should require measured navigation evidence. This report prioritizes {} issue(s), including {} high-severity item(s) and {} fixture-required output contract item(s).",
                     packet.top_issues.len(),
                     high_issues,
                     fixture_issues
@@ -203,7 +303,7 @@ fn persona_decision(packet: &PersonaOutcomePacket) -> String {
         }
         Persona::Harness => {
             format!(
-                "Expose the {} ready command(s) first. Treat {} conditional command(s), {} fixture-required command(s), {} blocked command(s), and {} candidate command(s) as policy or remediation work before automatic routing.",
+                "Expose the {} ready command(s) first. Agents can explore beyond that, but automatic routing should require evidence, policy, or explicit remediation. Treat {} conditional command(s), {} fixture-required command(s), {} blocked command(s), and {} candidate command(s) as work before automatic routing.",
                 packet.summary.commands_ready,
                 packet.summary.commands_conditional,
                 packet.summary.commands_needs_fixture,
@@ -242,5 +342,20 @@ fn percent(value: f64) -> String {
         format!("{:.1}%", value * 100.0)
     } else {
         "n/a".to_owned()
+    }
+}
+
+fn metric_score_label(score: Option<f64>) -> String {
+    score.map_or_else(
+        || "`not measured`".to_owned(),
+        |score| format!("`{score:.0}/100`"),
+    )
+}
+
+fn list_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_owned()
+    } else {
+        values.join(", ")
     }
 }

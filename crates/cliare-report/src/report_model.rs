@@ -101,6 +101,7 @@ pub struct PersonaOutcomePacket {
     pub(crate) reviewed_issues: Vec<Issue>,
     pub(crate) action_items: Vec<ActionItem>,
     pub(crate) command_health: Vec<CommandHealth>,
+    pub(crate) agent_navigation: AgentNavigationSection,
     pub(crate) score: ScoreSection,
     pub(crate) coverage: CoverageSection,
     pub(crate) evidence_summary: EvidenceSummaryPacket,
@@ -193,6 +194,24 @@ pub(crate) struct OutcomeSummary {
     pub(crate) budget_exhausted: bool,
     pub(crate) traversal_stop_reason: String,
     pub(crate) traversal_complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct AgentNavigationSection {
+    pub(crate) status: String,
+    pub(crate) dimensions: BTreeMap<String, AgentNavigationMetricPacket>,
+    pub(crate) limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct AgentNavigationMetricPacket {
+    pub(crate) score: Option<f64>,
+    pub(crate) numerator: usize,
+    pub(crate) denominator: usize,
+    pub(crate) status: String,
+    pub(crate) rationale: String,
+    pub(crate) evidence: Vec<String>,
+    pub(crate) limitations: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

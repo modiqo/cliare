@@ -8,6 +8,6 @@ pub(super) use super::super::{
     PlaybookFormat, PlaybookRole, QUICK_CONCURRENCY, QUICK_MAX_DEPTH, QUICK_MAX_PROBES,
     QUICK_MIN_EXPECTED_VALUE, ReportArea, ReportFormat, ReportPersona, STANDARD_CONCURRENCY,
     STANDARD_MAX_DEPTH, STANDARD_MAX_PROBES, STANDARD_MIN_EXPECTED_VALUE, SkillAgent,
-    SkillInstallScope, SkillsCommand, SurfaceCommand, SurfaceFormat, SurfaceOutputRequirement,
-    SurfaceReadiness, TraversalProfile,
+    SkillInstallScope, SkillsCommand, SummaryFormat, SurfaceCommand, SurfaceFormat,
+    SurfaceOutputRequirement, SurfaceReadiness, TraversalProfile,
 };

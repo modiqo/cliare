@@ -28,6 +28,7 @@ fn describe_accepts_folder_format_and_write_options() {
         | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
+        | Command::Summary(_)
         | Command::Skills(_)
         | Command::Issues(_)
         | Command::Playbook(_)

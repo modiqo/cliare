@@ -34,6 +34,7 @@ impl PersonaOutcomePacket {
             reviewed_issues,
             action_items,
             command_health,
+            agent_navigation: AgentNavigationSection::from(&artifacts.scorecard.agent_navigation),
             score: ScoreSection::from(&artifacts.scorecard),
             coverage: CoverageSection::from(&artifacts.scorecard.coverage),
             evidence_summary: EvidenceSummaryPacket::from(&artifacts.evidence),
@@ -192,6 +193,33 @@ impl OutcomeSummary {
             budget_exhausted: coverage.budget_exhausted,
             traversal_stop_reason: coverage.traversal_stop_reason.clone(),
             traversal_complete: coverage.traversal_complete,
+        }
+    }
+}
+
+impl From<&AgentNavigationArtifact> for AgentNavigationSection {
+    fn from(agent_navigation: &AgentNavigationArtifact) -> Self {
+        Self {
+            status: agent_navigation.status.clone(),
+            dimensions: agent_navigation
+                .dimensions
+                .iter()
+                .map(|(capability, metric)| {
+                    (
+                        capability.clone(),
+                        AgentNavigationMetricPacket {
+                            score: metric.score,
+                            numerator: metric.numerator,
+                            denominator: metric.denominator,
+                            status: metric.status.clone(),
+                            rationale: metric.rationale.clone(),
+                            evidence: metric.evidence.clone(),
+                            limitations: metric.limitations.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            limitations: agent_navigation.limitations.clone(),
         }
     }
 }

@@ -36,6 +36,7 @@ fn issues_mark_accepts_status_and_reason() {
         | Command::Eval(_)
         | Command::Context(_)
         | Command::Report(_)
+        | Command::Summary(_)
         | Command::Describe(_)
         | Command::Skills(_)
         | Command::Playbook(_)

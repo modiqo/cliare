@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cliare") | .version')"
+          version="$(cargo pkgid -p cliare | sed 's/.*@//')"
           tag="${GITHUB_REF_NAME#v}"
           if [[ "$tag" != "$version" ]]; then
             echo "Tag v${tag} does not match Cargo.toml version ${version}."
@@ -47,8 +47,31 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
-      - name: Package
-        run: cargo package --list
+      - name: Verify package file sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in \
+            cliare-core \
+            cliare-runtime \
+            cliare-policy \
+            cliare-issues \
+            cliare-inference \
+            cliare-evidence \
+            cliare-shape \
+            cliare-context \
+            cliare-cli \
+            cliare-score \
+            cliare-report \
+            cliare-eval \
+            cliare-guidance \
+            cliare-measure \
+            cliare-inspect \
+            cliare-app \
+            cliare
+          do
+            cargo package --locked --list -p "${package}" > /dev/null
+          done
 
       - name: Verify crates.io token is configured
         env:
@@ -61,12 +84,90 @@ jobs:
             exit 1
           fi
 
-      - name: Publish dry run
+      - name: Publish crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --dry-run
+          CRATES_IO_USER_AGENT: modiqo-cliare-release/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish
+          crate_version_status() {
+            local package="$1"
+            local version="$2"
+            local body="${RUNNER_TEMP:-/tmp}/crates-${package}-${version}.json"
+            curl -sS -L \
+              -H "User-Agent: ${CRATES_IO_USER_AGENT}" \
+              -o "${body}" \
+              -w "%{http_code}" \
+              "https://crates.io/api/v1/crates/${package}/${version}"
+          }
+
+          publish_crate() {
+            local package="$1"
+            local version="$2"
+            local log="${RUNNER_TEMP:-/tmp}/cargo-publish-${package}-${version}.log"
+
+            cargo publish --locked -p "${package}" --dry-run
+
+            if cargo publish --locked -p "${package}" 2>&1 | tee "${log}"; then
+              return 0
+            fi
+
+            if grep -Eqi 'already (exists|uploaded)|crate version .* is already uploaded' "${log}"; then
+              echo "${package} ${version} already exists on crates.io after publish attempt; skipping"
+              return 0
+            fi
+
+            if grep -Eqi 'Too Many Requests|rate.?limit' "${log}"; then
+              echo "crates.io rate limited ${package} ${version}; waiting 15 minutes before one retry" >&2
+              sleep 900
+              cargo publish --locked -p "${package}"
+              return 0
+            fi
+
+            return 1
+          }
+
+          for package in \
+            cliare-core \
+            cliare-runtime \
+            cliare-policy \
+            cliare-issues \
+            cliare-inference \
+            cliare-evidence \
+            cliare-shape \
+            cliare-context \
+            cliare-cli \
+            cliare-score \
+            cliare-report \
+            cliare-eval \
+            cliare-guidance \
+            cliare-measure \
+            cliare-inspect \
+            cliare-app \
+            cliare
+          do
+            pkgid="$(cargo pkgid -p "${package}")"
+            version="${pkgid##*@}"
+            if [[ "${version}" == "${pkgid}" ]]; then
+              version="${pkgid##*#}"
+            fi
+
+            status="$(crate_version_status "${package}" "${version}")"
+            case "${status}" in
+              200)
+                echo "${package} ${version} already exists on crates.io; skipping"
+                continue
+                ;;
+              404)
+                ;;
+              *)
+                echo "Unexpected crates.io response for ${package} ${version}: HTTP ${status}" >&2
+                exit 1
+                ;;
+            esac
+
+            publish_crate "${package}" "${version}"
+            sleep 90
+          done

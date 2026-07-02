@@ -23,6 +23,13 @@ The maintainer goal is simple:
 
 > Make the CLI easy for an agent to discover, invoke, parse, and recover from without guessing.
 
+Agents can attempt to explore almost any command-line interface. That does not
+make every interface design acceptable for automation. The useful question is
+whether the released CLI gives agents evidence they can rely on: command
+existence, invocation grammar, parseable outputs, recovery diagnostics,
+preconditions, and safe discovery behavior. CLIARE reports those evidence-backed
+navigation capabilities and turns missing evidence into developer feedback.
+
 ---
 
 ## How CLIARE Sees A CLI
@@ -44,6 +51,28 @@ Current measurement primarily observes:
 - runtime context such as clean, authenticated, local-context, or fixture runs
 
 Current CLIARE does not use shell completion as its primary command discovery source. Completion is still useful CLI design, but the current command index is built from runtime help, diagnostics, output probes, and evidence.
+
+## Agent Navigation Evidence
+
+CLIARE reports agent navigation evidence as separate scorecard dimensions so a
+maintainer can see which capabilities are backed by runtime proof:
+
+| Capability | Developer Question |
+|---|---|
+| `canonical_help_coverage` | Can an agent ask each discovered command for direct `<command> --help`? |
+| `usage_coverage` | Does help expose stable usage syntax for invocation planning? |
+| `subcommand_table_clarity` | Can command groups be traversed from parseable command tables? |
+| `positional_operand_coverage` | Do runtime-recognized commands reveal required operands? |
+| `output_contract_parse_coverage` | Are advertised machine-readable outputs actually parseable? |
+| `invalid_input_recovery` | Do mistakes fail nonzero and tell the agent what to do next? |
+| `discovery_side_effect_safety` | Can discovery probes run without persistent side effects? |
+| `precondition_clarity` | Are auth, fixture, local context, network, and dependency blockers explicit? |
+| `example_validity` | Not measured yet; examples are not scored until CLIARE can validate them safely. |
+
+Treat these as evidence labels, not style preferences. A CLI can be usable by a
+human and still give an agent weak navigation evidence if command-specific help
+is missing, usage is vague, output contracts are prose-only, or diagnostics
+require human context.
 
 ---
 
