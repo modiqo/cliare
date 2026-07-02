@@ -66,6 +66,17 @@ pre {
   line-height: 1.5;
 }
 
+pre code {
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
