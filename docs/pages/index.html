@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Antic&amp;display=swap" rel="stylesheet">
     <link rel="alternate" type="text/plain" href="./llms.txt" title="CLIARE llms.txt">
-    <link rel="stylesheet" href="./assets/styles.css?v=20260702-commandstack">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260702-artifactcards">
   </head>
   <body>
     <header class="site-header">
@@ -258,37 +258,49 @@ cliare surface query "list projects" --out .cliare/mycli</code></pre>
             <p class="eyebrow">Outputs</p>
             <h2 id="artifacts-title">The shape file is not another doc. It is evidence with provenance.</h2>
           </div>
+          <p>
+            Products distributed as CLIs can ship these artifacts beside each
+            release so agents can assess the command surface, choose the right
+            operation, and invoke it with the output contract their inference
+            path needs.
+          </p>
         </div>
         <div class="artifact-grid">
           <article class="artifact-card">
             <span>Harness map</span>
             <h3><code>command-index.json</code></h3>
             <p>Command paths, summaries, runtime states, confidence, preconditions, output contracts, and suitability.</p>
+            <p class="artifact-use"><strong>Use case:</strong> a harness routes user intent to a command without rediscovering the CLI through trial runs.</p>
           </article>
           <article class="artifact-card">
             <span>Inferred model</span>
             <h3><code>shape.json</code></h3>
             <p>Claims about commands, flags, positionals, output modes, shape gaps, and evidence references.</p>
+            <p class="artifact-use"><strong>Use case:</strong> a CLI vendor packages a versioned shape file so agents can inspect supported operations before invocation.</p>
           </article>
           <article class="artifact-card">
             <span>Proof log</span>
             <h3><code>evidence.jsonl</code></h3>
             <p>The runtime record of scheduled probes and completed target processes.</p>
+            <p class="artifact-use"><strong>Use case:</strong> maintainers and auditors trace each shape claim back to the command output that produced it.</p>
           </article>
           <article class="artifact-card">
             <span>Score</span>
             <h3><code>scorecard.json</code></h3>
             <p>Maintainer readiness, harness shape confidence, subscores, findings, model id, and model hash.</p>
+            <p class="artifact-use"><strong>Use case:</strong> release pipelines gate on regressions in discovery, grammar, output parsing, recovery, and safety.</p>
           </article>
           <article class="artifact-card">
             <span>Decoder</span>
             <h3><code>condition-dictionary.csv</code></h3>
             <p>Plain-English definitions and examples for condition labels used in reports and summaries.</p>
+            <p class="artifact-use"><strong>Use case:</strong> reports stay understandable when a developer or agent sees labels like precondition-blocked or candidate-only.</p>
           </article>
           <article class="artifact-card">
             <span>Agent guidance</span>
             <h3><code>AGENT_SKILL.md</code></h3>
             <p>Generated guidance an agent can read when inspecting CLIARE artifacts.</p>
+            <p class="artifact-use"><strong>Use case:</strong> an agent gets a local review workflow for reading the evidence, shape, score, and harness packet together.</p>
           </article>
         </div>
       </section>

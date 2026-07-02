@@ -297,7 +297,6 @@ h3 {
 
 .metric-card,
 .use-card,
-.artifact-card,
 .factor-card,
 .source-card,
 .callout-card {
@@ -305,6 +304,26 @@ h3 {
   border-radius: 8px;
   background: var(--white);
   padding: 1rem;
+}
+
+.artifact-card {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  padding: 1.15rem;
+  min-height: 245px;
+}
+
+.artifact-card h3 {
+  font-size: clamp(1.08rem, 1.5vw, 1.3rem);
+  line-height: 1.16;
+}
+
+.artifact-card h3 code {
+  overflow-wrap: anywhere;
 }
 
 .metric-card strong {
@@ -333,6 +352,19 @@ h3 {
 .source-card p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+.artifact-card p {
+  margin-top: 0;
+}
+
+.artifact-use {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.artifact-use strong {
+  color: var(--ink);
 }
 
 .use-grid {
