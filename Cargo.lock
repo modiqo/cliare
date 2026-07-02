@@ -160,7 +160,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cliare"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-app",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-app"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-cli",
@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-cli"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-context",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-context"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-core",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-core"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "serde",
  "serde_json",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-eval"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-cli",
  "cliare-core",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-evidence"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-core",
  "cliare-runtime",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-guidance"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-cli",
  "cliare-core",
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-inference"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-core",
  "serde",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-inspect"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-cli",
  "cliare-context",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-issues"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-core",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-measure"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-cli",
  "cliare-context",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-policy"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-core",
  "serde",
@@ -349,7 +349,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-report"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-cli",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-runtime"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "clap",
  "cliare-core",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-score"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-context",
  "cliare-core",
@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "cliare-shape"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cliare-core",
  "cliare-evidence",

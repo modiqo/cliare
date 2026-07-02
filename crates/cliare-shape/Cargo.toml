@@ -8,10 +8,10 @@ repository.workspace = true
 description = "Command-shape inference and command index models for CLIARE"
 
 [dependencies]
-cliare-core = { version = "0.1.7", path = "../cliare-core" }
-cliare-evidence = { version = "0.1.7", path = "../cliare-evidence" }
-cliare-inference = { version = "0.1.7", path = "../cliare-inference" }
-cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
+cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-evidence = { version = "0.1.8", path = "../cliare-evidence" }
+cliare-inference = { version = "0.1.8", path = "../cliare-inference" }
+cliare-runtime = { version = "0.1.8", path = "../cliare-runtime" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

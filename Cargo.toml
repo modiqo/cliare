@@ -21,7 +21,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -65,22 +65,22 @@ exclude = [
 
 [dependencies]
 clap.workspace = true
-cliare-app = { version = "0.1.7", path = "crates/cliare-app" }
-cliare-cli = { version = "0.1.7", path = "crates/cliare-cli" }
-cliare-context = { version = "0.1.7", path = "crates/cliare-context" }
-cliare-core = { version = "0.1.7", path = "crates/cliare-core" }
-cliare-eval = { version = "0.1.7", path = "crates/cliare-eval" }
-cliare-evidence = { version = "0.1.7", path = "crates/cliare-evidence" }
-cliare-guidance = { version = "0.1.7", path = "crates/cliare-guidance" }
-cliare-inference = { version = "0.1.7", path = "crates/cliare-inference" }
-cliare-inspect = { version = "0.1.7", path = "crates/cliare-inspect" }
-cliare-issues = { version = "0.1.7", path = "crates/cliare-issues" }
-cliare-measure = { version = "0.1.7", path = "crates/cliare-measure" }
-cliare-policy = { version = "0.1.7", path = "crates/cliare-policy" }
-cliare-report = { version = "0.1.7", path = "crates/cliare-report" }
-cliare-runtime = { version = "0.1.7", path = "crates/cliare-runtime" }
-cliare-score = { version = "0.1.7", path = "crates/cliare-score" }
-cliare-shape = { version = "0.1.7", path = "crates/cliare-shape" }
+cliare-app = { version = "0.1.8", path = "crates/cliare-app" }
+cliare-cli = { version = "0.1.8", path = "crates/cliare-cli" }
+cliare-context = { version = "0.1.8", path = "crates/cliare-context" }
+cliare-core = { version = "0.1.8", path = "crates/cliare-core" }
+cliare-eval = { version = "0.1.8", path = "crates/cliare-eval" }
+cliare-evidence = { version = "0.1.8", path = "crates/cliare-evidence" }
+cliare-guidance = { version = "0.1.8", path = "crates/cliare-guidance" }
+cliare-inference = { version = "0.1.8", path = "crates/cliare-inference" }
+cliare-inspect = { version = "0.1.8", path = "crates/cliare-inspect" }
+cliare-issues = { version = "0.1.8", path = "crates/cliare-issues" }
+cliare-measure = { version = "0.1.8", path = "crates/cliare-measure" }
+cliare-policy = { version = "0.1.8", path = "crates/cliare-policy" }
+cliare-report = { version = "0.1.8", path = "crates/cliare-report" }
+cliare-runtime = { version = "0.1.8", path = "crates/cliare-runtime" }
+cliare-score = { version = "0.1.8", path = "crates/cliare-score" }
+cliare-shape = { version = "0.1.8", path = "crates/cliare-shape" }
 miette.workspace = true
 serde.workspace = true
 serde_json.workspace = true

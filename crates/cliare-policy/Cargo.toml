@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Policy evaluation for CLIARE measurements"
 
 [dependencies]
-cliare-core = { version = "0.1.7", path = "../cliare-core" }
+cliare-core = { version = "0.1.8", path = "../cliare-core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

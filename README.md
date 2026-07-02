@@ -244,7 +244,7 @@ curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh 
 To install a specific release:
 
 ```sh
-curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.7/install.sh | CLIARE_VERSION=v0.1.7 sh
+curl -fsSL https://github.com/modiqo/cliare/releases/download/v0.1.8/install.sh | CLIARE_VERSION=v0.1.8 sh
 ```
 
 Or install from source:

@@ -9,21 +9,21 @@ description = "CLI command orchestration for CLIARE"
 
 [dependencies]
 clap.workspace = true
-cliare-cli = { version = "0.1.7", path = "../cliare-cli" }
-cliare-context = { version = "0.1.7", path = "../cliare-context" }
-cliare-core = { version = "0.1.7", path = "../cliare-core" }
-cliare-eval = { version = "0.1.7", path = "../cliare-eval" }
-cliare-evidence = { version = "0.1.7", path = "../cliare-evidence" }
-cliare-guidance = { version = "0.1.7", path = "../cliare-guidance" }
-cliare-inference = { version = "0.1.7", path = "../cliare-inference" }
-cliare-inspect = { version = "0.1.7", path = "../cliare-inspect" }
-cliare-issues = { version = "0.1.7", path = "../cliare-issues" }
-cliare-measure = { version = "0.1.7", path = "../cliare-measure" }
-cliare-policy = { version = "0.1.7", path = "../cliare-policy" }
-cliare-report = { version = "0.1.7", path = "../cliare-report" }
-cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
-cliare-score = { version = "0.1.7", path = "../cliare-score" }
-cliare-shape = { version = "0.1.7", path = "../cliare-shape" }
+cliare-cli = { version = "0.1.8", path = "../cliare-cli" }
+cliare-context = { version = "0.1.8", path = "../cliare-context" }
+cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-eval = { version = "0.1.8", path = "../cliare-eval" }
+cliare-evidence = { version = "0.1.8", path = "../cliare-evidence" }
+cliare-guidance = { version = "0.1.8", path = "../cliare-guidance" }
+cliare-inference = { version = "0.1.8", path = "../cliare-inference" }
+cliare-inspect = { version = "0.1.8", path = "../cliare-inspect" }
+cliare-issues = { version = "0.1.8", path = "../cliare-issues" }
+cliare-measure = { version = "0.1.8", path = "../cliare-measure" }
+cliare-policy = { version = "0.1.8", path = "../cliare-policy" }
+cliare-report = { version = "0.1.8", path = "../cliare-report" }
+cliare-runtime = { version = "0.1.8", path = "../cliare-runtime" }
+cliare-score = { version = "0.1.8", path = "../cliare-score" }
+cliare-shape = { version = "0.1.8", path = "../cliare-shape" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

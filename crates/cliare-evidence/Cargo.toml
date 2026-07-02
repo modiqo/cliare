@@ -8,6 +8,6 @@ repository.workspace = true
 description = "Evidence record models for CLIARE"
 
 [dependencies]
-cliare-core = { version = "0.1.7", path = "../cliare-core" }
-cliare-runtime = { version = "0.1.7", path = "../cliare-runtime" }
+cliare-core = { version = "0.1.8", path = "../cliare-core" }
+cliare-runtime = { version = "0.1.8", path = "../cliare-runtime" }
 serde.workspace = true
