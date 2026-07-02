@@ -60,6 +60,7 @@ exclude = [
     "AGENTS.md",
     "action.yml",
     "docs/assets/**",
+    "docs/pages/**",
     "docs/**/*.pdf",
 ]
 

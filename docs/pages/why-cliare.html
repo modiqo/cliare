@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Why CLIARE exists: research evidence, algorithm design, and scoring model for agent-ready command-line interfaces."
+    >
+    <title>Why CLIARE Exists</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Antic&amp;display=swap" rel="stylesheet">
+    <link rel="alternate" type="text/plain" href="./llms.txt" title="CLIARE llms.txt">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260702-site">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-brand" href="./index.html" aria-label="CLIARE home">
+        <img src="./assets/cliare-wordmark.svg" alt="CLIARE">
+      </a>
+      <form
+        class="header-search"
+        action="https://github.com/modiqo/cliare/search"
+        method="get"
+        target="_blank"
+        role="search"
+      >
+        <input type="hidden" name="type" value="code">
+        <label class="sr-only" for="article-site-search">Search CLIARE on GitHub</label>
+        <input id="article-site-search" name="q" type="search" placeholder="Search">
+      </form>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="./index.html#measure">Measure</a>
+        <a href="./index.html#install">Install</a>
+        <a href="./index.html#artifacts">Artifacts</a>
+        <a href="./why-cliare.html" aria-current="page">Why CLIARE</a>
+        <a
+          class="github-link star-link"
+          href="https://github.com/modiqo/cliare"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Star CLIARE on GitHub"
+        >
+          <span>GitHub</span>
+          <span class="star-badge" aria-hidden="true">Star <span data-github-stars></span></span>
+        </a>
+        <a href="https://crates.io/crates/cliare" target="_blank" rel="noreferrer">Crates.io</a>
+      </nav>
+    </header>
+
+    <main class="shell article-shell">
+      <section id="why-cliare" class="article-hero" aria-labelledby="article-title">
+        <div>
+          <p class="eyebrow">Research note</p>
+          <h1 id="article-title">Why CLIARE exists</h1>
+          <p class="lede">
+            Terminal agents need more than permission to run commands. They
+            need evidence for the command surface they are about to navigate.
+          </p>
+        </div>
+        <figure class="article-figure">
+          <img
+            src="./assets/storybook/06-agent-index.png"
+            alt="Illustration of an agent harness using a command index instead of guessing."
+          >
+          <figcaption>
+            CLIARE's core artifact is an evidence-backed command index for
+            planning, routing, and review.
+          </figcaption>
+        </figure>
+      </section>
+
+      <div class="article-layout">
+        <aside class="article-toc" aria-label="Article sections">
+          <a href="#claim">1. The claim</a>
+          <a href="#evidence">2. Research evidence</a>
+          <a href="#model">3. The CLIARE model</a>
+          <a href="#algorithm">4. Algorithm</a>
+          <a href="#scores">5. Score views</a>
+          <a href="#design">6. CLI design signals</a>
+          <a href="#sources">Sources</a>
+        </aside>
+
+        <article class="article-body">
+          <section id="claim">
+            <p class="section-kicker">1. Claim</p>
+            <h2>Agents can explore many CLIs. Reliable automation needs evidence.</h2>
+            <p>
+              A capable agent can often try <code>--help</code>, run a command,
+              inspect an error, and recover. That does not mean the CLI has a
+              usable agent-facing contract. Exploration consumes tokens, creates
+              latency, risks side effects, and can confuse command existence
+              with missing auth, fixtures, project context, or runtime services.
+            </p>
+            <p>
+              CLIARE exists to separate "the agent might figure it out" from
+              "the agent has evidence for these navigation capabilities." That
+              difference matters to maintainers who want to improve a CLI and
+              to harness builders who need a shape file before automatic
+              routing.
+            </p>
+            <div class="callout-grid">
+              <div class="callout-card">
+                <strong>Human docs</strong>
+                <span>Useful context, but not proof of runtime behavior.</span>
+              </div>
+              <div class="callout-card">
+                <strong>Help text</strong>
+                <span>Evidence for layout, grammar, and discovery, but still not truth.</span>
+              </div>
+              <div class="callout-card">
+                <strong>Runtime evidence</strong>
+                <span>The strongest source for command shape, diagnostics, and side effects.</span>
+              </div>
+            </div>
+          </section>
+
+          <section id="evidence">
+            <p class="section-kicker">2. Evidence</p>
+            <h2>Terminal and tool-use research points to interface shape as a real factor.</h2>
+            <p>
+              Terminal-agent benchmarks evaluate agents through execution, not
+              prose comprehension alone. Terminal-Bench 2.0 curates hard
+              command-line tasks with tests. TerminalWorld builds tasks from
+              real terminal recordings. TUA-Bench evaluates routine and
+              scientific terminal workflows. InterCode frames coding work as an
+              action-observation loop over Bash, SQL, and Python environments.
+            </p>
+            <p>
+              Agent-computer-interface work points in the same direction.
+              SWE-agent shows that a custom interface can materially improve
+              software-agent performance. CodeAct, Toolformer, Gorilla,
+              API-Bank, ToolLLM, AppWorld, and ToolEmu all reinforce the same
+              practical requirement: agents need precise, current, executable
+              tool interfaces with argument constraints, result interpretation,
+              and safety boundaries.
+            </p>
+            <div class="factor-grid">
+              <article class="factor-card">
+                <span>Execution truth</span>
+                <h3>Benchmarks grade outcomes</h3>
+                <p>Runtime behavior is the basis for evaluation, so CLIARE treats runtime behavior as the proof source.</p>
+              </article>
+              <article class="factor-card">
+                <span>Interface design</span>
+                <h3>Harnesses change success</h3>
+                <p>A better interface can make the same model more effective, so CLI shape is a product surface.</p>
+              </article>
+              <article class="factor-card">
+                <span>Safety</span>
+                <h3>Tool use has collateral risk</h3>
+                <p>Side effects, secrets, destructive commands, and hidden state must be visible to the harness.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="model">
+            <p class="section-kicker">3. Model</p>
+            <h2>CLIARE measures a CLI as a black-box runtime system.</h2>
+            <p>
+              The target CLI is modeled as a process boundary. Given argv,
+              stdin, environment, cwd, and filesystem state, the CLI returns an
+              exit code, stdout, stderr, duration, and possible filesystem
+              deltas. CLIARE records those observations in
+              <code>evidence.jsonl</code>.
+            </p>
+            <div class="formula">
+              <p><code>M(argv, stdin, env, cwd, fs_state)</code></p>
+              <p><code>-&gt; exit, stdout, stderr, fs_delta, duration</code></p>
+            </div>
+            <p>
+              From that evidence, CLIARE infers claims about commands, flags,
+              operands, output contracts, preconditions, and gaps. It does not
+              assume the CLI was built with Clap, Cobra, Click, argparse,
+              oclif, or any other framework.
+            </p>
+          </section>
+
+          <section id="algorithm">
+            <p class="section-kicker">4. Algorithm</p>
+            <h2>The current algorithm is deterministic and evidence-backed.</h2>
+            <div class="process">
+              <div class="process-step">
+                <span>01</span>
+                <div>
+                  <h3>Bootstrap probes</h3>
+                  <p>Seed safe probes such as root help, version, invalid command, and invalid flag.</p>
+                </div>
+              </div>
+              <div class="process-step">
+                <span>02</span>
+                <div>
+                  <h3>Layout extraction</h3>
+                  <p>Parse semi-structured help-like text for usage lines, aligned command rows, option rows, examples, and output-mode hints.</p>
+                </div>
+              </div>
+              <div class="process-step">
+                <span>03</span>
+                <div>
+                  <h3>Claim updates</h3>
+                  <p>Apply additive log-odds evidence weights for command, flag, and output-contract claims.</p>
+                </div>
+              </div>
+              <div class="process-step">
+                <span>04</span>
+                <div>
+                  <h3>Planner frontier</h3>
+                  <p>Schedule bounded follow-up probes for discovered command paths, diagnostics, and output modes.</p>
+                </div>
+              </div>
+              <div class="process-step">
+                <span>05</span>
+                <div>
+                  <h3>Artifact projection</h3>
+                  <p>Render shape, command index, scorecard, issue ledger, summary, and persona packets from the same evidence set.</p>
+                </div>
+              </div>
+            </div>
+            <div class="formula">
+              <p><code>logit(P(claim | E)) = logit(prior) + sum(evidence_weight)</code></p>
+              <p><code>P = 1 / (1 + exp(-log_odds))</code></p>
+            </div>
+            <p>
+              The shipped v0 model lives in
+              <code>crates/cliare-inference/score-models/cliare-score-v0.json</code>.
+              Scorecards embed the model id and hash so a score can be tied to
+              both evidence and model version.
+            </p>
+          </section>
+
+          <section id="scores">
+            <p class="section-kicker">5. Score views</p>
+            <h2>CLIARE separates maintainer readiness from harness shape confidence.</h2>
+            <p>
+              The headline score is useful for CI, but the two most important
+              views answer different questions.
+            </p>
+            <div class="use-grid">
+              <article class="use-card">
+                <span>Maintainer readiness</span>
+                <h3>How agent-effective is this CLI?</h3>
+                <p>
+                  This view summarizes whether the CLI helps or hinders agent
+                  use across discovery, grammar, outputs, recovery,
+                  preconditions, safety, and execution behavior.
+                </p>
+              </article>
+              <article class="use-card">
+                <span>Harness shape confidence</span>
+                <h3>Can a harness rely on the emitted shape?</h3>
+                <p>
+                  This view estimates how much automatic routing can depend on
+                  the emitted command index before additional verification,
+                  fixtures, or human approval.
+                </p>
+              </article>
+            </div>
+            <p>
+              The current status is <code>experimental_partial</code>. The long
+              term target is a calibrated expected-utility score:
+            </p>
+            <div class="formula">
+              <p><code>CLIARE Score = 100 * E[U(agent, task, cli) | runtime evidence]</code></p>
+            </div>
+          </section>
+
+          <section id="design">
+            <p class="section-kicker">6. Design signals</p>
+            <h2>Agent-ready CLIs expose evidence for navigation capabilities.</h2>
+            <p>
+              Agents cannot reliably navigate anything. They can try, but
+              reliability falls when a CLI lacks stable discovery, explicit
+              operands, parseable outputs, actionable errors, and safe
+              diagnostic behavior.
+            </p>
+            <div class="artifact-grid">
+              <article class="artifact-card">
+                <span>Discovery</span>
+                <h3>Canonical help everywhere</h3>
+                <p>Every real command should support direct <code>--help</code> without side effects.</p>
+              </article>
+              <article class="artifact-card">
+                <span>Grammar</span>
+                <h3>Stable usage syntax</h3>
+                <p>Required and optional operands should appear in usage lines and examples.</p>
+              </article>
+              <article class="artifact-card">
+                <span>Output</span>
+                <h3>Parseable result modes</h3>
+                <p>Use <code>--json</code> or <code>--format json</code> for command results agents need to consume.</p>
+              </article>
+              <article class="artifact-card">
+                <span>Recovery</span>
+                <h3>Actionable diagnostics</h3>
+                <p>Invalid commands, flags, missing operands, auth, and context errors should say what is missing.</p>
+              </article>
+              <article class="artifact-card">
+                <span>Preconditions</span>
+                <h3>Hidden state is explicit</h3>
+                <p>Auth, project directories, fixtures, network, and daemon requirements should be visible before execution.</p>
+              </article>
+              <article class="artifact-card">
+                <span>Safety</span>
+                <h3>Discovery is read-only</h3>
+                <p>Help, version, and diagnostic probes should not create caches, configs, credentials, or other persistent files.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="sources">
+            <p class="section-kicker">Sources</p>
+            <h2>Research used by the CLIARE model and evaluation plan.</h2>
+            <div class="source-grid">
+              <article class="source-card">
+                <h3>Terminal and CLI agents</h3>
+                <p>
+                  <a href="https://arxiv.org/abs/2601.11868" target="_blank" rel="noreferrer">Terminal-Bench 2.0</a>,
+                  <a href="https://arxiv.org/abs/2605.22535" target="_blank" rel="noreferrer">TerminalWorld</a>,
+                  <a href="https://arxiv.org/abs/2606.28480" target="_blank" rel="noreferrer">TUA-Bench</a>,
+                  and <a href="https://arxiv.org/abs/2306.14898" target="_blank" rel="noreferrer">InterCode</a>.
+                </p>
+              </article>
+              <article class="source-card">
+                <h3>Software agent interfaces</h3>
+                <p>
+                  <a href="https://arxiv.org/abs/2310.06770" target="_blank" rel="noreferrer">SWE-bench</a>,
+                  <a href="https://arxiv.org/abs/2405.15793" target="_blank" rel="noreferrer">SWE-agent</a>,
+                  <a href="https://arxiv.org/abs/2407.16741" target="_blank" rel="noreferrer">OpenHands</a>,
+                  <a href="https://arxiv.org/abs/2402.01030" target="_blank" rel="noreferrer">CodeAct</a>,
+                  and <a href="https://arxiv.org/abs/2410.07095" target="_blank" rel="noreferrer">MLE-bench</a>.
+                </p>
+              </article>
+              <article class="source-card">
+                <h3>Tool and API use</h3>
+                <p>
+                  <a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noreferrer">ReAct</a>,
+                  <a href="https://arxiv.org/abs/2302.04761" target="_blank" rel="noreferrer">Toolformer</a>,
+                  <a href="https://arxiv.org/abs/2305.15334" target="_blank" rel="noreferrer">Gorilla</a>,
+                  <a href="https://arxiv.org/abs/2304.08244" target="_blank" rel="noreferrer">API-Bank</a>,
+                  and <a href="https://arxiv.org/abs/2307.16789" target="_blank" rel="noreferrer">ToolLLM</a>.
+                </p>
+              </article>
+              <article class="source-card">
+                <h3>Safety and dynamic environments</h3>
+                <p>
+                  <a href="https://arxiv.org/abs/2406.12045" target="_blank" rel="noreferrer">tau-bench</a>,
+                  <a href="https://arxiv.org/abs/2407.18901" target="_blank" rel="noreferrer">AppWorld</a>,
+                  and <a href="https://arxiv.org/abs/2309.15817" target="_blank" rel="noreferrer">ToolEmu</a>.
+                </p>
+              </article>
+              <article class="source-card">
+                <h3>Computer-use benchmarks</h3>
+                <p>
+                  <a href="https://arxiv.org/abs/2308.03688" target="_blank" rel="noreferrer">AgentBench</a>,
+                  <a href="https://arxiv.org/abs/2307.13854" target="_blank" rel="noreferrer">WebArena</a>,
+                  <a href="https://arxiv.org/abs/2404.07972" target="_blank" rel="noreferrer">OSWorld</a>,
+                  and <a href="https://arxiv.org/abs/2606.29537" target="_blank" rel="noreferrer">OSWorld 2.0</a>.
+                </p>
+              </article>
+              <article class="source-card">
+                <h3>CLIARE docs</h3>
+                <p>
+                  See the repository docs for the
+                  <a href="https://github.com/modiqo/cliare/blob/main/docs/model/computational-scoring-model.md" target="_blank" rel="noreferrer">computational scoring model</a>,
+                  <a href="https://github.com/modiqo/cliare/blob/main/docs/model/generic-inference-processor.md" target="_blank" rel="noreferrer">generic inference processor</a>,
+                  and <a href="https://github.com/modiqo/cliare/blob/main/docs/research/agent-cli-citations.md" target="_blank" rel="noreferrer">citation inventory</a>.
+                </p>
+              </article>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>CLIARE - CLI Agent Readiness Evaluation</span>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="./index.html">Home</a>
+          <a href="https://github.com/modiqo/cliare" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://crates.io/crates/cliare" target="_blank" rel="noreferrer">Crates.io</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="./assets/site.js?v=20260702-site" defer></script>
+  </body>
+</html>

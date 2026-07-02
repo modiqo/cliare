@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="CLIARE audits command-line interfaces for agent readiness and emits evidence-backed command shapes for maintainers and agent harnesses."
+    >
+    <title>CLIARE - CLI Agent Readiness Evaluation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Antic&amp;display=swap" rel="stylesheet">
+    <link rel="alternate" type="text/plain" href="./llms.txt" title="CLIARE llms.txt">
+    <link rel="stylesheet" href="./assets/styles.css?v=20260702-site">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-brand" href="./index.html" aria-label="CLIARE home">
+        <img src="./assets/cliare-wordmark.svg" alt="CLIARE">
+      </a>
+      <form
+        class="header-search"
+        action="https://github.com/modiqo/cliare/search"
+        method="get"
+        target="_blank"
+        role="search"
+      >
+        <input type="hidden" name="type" value="code">
+        <label class="sr-only" for="site-search">Search CLIARE on GitHub</label>
+        <input id="site-search" name="q" type="search" placeholder="Search">
+      </form>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#measure">Measure</a>
+        <a href="#install">Install</a>
+        <a href="#artifacts">Artifacts</a>
+        <a href="./why-cliare.html">Why CLIARE</a>
+        <a
+          class="github-link star-link"
+          href="https://github.com/modiqo/cliare"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Star CLIARE on GitHub"
+        >
+          <span>GitHub</span>
+          <span class="star-badge" aria-hidden="true">Star <span data-github-stars></span></span>
+        </a>
+        <a href="https://crates.io/crates/cliare" target="_blank" rel="noreferrer">Crates.io</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section id="home" class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">CLI Agent Readiness Evaluation</p>
+          <h1 id="page-title">Make your CLI legible to agents.</h1>
+          <p class="lede">
+            CLIARE measures a released command-line binary as a black box,
+            records runtime evidence, and emits the command shape that agent
+            harnesses need before they start guessing.
+          </p>
+          <div class="hero-actions" aria-label="Primary actions">
+            <a class="primary-link" href="#measure">Measure a CLI</a>
+            <a class="secondary-link" href="./why-cliare.html">Read the model</a>
+          </div>
+          <p class="hero-note">
+            Open-source Rust CLI. Runtime evidence first. Shape files for
+            maintainers, security reviewers, and agent harnesses.
+          </p>
+        </div>
+        <figure class="hero-figure">
+          <img
+            src="./assets/storybook/01-agent-hands.png"
+            alt="Illustration of an agent using command-line hands to reach services."
+          >
+          <figcaption>
+            CLIs are becoming the hands agents use to reach code hosts, cloud
+            systems, internal platforms, and local developer workflows.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="shift" class="section" aria-labelledby="shift-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">The shift</p>
+            <h2 id="shift-title">Agents can explore terminals. That does not make every CLI design acceptable.</h2>
+          </div>
+          <p>
+            A human can read docs, infer intent, and tolerate drift. An agent
+            harness needs stronger evidence: which commands exist, which
+            operands are required, which outputs parse, and which probes change
+            state.
+          </p>
+        </div>
+        <div class="metric-grid" aria-label="Agent CLI pressure points">
+          <article class="metric-card">
+            <span>Discovery</span>
+            <strong>Help</strong>
+            <p>Canonical command help should work on every real command path.</p>
+          </article>
+          <article class="metric-card">
+            <span>Invocation</span>
+            <strong>Args</strong>
+            <p>Usage lines should expose required, optional, and variadic operands.</p>
+          </article>
+          <article class="metric-card">
+            <span>Consumption</span>
+            <strong>JSON</strong>
+            <p>Machine-readable output should be advertised, executable, and parseable.</p>
+          </article>
+          <article class="metric-card">
+            <span>Safety</span>
+            <strong>Proof</strong>
+            <p>Help, version, and diagnostic probes should avoid hidden writes.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="use-cases" class="section" aria-labelledby="use-cases-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Two use cases</p>
+            <h2 id="use-cases-title">One measurement, two products.</h2>
+          </div>
+        </div>
+        <div class="use-grid">
+          <article class="use-card">
+            <span>For maintainers</span>
+            <h3>Turn agent-readiness into an implementation queue.</h3>
+            <p>
+              CLIARE tells maintainers where agents lack evidence: missing help,
+              unclear grammar, weak diagnostics, precondition blockers,
+              unvalidated output modes, and unsafe discovery behavior.
+            </p>
+          </article>
+          <article class="use-card">
+            <span>For harnesses</span>
+            <h3>Load a shape file before executing and learning.</h3>
+            <p>
+              Harnesses can consume <code>command-index.json</code>,
+              <code>shape.json</code>, and generated guidance to route through
+              commands with known confidence, preconditions, and output
+              contracts.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="story" class="section" aria-labelledby="story-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Product story</p>
+            <h2 id="story-title">From CLI drift to evidence-backed command shape.</h2>
+          </div>
+        </div>
+        <div class="story-grid">
+          <article class="story-card">
+            <img src="./assets/storybook/02-cli-drift.png" alt="Illustration of docs, help, and runtime drift.">
+            <h3>Surfaces drift</h3>
+            <p>Docs, help text, and the released binary can stop matching as a CLI grows.</p>
+          </article>
+          <article class="story-card">
+            <img src="./assets/storybook/03-token-burn.png" alt="Illustration of an agent burning tokens in a help loop.">
+            <h3>Agents pay the tax</h3>
+            <p>Without a shape, agents rediscover commands by trying help, flags, errors, and retries.</p>
+          </article>
+          <article class="story-card">
+            <img src="./assets/storybook/04-cliare-probes.png" alt="Illustration of CLIARE probing a released CLI.">
+            <h3>CLIARE records evidence</h3>
+            <p>Probes run under bounded contexts, then produce durable evidence and command artifacts.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="measure" class="section" aria-labelledby="measure-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">How it works</p>
+            <h2 id="measure-title">Measure the binary the agent will actually use.</h2>
+          </div>
+          <p>
+            CLIARE does not trust framework internals or stale docs. Help text
+            is evidence, not truth. Runtime confirmation is stronger evidence.
+          </p>
+        </div>
+        <div class="process" aria-label="CLIARE measurement flow">
+          <div class="process-step">
+            <span>01</span>
+            <div>
+              <h3>Probe safely</h3>
+              <p>Run help, version, invalid-input, output-mode, and discovered command probes within a bounded traversal budget.</p>
+            </div>
+          </div>
+          <div class="process-step">
+            <span>02</span>
+            <div>
+              <h3>Record evidence</h3>
+              <p>Capture exit status, bounded stdout/stderr, timing, side-effect deltas, runtime context, and probe intent.</p>
+            </div>
+          </div>
+          <div class="process-step">
+            <span>03</span>
+            <div>
+              <h3>Infer shape</h3>
+              <p>Extract command rows, flags, operands, output contracts, diagnostics, and preconditions from runtime observations.</p>
+            </div>
+          </div>
+          <div class="process-step">
+            <span>04</span>
+            <div>
+              <h3>Emit artifacts</h3>
+              <p>Write command indexes, scorecards, issue ledgers, summaries, persona packets, and generated agent guidance.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="install" class="section" aria-labelledby="install-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Install</p>
+            <h2 id="install-title">Start with the release installer or Cargo.</h2>
+          </div>
+        </div>
+        <div class="code-grid">
+          <div>
+            <h3>Latest release binary</h3>
+            <pre><code>curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
+cliare metadata --format text</code></pre>
+          </div>
+          <div>
+            <h3>Crates.io</h3>
+            <pre><code>cargo install cliare
+cliare metadata --format text</code></pre>
+          </div>
+        </div>
+        <div class="code-grid">
+          <div>
+            <h3>Measure a CLI</h3>
+            <pre><code>cliare measure mycli \
+  --out .cliare/mycli \
+  --profile standard \
+  --refresh
+
+cliare summary --out .cliare/mycli</code></pre>
+          </div>
+          <div>
+            <h3>Prepare a harness shape</h3>
+            <pre><code>cliare describe .cliare/mycli --write
+cliare report harness --out .cliare/mycli --write
+cliare surface query "list projects" --out .cliare/mycli</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="artifacts" class="section" aria-labelledby="artifacts-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Outputs</p>
+            <h2 id="artifacts-title">The shape file is not another doc. It is evidence with provenance.</h2>
+          </div>
+        </div>
+        <div class="artifact-grid">
+          <article class="artifact-card">
+            <span>Harness map</span>
+            <h3><code>command-index.json</code></h3>
+            <p>Command paths, summaries, runtime states, confidence, preconditions, output contracts, and suitability.</p>
+          </article>
+          <article class="artifact-card">
+            <span>Inferred model</span>
+            <h3><code>shape.json</code></h3>
+            <p>Claims about commands, flags, positionals, output modes, shape gaps, and evidence references.</p>
+          </article>
+          <article class="artifact-card">
+            <span>Proof log</span>
+            <h3><code>evidence.jsonl</code></h3>
+            <p>The runtime record of scheduled probes and completed target processes.</p>
+          </article>
+          <article class="artifact-card">
+            <span>Score</span>
+            <h3><code>scorecard.json</code></h3>
+            <p>Maintainer readiness, harness shape confidence, subscores, findings, model id, and model hash.</p>
+          </article>
+          <article class="artifact-card">
+            <span>Decoder</span>
+            <h3><code>condition-dictionary.csv</code></h3>
+            <p>Plain-English definitions and examples for condition labels used in reports and summaries.</p>
+          </article>
+          <article class="artifact-card">
+            <span>Agent guidance</span>
+            <h3><code>AGENT_SKILL.md</code></h3>
+            <p>Generated guidance an agent can read when inspecting CLIARE artifacts.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="roles" class="section" aria-labelledby="roles-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Adoption path</p>
+            <h2 id="roles-title">Measure once, then use the evidence where agents make decisions.</h2>
+          </div>
+        </div>
+        <div class="story-grid">
+          <article class="story-card">
+            <img src="./assets/storybook/05-maintainer-ci.png" alt="Illustration of maintainers using CLIARE in CI.">
+            <h3>Maintainer CI</h3>
+            <p>Keep command help, diagnostics, output contracts, and discovery safety from regressing between releases.</p>
+          </article>
+          <article class="story-card">
+            <img src="./assets/storybook/06-agent-index.png" alt="Illustration of a harness using a command index.">
+            <h3>Harness routing</h3>
+            <p>Give an agent a measured command surface before it chooses a command path or constructs arguments.</p>
+          </article>
+          <article class="story-card">
+            <img src="./assets/storybook/07-skills-and-indexes.png" alt="Illustration comparing agent skills and command indexes.">
+            <h3>Skills plus indexes</h3>
+            <p>Let skills teach workflow and policy while the command index maps what the runtime actually supports.</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="band" aria-labelledby="stance-title">
+        <div class="quote-panel">
+          <p id="stance-title">
+            Agents should not be forced to discover your command surface by
+            trial and error. Give them evidence for the navigation capabilities
+            you expect them to use.
+          </p>
+        </div>
+      </div>
+
+      <section id="next" class="section" aria-labelledby="next-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Deeper model</p>
+            <h2 id="next-title">Read why CLIARE exists.</h2>
+          </div>
+          <p>
+            The research note explains the terminal-agent evidence, the scoring
+            boundary, and the current deterministic algorithm.
+          </p>
+        </div>
+        <div class="button-row">
+          <a class="primary-link" href="./why-cliare.html">Why CLIARE</a>
+          <a class="secondary-link" href="https://github.com/modiqo/cliare" target="_blank" rel="noreferrer">View source</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>CLIARE - CLI Agent Readiness Evaluation</span>
+        <nav class="footer-nav" aria-label="Footer navigation">
+          <a href="./why-cliare.html">Why CLIARE</a>
+          <a href="https://github.com/modiqo/cliare" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://crates.io/crates/cliare" target="_blank" rel="noreferrer">Crates.io</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="./assets/site.js?v=20260702-site" defer></script>
+  </body>
+</html>

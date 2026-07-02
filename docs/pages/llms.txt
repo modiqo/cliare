@@ -1,0 +1,36 @@
+# CLIARE
+
+CLIARE means CLI Agent Readiness Evaluation.
+
+CLIARE audits command-line interfaces for agent readiness. It measures a released CLI binary as a black box, records runtime evidence, infers command shape, detects side effects, scores agent-readiness signals, and emits artifacts that maintainers and agent harnesses can use.
+
+Canonical pages:
+
+- Home: https://cliare.sh/
+- Why CLIARE: https://cliare.sh/why-cliare.html
+- GitHub: https://github.com/modiqo/cliare
+- Crates.io: https://crates.io/crates/cliare
+
+Core concepts:
+
+- Agents can explore terminals, but exploration is not a design contract.
+- Maintainers use CLIARE to improve help coverage, argument grammar, diagnostics, parseable output, precondition clarity, and safe discovery behavior.
+- Harnesses use CLIARE artifacts such as command-index.json and shape.json as evidence-backed CLI surface inputs before routing commands.
+- CLIARE treats help text as evidence, not truth. Runtime confirmation and bounded evidence carry stronger weight.
+- Scores are deterministic for a model version and evidence set. The current model is cliare-score-v0 with experimental_partial status.
+
+Recommended install:
+
+```sh
+curl -fsSL https://github.com/modiqo/cliare/releases/latest/download/install.sh | sh
+cliare metadata --format text
+```
+
+Quick start:
+
+```sh
+cliare measure mycli --out .cliare/mycli --profile standard --refresh
+cliare summary --out .cliare/mycli
+cliare report maintainer --out .cliare/mycli --format markdown
+cliare report harness --out .cliare/mycli --write
+```

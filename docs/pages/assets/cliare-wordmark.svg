@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 116" role="img" aria-labelledby="title">
+  <title id="title">CLIARE</title>
+  <rect x="6" y="12" width="92" height="92" rx="20" fill="#f8f1dc" stroke="#1d2328" stroke-width="8"/>
+  <rect x="28" y="38" width="48" height="36" rx="8" fill="#1d2328"/>
+  <circle cx="44" cy="56" r="4" fill="#f8f1dc"/>
+  <circle cx="60" cy="56" r="4" fill="#f8f1dc"/>
+  <path d="M52 12V2" fill="none" stroke="#1d2328" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="52" cy="2" r="8" fill="#12a6b7"/>
+  <path d="M124 58h36m0 0-14-14m14 14-14 14" fill="none" stroke="#12a6b7" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="190" y="78" fill="#1d2328" font-family="Arial, Helvetica, sans-serif" font-size="64" font-weight="800" letter-spacing="0">CLIARE</text>
+</svg>
