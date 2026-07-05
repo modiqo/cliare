@@ -16,6 +16,16 @@ CLIARE answers those questions by measuring the released CLI binary as a black b
 
 CLIARE stands for **CLI Agent Readiness Evaluation**.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=modiqo%2Fcliare&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=modiqo/cliare&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=modiqo/cliare&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=modiqo/cliare&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## From CLI Drift to Agent-Ready Command Surfaces
 
 CLIARE is pronounced like "Claire": she cares about whether your CLI can be used reliably by agents, maintainers, and security reviewers.
