@@ -1,3 +1,7 @@
 /target
 .cliare/
 .cliare-bench/
+
+# Nix build result symlinks
+/result
+/result-*
