@@ -4,6 +4,9 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- Added optional Nix flake support for running and installing cliare with Nix, plus a Devbox environment for reproducible development.
+
 ## [0.1.9] - 2026-07-02
 
 Crates.io packaging reissue.

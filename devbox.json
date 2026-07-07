@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.12.0/.schema/devbox.schema.json",
+  "packages": [
+    "rustc",
+    "cargo",
+    "rust-analyzer"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'Welcome to the cliare Devbox environment!'"
+    ],
+    "scripts": {
+      "build": "cargo build --release",
+      "test": "cargo test --workspace --all-features",
+      "run": "cargo run --",
+      "check": "cargo fmt --all -- --check && env RUSTC_WRAPPER= cargo clippy --workspace --all-targets --all-features -- -D warnings"
+    }
+  }
+}
