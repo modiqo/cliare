@@ -493,21 +493,6 @@ h3 {
   color: var(--muted);
 }
 
-.star-history-chart {
-  display: block;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--white);
-  padding: clamp(0.6rem, 2vw, 1rem);
-  text-decoration: none;
-}
-
-.star-history-chart img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
 .process {
   display: grid;
   gap: 0.8rem;
